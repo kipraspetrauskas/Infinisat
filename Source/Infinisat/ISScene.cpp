@@ -11,14 +11,15 @@
 #include "Engine/Texture.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/LineBatchComponent.h"
 
 namespace
 {
 	const FLinearColor KeepMat(0, 0, 0, 0);
 	template <typename T> T* Load(const TCHAR* Path) { return LoadObject<T>(nullptr, Path); }
 	const TCHAR* TEX_EARTH = TEXT("/Game/Infinisat/Textures/T_Earth.T_Earth");
-	const TCHAR* TEX_MOON = TEXT("/Game/Infinisat/Textures/T_Moon.T_Moon");
-	const TCHAR* TEX_JUP = TEXT("/Game/Infinisat/Textures/T_Jupiter.T_Jupiter");
+	const TCHAR* TEX_MOON = TEXT("/Game/Infinisat/Textures/T_Moon2.T_Moon2");
+	const TCHAR* TEX_JUP = TEXT("/Game/Infinisat/Textures/T_Jupiter2.T_Jupiter2");
 	FString ModelPath(const TCHAR* N) { return FString::Printf(TEXT("/Game/Infinisat/Models/%s/SM_%s.SM_%s"), N, N, N); }
 	float SqrtAU(float AU) { return 2500.f * FMath::Sqrt(AU); }
 }
@@ -117,6 +118,15 @@ void AISSpaceScene::BeginPlay()
 		S.bOverride_MotionBlurAmount = true; S.MotionBlurAmount = 0.f;
 	}
 
+	Lines = NewObject<ULineBatchComponent>(this);
+	Lines->SetupAttachment(SceneRoot);
+	Lines->RegisterComponent();
+	CloudShell = NewObject<UStaticMeshComponent>(this);
+	CloudShell->SetupAttachment(SceneRoot);
+	CloudShell->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CloudShell->CastShadow = false;
+	CloudShell->RegisterComponent();
+	CloudShell->SetVisibility(false);
 	BuildBit();
 	ShowTitle();
 }
@@ -211,8 +221,38 @@ void AISSpaceScene::SetPlanet(UStaticMeshComponent* C, const TCHAR* Tex, float R
 	C->SetVisibility(true);
 }
 
+void AISSpaceScene::SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVector& Pos, bool bClouds)
+{
+	if (UStaticMesh* Hi = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) C->SetStaticMesh(Hi);
+	UMaterialInterface* EM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Earth.M_IS_Earth"));
+	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(EM ? EM : MatPlanet, C);
+	MID->SetVectorParameterValue(TEXT("SunDir"), FLinearColor(-SunLight->GetForwardVector()));
+	C->SetMaterial(0, MID);
+	C->SetWorldScale3D(FVector(RadiusUU / 50.f));
+	C->SetWorldLocation(Pos);
+	C->SetWorldRotation(FRotator(0, 200.f, 0));
+	C->SetVisibility(true);
+	C->SetCastShadow(false);
+	PlanetAtmo->SetCastShadow(false);
+	if (UStaticMesh* HiA = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) { PlanetAtmo->SetStaticMesh(HiA); PlanetAtmo->SetMaterial(0, PlanetAtmo->GetMaterial(0)); }
+	if (CloudShell && bClouds)
+	{
+		if (UStaticMesh* Hi = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) CloudShell->SetStaticMesh(Hi);
+		if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Clouds.M_IS_Clouds"))) CloudShell->SetMaterial(0, CM);
+		CloudShell->SetWorldScale3D(FVector(RadiusUU * 1.004f / 50.f));
+		CloudShell->SetWorldLocation(Pos);
+		CloudShell->SetVisibility(true);
+	}
+}
+
 void AISSpaceScene::ClearView()
 {
+	bTrueScale = false;
+	TruePts.Reset();
+	if (Lines) Lines->Flush();
+	if (CloudShell) CloudShell->SetVisibility(false);
+	Sky->SetWorldScale3D(FVector(40000.f));
+	Sky->SetWorldLocation(FVector::ZeroVector);
 	for (UStaticMeshComponent* C : SatParts) if (C) C->DestroyComponent();
 	for (UStaticMeshComponent* C : RealParts) if (C) C->DestroyComponent();
 	for (UStaticMeshComponent* C : Extras) if (C) C->DestroyComponent();
@@ -236,13 +276,19 @@ void AISSpaceScene::SetCameraTarget(const FVector& Focus, float Dist, float Yaw,
 
 void AISSpaceScene::OrbitCamera(float DYaw, float DPitch)
 {
+	if (View == EISView::Orbit && bTrueScale && bFollow)
+	{
+		FollowYaw += DYaw;
+		FollowPitch = FMath::Clamp(FollowPitch + DPitch, -80.f, 80.f);
+		return;
+	}
 	CamYaw += DYaw;
 	CamPitch = FMath::Clamp(CamPitch + DPitch, -85.f, 85.f);
 }
 
 void AISSpaceScene::ZoomCamera(float Steps)
 {
-	CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(0.88f, Steps), CamMin, CamMax);
+	CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(bTrueScale ? 0.75f : 0.88f, Steps), CamMin, CamMax);
 }
 
 // ------------------------------------------------------------------------------------------------ BIT
@@ -312,164 +358,12 @@ void AISSpaceScene::SetActive(bool bOn)
 }
 
 // ------------------------------------------------------------------------------------------------ satellite assembly
-void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TArray<UStaticMeshComponent*>& Track)
-{
-	TArray<const FISPart*> P;
-	for (const FName& Id : D.Parts) if (const FISPart* X = ISData::FindPart(Id)) P.Add(X);
-	const FISPart* Bus = nullptr;
-	bool bMLI = false;
-	for (const FISPart* X : P) { if (X->Cat == EISCat::Bus) Bus = X; if (X->Tag == ISTag::Heaters) bMLI = true; }
-
-	// bus body (100 uu reference size)
-	FVector BusExt(50, 50, 60);
-	if (Bus)
-	{
-		const bool bCube = Bus->MeshPath.Contains(TEXT("Cube"));
-		const bool bCyl = Bus->MeshPath.Contains(TEXT("Cylinder"));
-		const FLinearColor C = bMLI ? FLinearColor(0.95f, 0.72f, 0.18f) : Bus->Color;
-		if (bCube) { AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(1.f, 1.f, 1.2f)), C, false, 0.f, &Track); }
-		else if (bCyl)
-		{
-			const bool bCan = Bus->Id == "bus_can";
-			BusExt = bCan ? FVector(33, 33, 58) : FVector(55, 55, 45);
-			AddMesh(Root, MCyl, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, bCan ? FVector(0.66f, 0.66f, 1.15f) : FVector(1.1f, 1.1f, 0.9f)), C, false, 0.f, &Track);
-			if (!bCan) AddMesh(Root, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, 47), FVector(1.15f, 1.15f, 0.06f)), FLinearColor(0.2f, 0.2f, 0.22f), false, 0.f, &Track);
-		}
-		else
-		{
-			// NASA satellite-kit body (normalized to 1 m = 100 uu)
-			AddMeshPath(Root, Bus->MeshPath, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(1.2f)), KeepMat, &Track);
-			AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(0.7f, 0.7f, 0.9f)), FLinearColor(0.7f, 0.7f, 0.75f), false, 0.f, &Track);
-			BusExt = FVector(40, 40, 50);
-		}
-	}
-
-	int32 PayloadIdx = 0, ExtraIdx = 0;
-	for (const FISPart* X : P)
-	{
-		switch (X->Cat)
-		{
-		case EISCat::Power:
-			if (X->SolarW > 0)
-			{
-				const float L = FMath::Clamp(30.f * FMath::Sqrt(X->SolarW / 20.f), 30.f, 260.f);
-				const float H = FMath::Clamp(L * 0.35f, 30.f, 110.f);
-				if (X->Id == "pwr_body")
-				{
-					for (int32 s : { -1, 1 })
-						AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector(0, s * (BusExt.Y + 1.f), 0), FVector(BusExt.X * 1.6f / 100.f, 0.02f, BusExt.Z * 1.6f / 100.f)), FLinearColor(0.05f, 0.08f, 0.35f), false, 0.f, &Track);
-					break;
-				}
-				const int32 Wings = X->Id == "pwr_juno" ? 3 : 2;
-				for (int32 w = 0; w < Wings; ++w)
-				{
-					const float Yaw = Wings == 3 ? w * 120.f : w * 180.f;
-					const FRotator R(0, Yaw, 0);
-					const FVector Dir = R.RotateVector(FVector(0, 1, 0));
-					const FVector Boom = Dir * (BusExt.Y + 12.f);
-					AddMesh(Root, MCyl, FTransform(FRotator(0, Yaw, 90), Boom, FVector(0.05f, 0.05f, 0.25f)), FLinearColor(0.6f, 0.6f, 0.62f), false, 0.f, &Track);
-					AddMesh(Root, MCube, FTransform(R, Dir * (BusExt.Y + 25.f + L * 0.5f), FVector(0.03f, L / 100.f, H / 100.f)), FLinearColor(0.1f, 0.2f, 0.65f), false, 0.08f, &Track);
-					// cell grid lines
-					for (int32 g = 1; g < 4; ++g)
-						AddMesh(Root, MCube, FTransform(R, Dir * (BusExt.Y + 25.f + L * g / 4.f) + FVector(0.f), FVector(0.035f, 0.01f, H / 100.f)), FLinearColor(0.75f, 0.75f, 0.8f), false, 0.f, &Track);
-				}
-			}
-			else if (X->RtgW > 0)
-			{
-				const int32 N = X->Id == "pwr_gphs" ? 3 : 1;
-				for (int32 i = 0; i < N; ++i)
-				{
-					const FVector Pos(-BusExt.X - 60.f - i * 45.f, -50.f, -10.f);
-					AddMesh(Root, MCyl, FTransform(FRotator(90, 0, 0), Pos, FVector(0.22f, 0.22f, 0.4f)), FLinearColor(0.25f, 0.25f, 0.27f), false, 0.f, &Track);
-					for (int32 f = 0; f < 4; ++f)
-						AddMesh(Root, MCube, FTransform(FRotator(0, 0, f * 45.f), Pos, FVector(0.38f, 0.02f, 0.4f)), FLinearColor(0.3f, 0.3f, 0.32f), false, 0.f, &Track);
-				}
-				AddMesh(Root, MCyl, FTransform(FRotator(90, 0, 0), FVector(-BusExt.X - 30.f, -50.f, -10.f), FVector(0.04f, 0.04f, 0.6f)), FLinearColor(0.6f, 0.6f, 0.6f), false, 0.f, &Track);
-			}
-			break;
-		case EISCat::Comms:
-			if (X->DishM > 1.f || X->Tag == ISTag::HGA)
-			{
-				const float S = 0.6f + X->DishM * 0.35f;
-				AddMesh(Root, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, BusExt.Z + 18.f), FVector(S, S, 0.22f)), FLinearColor(0.93f, 0.93f, 0.95f), false, 0.f, &Track);
-				AddMesh(Root, MCone, FTransform(FRotator::ZeroRotator, FVector(0, 0, BusExt.Z + 40.f), FVector(0.12f, 0.12f, 0.35f)), FLinearColor(0.85f, 0.85f, 0.85f), false, 0.f, &Track);
-			}
-			else if (X->RadioMbps < 0.1f)
-			{
-				for (int32 s : { -1, 1 })
-					AddMesh(Root, MCyl, FTransform(FRotator(0, 0, s * 35.f), FVector(0, s * 20.f, BusExt.Z + 30.f), FVector(0.015f, 0.015f, 0.7f)), FLinearColor(0.85f, 0.85f, 0.85f), false, 0.f, &Track);
-			}
-			else
-			{
-				if (!X->MeshPath.IsEmpty()) AddMeshPath(Root, X->MeshPath, FTransform(FRotator::ZeroRotator, FVector(0, 0, BusExt.Z + 20.f), FVector(0.45f)), KeepMat, &Track);
-				AddMesh(Root, MCone, FTransform(FRotator(180, 0, 0), FVector(BusExt.X * 0.4f, 0, -BusExt.Z - 10.f), FVector(0.2f, 0.2f, 0.15f)), FLinearColor(0.9f, 0.9f, 0.9f), false, 0.f, &Track);
-			}
-			break;
-		case EISCat::ADCS:
-			if (X->PointingDeg > 0 && X->PointingDeg < 0.1f)
-				for (int32 s : { -1, 1 })
-					AddMesh(Root, MCyl, FTransform(FRotator(0, 0, s * 30.f), FVector(-BusExt.X * 0.6f, s * BusExt.Y * 0.6f, BusExt.Z + 6.f), FVector(0.1f, 0.1f, 0.18f)), FLinearColor(0.1f, 0.1f, 0.1f), false, 0.f, &Track);
-			break;
-		case EISCat::Propulsion:
-			if (X->Tag == ISTag::SolarSail)
-			{
-				const float Side = 220.f * (1.f + FMath::LogX(10.f, X->SailM2 / 80.f + 1.f));
-				const FString SailPath = ModelPath(TEXT("SolarSail"));
-				if (!AddMeshPath(Root, SailPath, FTransform(FRotator(0, 0, 0), FVector(-BusExt.X - 40.f, 0, 0), FVector(Side / 100.f)), KeepMat, &Track))
-					AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector(-BusExt.X - 40.f, 0, 0), FVector(0.01f, Side / 100.f, Side / 100.f)), FLinearColor(0.9f, 0.9f, 0.95f), false, 0.3f, &Track);
-			}
-			else if (X->IspS > 1000.f)
-			{
-				AddMesh(Root, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, -BusExt.Z - 8.f), FVector(0.3f, 0.3f, 0.16f)), FLinearColor(0.3f, 0.3f, 0.35f), false, 0.f, &Track);
-				AddMesh(Root, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, -BusExt.Z - 17.f), FVector(0.24f, 0.24f, 0.02f)), FLinearColor(0.3f, 0.5f, 1.f), true, 6.f, &Track);
-			}
-			else if (X->PropKg > 0)
-			{
-				const float S = FMath::Clamp(0.15f + FMath::Pow(X->PropKg, 0.33f) * 0.04f, 0.12f, 0.7f);
-				AddMesh(Root, MCone, FTransform(FRotator::ZeroRotator, FVector(0, 0, -BusExt.Z - S * 60.f), FVector(S * 0.8f, S * 0.8f, S)), FLinearColor(0.35f, 0.33f, 0.32f), false, 0.f, &Track);
-			}
-			break;
-		case EISCat::Payload:
-		{
-			const float S = FMath::Clamp(0.12f + FMath::Pow(X->MassKg, 0.33f) * 0.06f, 0.12f, 0.75f);
-			const int32 Col = PayloadIdx % 3, Row = PayloadIdx / 3;
-			const FVector Pos(BusExt.X + S * 30.f, (Col - 1) * BusExt.Y * 0.6f, BusExt.Z * 0.5f - Row * 40.f);
-			if (X->Tag == ISTag::EntryProbe)
-				AddMesh(Root, MCone, FTransform(FRotator(-90, 0, 0), FVector(BusExt.X + 45.f, 0, -BusExt.Z * 0.6f), FVector(0.8f, 0.8f, 0.45f)), X->Color, false, 0.f, &Track);
-			else if (X->Tag == ISTag::Record)
-				AddMesh(Root, MCyl, FTransform(FRotator(0, 0, 90), FVector(0, BusExt.Y + 2.f, -BusExt.Z * 0.4f), FVector(0.3f, 0.3f, 0.02f)), X->Color, false, 0.4f, &Track);
-			else
-			{
-				UStaticMesh* M = X->MeshPath.Contains(TEXT("Cube")) ? MCube : X->MeshPath.Contains(TEXT("Cone")) ? MCone : MCyl;
-				AddMesh(Root, M, FTransform(FRotator(90, 0, 0), Pos, FVector(S, S, S * 1.2f)), X->Color, false, 0.f, &Track);
-				if (X->Tag == ISTag::Imager || X->Tag == ISTag::Camera || X->Tag == ISTag::WeatherImager)
-					AddMesh(Root, MCyl, FTransform(FRotator(90, 0, 0), Pos + FVector(S * 61.f, 0, 0), FVector(S * 0.6f, S * 0.6f, 0.01f)), FLinearColor(0.1f, 0.3f, 0.6f), true, 1.5f, &Track);
-			}
-			++PayloadIdx;
-			break;
-		}
-		case EISCat::Extra:
-			if (X->Tag == ISTag::Parachute)
-				AddMesh(Root, MCone, FTransform(FRotator::ZeroRotator, FVector(0, 0, BusExt.Z + 35.f), FVector(X->SailM2 > 0.1f ? 1.0f : 0.6f, X->SailM2 > 0.1f ? 1.0f : 0.6f, 0.35f)), FLinearColor(1.f, 0.35f, 0.1f), false, 0.f, &Track);
-			else if (X->Tag == ISTag::Vault)
-				AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector(0, 0, BusExt.Z * 0.2f), FVector(BusExt.X * 1.9f / 100.f, BusExt.Y * 1.9f / 100.f, 0.4f)), FLinearColor(0.5f, 0.5f, 0.55f), false, 0.f, &Track);
-			else if (X->Tag == ISTag::DragSail)
-				AddMesh(Root, MCube, FTransform(FRotator::ZeroRotator, FVector(-BusExt.X - 8.f, 0, BusExt.Z * 0.5f), FVector(0.12f, 0.25f, 0.25f)), FLinearColor(0.8f, 0.8f, 0.85f), false, 0.f, &Track);
-			else if (X->Tag == ISTag::Retro)
-				AddMesh(Root, MCyl, FTransform(FRotator(90, 0, 0), FVector(BusExt.X + 2.f, BusExt.Y * 0.7f, -BusExt.Z * 0.7f), FVector(0.2f, 0.2f, 0.03f)), FLinearColor(0.1f, 0.1f, 0.1f), false, 0.f, &Track);
-			++ExtraIdx;
-			break;
-		default: break;
-		}
-	}
-}
-
 // ------------------------------------------------------------------------------------------------ views
 void AISSpaceScene::ShowTitle()
 {
 	ClearView();
 	View = EISView::Title;
-	SetPlanet(Planet, TEX_EARTH, 6000.f, FVector(0, 0, -6650.f));
+	SetEarth(Planet, 6000.f, FVector(0, 0, -6650.f), true);
 	PlanetAtmo->SetWorldScale3D(FVector(6150.f / 50.f));
 	PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation());
 	PlanetAtmo->SetVisibility(true);
@@ -483,13 +377,12 @@ void AISSpaceScene::ShowWorkshop(const FISDesign& D)
 {
 	ClearView();
 	View = EISView::Workshop;
-	SetPlanet(Planet, TEX_EARTH, 6000.f, FVector(-1500, 0, -7000.f));
+	SetEarth(Planet, 6000.f, FVector(-1500, 0, -7000.f), true);
 	PlanetAtmo->SetWorldScale3D(FVector(6150.f / 50.f));
 	PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation());
 	PlanetAtmo->SetVisibility(true);
 	BuildSatellite(SatRoot, D, SatParts);
-	BitRoot->SetVisibility(true, true);
-	BitHome = FVector(80, -220, 110); BitBaseScale = 0.7f;
+	BitRoot->SetVisibility(false, true);   // you are BIT: no robot in your own view
 	SetCameraTarget(FVector(0, -60, 20), 1000.f, 205.f, -12.f, 250.f, 4000.f);
 }
 
@@ -497,7 +390,7 @@ void AISSpaceScene::ShowCompare(const FISDesign& D, const FString& RealMesh, con
 {
 	ClearView();
 	View = EISView::Compare;
-	SetPlanet(Planet, TEX_EARTH, 6000.f, FVector(-1500, 0, -7000.f));
+	SetEarth(Planet, 6000.f, FVector(-1500, 0, -7000.f), true);
 	PlanetAtmo->SetWorldScale3D(FVector(6150.f / 50.f));
 	PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation());
 	PlanetAtmo->SetVisibility(true);
@@ -518,7 +411,7 @@ void AISSpaceScene::ShowModelOnly(const FString& MeshPath, const FString& Label)
 {
 	ClearView();
 	View = EISView::Compare;
-	SetPlanet(Planet, TEX_EARTH, 6000.f, FVector(-1500, 0, -7000.f));
+	SetEarth(Planet, 6000.f, FVector(-1500, 0, -7000.f), true);
 	PlanetAtmo->SetWorldScale3D(FVector(6150.f / 50.f));
 	PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation());
 	PlanetAtmo->SetVisibility(true);
@@ -665,63 +558,82 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	}
 	else
 	{
+		// TRUE SCALE: 1 unit = 1 cm, real planet sizes and orbit radii (Unreal large-world coordinates)
 		const bool bMoon = Dest == EISDest::Moon;
-		ViewK = 1.f;
-		const float Rb = bMoon ? 1737.4f : 6371.f;
+		bTrueScale = true;
+		ViewK = 1.0e5f;                                  // uu per km
+		const double K = ViewK;
+		const double Rb = bMoon ? 1737.4 : 6371.0;
+		const double Mu = bMoon ? 4902.8 : 398600.4418;
+		const double Rorb = Rb + AltKm;
+		PeriodS = 2.0 * PI * FMath::Sqrt(Rorb * Rorb * Rorb / Mu);
+		Sky->SetWorldScale3D(FVector(1.0e9f));          // star sphere follows the camera, radius 500,000 km
 		if (bMoon)
 		{
-			SetPlanet(Moon, TEX_MOON, Rb, FVector::ZeroVector);
-			SetPlanet(Planet, TEX_EARTH, 6371.f, FVector(-384400.f, 0, 0));
-			PlanetAtmo->SetWorldScale3D(FVector(6500.f / 50.f)); PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation()); PlanetAtmo->SetVisibility(true);
-			AddLabel(TEXT("Earth: 384,400 km away (1.3 light-seconds)"), FVector(-384400.f, 0, 9000.f), FColor::White);
-			AddLabel(TEXT("South pole: permanently shadowed craters (ice?)"), FVector(0, 0, -Rb * 1.25f), FColor(170, 210, 255));
-			for (int32 i = 0; i < 6; ++i)
-			{
-				const float A = FMath::DegreesToRadians(i * 60.f);
-				AddMesh(SceneRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(FMath::Cos(A) * 150.f, FMath::Sin(A) * 150.f, -Rb * 0.99f), FVector(0.8f)), FLinearColor(0.2f, 1.f, 0.4f), true, 4.f, nullptr);
-			}
-			AddLabel(TEXT("Candidate landing sites"), FVector(0, 0, -Rb * 1.12f), FColor(120, 255, 150));
-			SatSize = 140.f;
+			SetPlanet(Moon, TEX_MOON, (float)(Rb * K), FVector::ZeroVector);
+			if (UStaticMesh* Hi = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) Moon->SetStaticMesh(Hi);
+			SetEarth(Planet, (float)(6371.0 * K), FVector(-384400.0 * K, 0, 0), true);
+			PlanetAtmo->SetWorldScale3D(FVector((float)(6371.0 * 1.015 * K / 50.0))); PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation()); PlanetAtmo->SetVisibility(true);
+			AddLabel(TEXT("Earth: 384,400 km away (1.3 light-seconds)"), FVector(-384400.0 * K, 0, 9000.0 * K), FColor::White);
+			AddLabel(TEXT("South pole: permanently shadowed craters (ice?)"), FVector(0, 0, -Rb * 1.25 * K), FColor(170, 210, 255));
 		}
 		else
 		{
-			SetPlanet(Planet, TEX_EARTH, Rb, FVector::ZeroVector);
-			PlanetAtmo->SetWorldScale3D(FVector(Rb * 1.02f / 50.f)); PlanetAtmo->SetWorldLocation(FVector::ZeroVector); PlanetAtmo->SetVisibility(true);
-			BuildEarthPopulation(1.f);
-			SatSize = FMath::Clamp(AltKm * 0.04f, 250.f, 1200.f);
-		}
-		const float R = Rb + AltKm;
-		OrbitRadiusUU = R;
-		OrbitInc = IncDeg;
-		AddOrbitRing(R, IncDeg, 20.f, Mine, 220, bMoon ? 0.2f : FMath::Clamp(R / 6000.f, 0.6f, 4.f));
-		if (Fleet > 1)
-		{
-			const int32 Planes = FMath::Clamp(Fleet / 12, 2, 12);
-			UInstancedStaticMeshComponent* I = AddDots(MCube, Mine, 3.f);
-			for (int32 i = 0; i < Fleet; ++i)
+			SetEarth(Planet, (float)(Rb * K), FVector::ZeroVector, true);
+			PlanetAtmo->SetWorldScale3D(FVector((float)(Rb * 1.015 * K / 50.0))); PlanetAtmo->SetWorldLocation(FVector::ZeroVector); PlanetAtmo->SetVisibility(true);
+			SetPlanet(Moon, TEX_MOON, (float)(1737.4 * K), FVector(0, 384400.0 * K, 0));
+			// real populations as screen-size points: GPS + Galileo (MEO), GEO belt, Starlink-like LEO shells, ISS
+			FRandomStream R(1972);
+			auto Add = [this](double Rkm, double Inc, double Raan, double Ph, double MuL, FColor C, float Sz)
 			{
-				const int32 Pn = i % Planes;
-				const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(Pn * 360.f / Planes)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(IncDeg));
-				const float A = 2.f * PI * (i / Planes) / FMath::Max(1, Fleet / Planes) + Pn * 0.3f;
-				I->AddInstance(FTransform(FRotator::ZeroRotator, Q.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * R), FVector(1.6f)));
-			}
-			AddLabel(FString::Printf(TEXT("Your fleet: %d satellites in %d planes"), Fleet, Planes), FVector(0, 0, R * 1.15f), FColor(255, 160, 60));
+				FTruePt P; P.R = Rkm * 1.0e5; P.Inc = Inc; P.Raan = Raan; P.Phase = Ph; P.Rate = FMath::Sqrt(MuL / (Rkm * Rkm * Rkm)); P.C = C; P.Size = Sz; TruePts.Add(P);
+			};
+			for (int32 p = 0; p < 6; ++p) for (int32 k = 0; k < 4; ++k) Add(26571.0, 55.0, p * 60.0, FMath::DegreesToRadians(k * 90.0 + p * 15.0), Mu, FColor(255, 215, 80), 5.f);
+			for (int32 p = 0; p < 3; ++p) for (int32 k = 0; k < 8; ++k) Add(29600.0, 56.0, p * 120.0 + 30.0, FMath::DegreesToRadians(k * 45.0), Mu, FColor(255, 190, 60), 5.f);
+			for (int32 i = 0; i < 400; ++i) Add(42164.0, R.FRandRange(-0.1f, 0.1f), 0.0, R.FRandRange(0.f, 2.f * PI), Mu, FColor(230, 230, 255), 3.f);
+			const double Incs[] = { 43.0, 53.0, 70.0, 97.6 };
+			for (int32 i = 0; i < 1800; ++i) Add(6371.0 + R.FRandRange(530.f, 570.f), Incs[R.RandRange(0, 3)], R.FRandRange(0.f, 360.f), R.FRandRange(0.f, 2.f * PI), Mu, FColor(120, 190, 255), 2.f);
+			Add(6371.0 + 420.0, 51.6, 40.0, 0.5, Mu, FColor(255, 255, 255), 7.f);
+			AddLabel(TEXT("GNSS: GPS 20,200 km / Galileo 23,222 km"), FVector(0, 0, 27500.0 * K), FColor(255, 215, 80));
+			AddLabel(TEXT("GEO belt 35,786 km"), FVector(42164.0 * K, 0, 3000.0 * K), FColor(230, 230, 255));
+			AddLabel(TEXT("LEO: 11,000+ Starlink satellites"), FVector(0, -7800.0 * K, 2000.0 * K), FColor(130, 200, 255));
+			AddLabel(TEXT("Moon"), FVector(0, 384400.0 * K, 4000.0 * K), FColor::White);
 		}
-		const float Dist = bMoon ? 7000.f : FMath::Max(24000.f, R * 3.2f);
-		SetCameraTarget(FVector::ZeroVector, Dist, 210.f, -22.f, bMoon ? 2500.f : 9000.f, bMoon ? 450000.f : 200000.f);
+		OrbitRadiusUU = (float)(Rorb * K);
+		OrbitInc = IncDeg;
+		PlanetRUU = (float)(Rb * K);
+		const double Dist = Rorb * K * 3.0;
+		SetCameraTarget(FVector::ZeroVector, (float)Dist, 210.f, -22.f, 50.f, (float)(Rorb * K * 40.0));
 	}
 
 	// the player's spacecraft, scaled up so it is visible (not to scale!)
 	BuildSatellite(SatRoot, D, SatParts);
-	SatRoot->SetRelativeScale3D(FVector(SatSize / 150.f));
-	AddMesh(SatRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, 120.f), FVector(0.3f)), FLinearColor(1.f, 0.55f, 0.15f, 1.f), true, 6.f, &SatParts);
+	if (bTrueScale)
+	{
+		// real size of the bus (the model's bus is 100 units across)
+		RealSatCm = 150.f;
+		for (const FName& Id : D.Parts)
+		{
+			const FString S = Id.ToString();
+			if (S == TEXT("bus_can")) RealSatCm = 6.6f; else if (S == TEXT("bus_1u")) RealSatCm = 10.f; else if (S == TEXT("bus_3u") || S == TEXT("bus_6u")) RealSatCm = 10.f;
+			else if (S == TEXT("bus_small")) RealSatCm = 70.f; else if (S == TEXT("bus_med")) RealSatCm = 150.f; else if (S == TEXT("bus_geo")) RealSatCm = 250.f;
+			else if (S == TEXT("bus_deep")) RealSatCm = 250.f; else if (S == TEXT("bus_ultra")) RealSatCm = 50.f;
+		}
+		SatRoot->SetRelativeScale3D(FVector(RealSatCm / 100.f));
+		SatSize = RealSatCm * 1.6f;
+	}
+	else
+	{
+		SatRoot->SetRelativeScale3D(FVector(SatSize / 150.f));
+		AddMesh(SatRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, 120.f), FVector(0.3f)), FLinearColor(1.f, 0.55f, 0.15f, 1.f), true, 6.f, &SatParts);
+	}
 	SetMissionTime(0.0, 1.0, 100.0, true);
 	LastSatSize = SatSize;
 	MapDist = CamDistGoal;
-	PlanetRUU = Dest == EISDest::Moon ? 1737.4f : 6371.f;
+	if (!bTrueScale) PlanetRUU = Dest == EISDest::Moon ? 1737.4f : 6371.f;
 	const bool bNear = Dest != EISDest::Backyard && Dest != EISDest::Interstellar && Dest != EISDest::Jupiter;
 	bFollow = bNear;
-	if (bFollow) { CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; }
+	if (bFollow) { CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
 }
 
 void AISSpaceScene::ToggleMap()
@@ -729,7 +641,7 @@ void AISSpaceScene::ToggleMap()
 	if (View != EISView::Orbit) return;
 	bFollow = !bFollow;
 	CamDistGoal = bFollow ? LastSatSize * 5.f : MapDist;
-	CamMin = bFollow ? LastSatSize * 1.2f : 2000.f;
+	CamMin = bFollow ? LastSatSize * 1.2f : (bTrueScale ? PlanetRUU * 0.2f : 2000.f);
 }
 
 FString AISSpaceScene::LaunchCaption() const
@@ -759,7 +671,11 @@ void AISSpaceScene::StartLaunch(bool bHeavy)
 	else AddMesh(RocketRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(Size / 900.f, Size / 900.f, Size / 100.f)), FLinearColor(0.95f, 0.95f, 0.95f), false, 0.f, nullptr);
 	AddMesh(RocketRoot, MCone, FTransform(FRotator(180, 0, 0), FVector(0, 0, -Size * 0.62f), FVector(Size / 500.f, Size / 500.f, Size / 220.f)), FLinearColor(1.f, 0.55f, 0.15f), true, 9.f, nullptr);
 	const FVector Sat = SatRoot->GetRelativeLocation();
-	const FVector Dir = FQuat(FVector::UpVector, FMath::DegreesToRadians(-50.f)).RotateVector(Sat.GetSafeNormal());
+	// launch from the sunlit side of Earth
+	const FVector ToSun = -SunLight->GetForwardVector();
+	FVector Dir = FQuat(FVector::UpVector, FMath::DegreesToRadians(-50.f)).RotateVector(Sat.GetSafeNormal());
+	if (FVector::DotProduct(Dir, ToSun) < 0.f) Dir = FQuat(FVector::UpVector, FMath::DegreesToRadians(50.f)).RotateVector(Sat.GetSafeNormal());
+	if (FVector::DotProduct(Dir, ToSun) < 0.f) Dir = (Dir + ToSun).GetSafeNormal();
 	LaunchSite = Dir * PlanetRUU;
 	RocketPrev = LaunchSite;
 	RocketRoot->SetRelativeLocation(LaunchSite);
@@ -803,12 +719,14 @@ void AISSpaceScene::SetMissionTime(double Day, double EndDay, double PeriodMin, 
 	default:
 	{
 		const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
-		Pos = Q.RotateVector(FVector(FMath::Cos(Ang), FMath::Sin(Ang), 0) * OrbitRadiusUU);
+		const float A2 = bTrueScale ? (float)(2.0 * PI * FMath::Fmod(Day * 86400.0 / FMath::Max(1.0, PeriodS), 1.0)) : Ang;
+		Pos = Q.RotateVector(FVector(FMath::Cos(A2), FMath::Sin(A2), 0) * OrbitRadiusUU);
 		break;
 	}
 	}
 	SatRoot->SetRelativeLocation(Pos);
 	SatRoot->SetRelativeRotation((-Pos).Rotation());
+	MissionDay = Day;
 	if (ViewDest == EISDest::Backyard) BitRoot->SetWorldLocation(BitHome);
 }
 
@@ -848,12 +766,29 @@ void AISSpaceScene::Tick(float Dt)
 	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter && CamDistGoal < OrbitRadiusUU * 0.9f)
 		CamFocusGoal = SatRoot->GetComponentLocation();
 	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard) CamFocusGoal = ViewDest == EISDest::Jupiter ? CamFocusGoal : FVector::ZeroVector;
-	const FRotator CR(CamPitch, CamYaw, 0.f);
-	const FVector CamLoc = CamFocus - CR.Vector() * CamDist;
+	FRotator CR(CamPitch, CamYaw, 0.f);
+	FVector CamLoc = CamFocus - CR.Vector() * CamDist;
+	if (View == EISView::Orbit && bTrueScale && bFollow)
+	{
+		// follow camera in the satellite's local frame: behind it along its path, Earth's horizon below
+		const FVector SatPos = LaunchT >= 0.f && RocketRoot ? RocketRoot->GetComponentLocation() : SatRoot->GetComponentLocation();
+		const FVector Up = SatPos.GetSafeNormal();
+		const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+		const FVector N = Q.RotateVector(FVector::UpVector);
+		const FVector Fwd = FVector::CrossProduct(N, Up).GetSafeNormal();
+		const FVector Right = FVector::CrossProduct(Up, Fwd);
+		const FVector L = FRotator(FollowPitch, FollowYaw, 0.f).Vector();
+		const FVector Dir = (Fwd * L.X + Right * L.Y + Up * L.Z).GetSafeNormal();
+		CamLoc = SatPos - Dir * CamDist;
+		CR = FRotationMatrix::MakeFromXZ(Dir, Up).Rotator();
+	}
 	if (Camera) Camera->SetActorLocationAndRotation(CamLoc, CR);
 
+	if (bTrueScale) TickTrueScale(Dt);
+	if (bTrueScale) Sky->SetWorldLocation(CamLoc);
+
 	// planets spin
-	if (Planet->IsVisible()) Planet->AddLocalRotation(FRotator(0, Dt * (View == EISView::Orbit ? 3.f : 0.6f), 0));
+	if (Planet->IsVisible() && !bTrueScale) Planet->AddLocalRotation(FRotator(0, Dt * (View == EISView::Orbit ? 3.f : 0.6f), 0));
 	if (Moon->IsVisible()) Moon->AddLocalRotation(FRotator(0, Dt * 0.5f, 0));
 
 	// labels face the camera and keep a readable size
@@ -864,6 +799,13 @@ void AISSpaceScene::Tick(float Dt)
 		const FVector P = L->GetComponentLocation();
 		L->SetWorldRotation((CamLoc - P).Rotation());
 		L->SetWorldSize(FMath::Max(8.f, FVector::Dist(CamLoc, P) * 0.014f));
+	}
+
+	// follow view and launch: only your spacecraft, no clutter (the orbit map shows everything)
+	{
+		const bool bClean = View == EISView::Orbit && (bFollow || LaunchT >= 0.f);
+		for (UInstancedStaticMeshComponent* C : DotSets) if (C) C->SetVisibility(!bClean);
+		for (UStaticMeshComponent* C : RealParts) if (C) C->SetVisibility(!bClean || View != EISView::Orbit);
 	}
 
 	// LEO swarm motion
@@ -901,4 +843,38 @@ void AISSpaceScene::Tick(float Dt)
 		const float Blink = FMath::Fmod(T, 4.2f) < 0.12f ? 0.1f : 1.f;
 		if (BitIris) BitIris->SetRelativeScale3D(FVector(0.42f, 0.42f * Blink, 0.04f));
 	}
+}
+
+
+// True-scale overlay: orbit line + other satellites as screen-size points (KSP-style map), real orbital speeds.
+void AISSpaceScene::TickTrueScale(float Dt)
+{
+	if (!Lines || View != EISView::Orbit) return;
+	Lines->Flush();
+	const double T = MissionDay * 86400.0;
+	// Earth turns once per sidereal day
+	if (Planet->IsVisible() && ViewDest != EISDest::Moon) Planet->SetWorldRotation(FRotator(0, 200.f + (float)FMath::Fmod(T / 86164.0 * 360.0, 360.0), 0));
+	if (CloudShell && CloudShell->IsVisible()) CloudShell->SetWorldRotation(FRotator(0, 200.f + (float)FMath::Fmod(T / 80000.0 * 360.0, 360.0), 0));
+	// your orbit
+	const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+	const int32 N = 256;
+	FVector Prev = Q.RotateVector(FVector(OrbitRadiusUU, 0, 0));
+	for (int32 i = 1; i <= N; ++i)
+	{
+		const float A = 2.f * PI * i / N;
+		const FVector P = Q.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * OrbitRadiusUU);
+		Lines->DrawLine(Prev, P, FLinearColor(1.f, 0.55f, 0.15f), SDPG_World, 0.f, 0.f);
+		Prev = P;
+	}
+	// everyone else: points that keep a constant size on screen
+	const bool bMap = !bFollow;
+	for (const FTruePt& P : TruePts)
+	{
+		const double A = P.Phase + P.Rate * T;
+		const FQuat Qp = FQuat(FVector::UpVector, FMath::DegreesToRadians((float)P.Raan)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians((float)P.Inc));
+		const FVector Pos = Qp.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * P.R);
+		Lines->DrawPoint(Pos, FLinearColor(P.C), bMap ? P.Size : P.Size * 0.6f, SDPG_World, 0.f);
+	}
+	// your spacecraft marker in the map
+	if (bMap) Lines->DrawPoint(SatRoot->GetComponentLocation(), FLinearColor(1.f, 0.55f, 0.15f), 10.f, SDPG_Foreground, 0.f);
 }

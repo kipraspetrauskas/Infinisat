@@ -150,7 +150,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISScreen="), DevScreen))
 	{
 		if (DevScreen == TEXT("launch")) Go(EScreen::Launch);
-		else if (DevScreen == TEXT("ops")) { StartOps(); Warp = 10.f; }
+		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); }
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
 		else if (DevScreen == TEXT("missions")) Go(EScreen::Missions);
@@ -178,8 +178,8 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 	}
 	if (Screen == EScreen::Ops && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
 	{
-		const double Rate = FMath::Max(Ops.EndDay / 45.0, 1e-6);
-		if (Ops.Advance(Rate * Warp * Dt)) bDirty = true;
+		// real time: 1x = one second per second; Warp multiplies
+		if (Ops.Advance(Warp * Dt / 86400.0)) bDirty = true;
 		if (Ops.IsFinished() && Scene.IsValid()) Scene->SetBitMood(Ops.Stars >= 2 ? 1 : 2);
 	}
 	if (Screen == EScreen::Ops && Scene.IsValid())
@@ -359,6 +359,7 @@ void SISGameUI::StartOps()
 	Eval = ISSim::Evaluate(Design, Mission());
 	Ops.Start(Design, Mission(), Eval, RunSeed++);
 	bAckFinish = false; bRecorded = false; LastReportPath.Reset();
+	Warp = 100.f;
 	Warp = 1.f;
 	QuizAnswers.Init(-1, Mission().Quiz.Num());
 	Go(EScreen::Ops);
@@ -635,7 +636,7 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 			})
 			[
 				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()[Txt((bSel ? TEXT("> ") : TEXT("")) + P.Name + (bOpen ? FString() : FString::Printf(TEXT("  (unlocks Ch.%d)"), P.Unlock)), 12, CText, bSel)]
+				+ SVerticalBox::Slot().AutoHeight()[Txt((bSel ? TEXT("> ") : TEXT("")) + P.Name + (bOpen ? FString() : (!OwnsCat(P.Cat) ? FString(TEXT("  (another player decides)")) : FString::Printf(TEXT("  (unlocks Ch.%d)"), P.Unlock))), 12, CText, bSel)]
 				+ SVerticalBox::Slot().AutoHeight()[Txt(Stats, 12, CDim)]
 			]
 		];
@@ -833,11 +834,17 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
 							[
 								SNew(SHorizontalBox)
-								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("||"), 0.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("x1"), 1.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("x3"), 3.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("x10"), 10.f)]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("||"), 0.f)]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("1x"), 1.f)]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("100x"), 100.f)]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("10k"), 1.0e4f)]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("1M"), 1.0e6f)]
 							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)
+							[
+								Btn(TEXT("Warp to next event  >>"), [this]() { const double Nx = Ops.NextEventDay(); if (Nx > Ops.Day) { Ops.Advance(Nx - Ops.Day + 1e-6); bDirty = true; } }, 0, 12)
+							]
+							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("Time runs in real time at 1x (like KSP). One orbit of a low satellite takes ~95 minutes: try 100x."), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Battery"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)Ops.Battery); }).FillColorAndOpacity(COk)]]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Spacecraft health"), 12, CDim)]

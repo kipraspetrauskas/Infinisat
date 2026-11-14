@@ -15,6 +15,7 @@ class UStaticMesh;
 class ACameraActor;
 class UDirectionalLightComponent;
 class UMaterialInstanceDynamic;
+class ULineBatchComponent;
 
 enum class EISView : uint8 { Title, Workshop, Orbit, Compare };
 
@@ -108,6 +109,15 @@ private:
 
 	EISView View = EISView::Title;
 	bool bFollow = true;
+	bool bTrueScale = false;            // Earth/Moon views: real sizes and distances (cm)
+	float RealSatCm = 200.f;
+	double PeriodS = 5600.0;
+	UPROPERTY() ULineBatchComponent* Lines = nullptr;
+	UPROPERTY() UStaticMeshComponent* CloudShell = nullptr;
+	struct FTruePt { double R, Inc, Raan, Phase, Rate; FColor C; float Size; };
+	TArray<FTruePt> TruePts;
+	void SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVector& Pos, bool bClouds);
+	void TickTrueScale(float Dt);
 	float LaunchT = -1.f;
 	float LastSatSize = 400.f, MapDist = 30000.f, PlanetRUU = 6371.f;
 	FVector LaunchSite = FVector::ZeroVector, RocketPrev = FVector::ZeroVector;
@@ -121,6 +131,8 @@ private:
 	int32 BitMood = 0;
 	float BitBaseScale = 1.f;
 	FVector BitHome = FVector::ZeroVector;
+	double MissionDay = 0.0;
+	float FollowYaw = 25.f, FollowPitch = -18.f;
 
 	// camera state
 	FVector CamFocus = FVector::ZeroVector, CamFocusGoal = FVector::ZeroVector;

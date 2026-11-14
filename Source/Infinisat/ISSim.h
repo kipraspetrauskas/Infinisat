@@ -121,6 +121,7 @@ public:
 	bool Advance(double DeltaDays);
 	bool IsPaused() const { return bAwaitingChoice || bFinished; }
 	bool IsFinished() const { return bFinished; }
+	double NextEventDay() const { return Queue.IsValidIndex(Next) ? Queue[Next].Day : EndDay; }
 	bool AwaitingChoice() const { return bAwaitingChoice; }
 	const FISEvent& PendingEvent() const { return Pending; }
 	const TArray<FISChoice>& Choices() const { return PendingChoices; }

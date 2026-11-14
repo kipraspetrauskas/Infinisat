@@ -38,7 +38,7 @@ def import_textures():
         (os.path.join(RAW, "T_Moon.jpg"), "T_Moon", False),
         (os.path.join(RAW, "T_Jupiter.jpg"), "T_Jupiter", False),
         (os.path.join(RAW, "T_Stars.jpg"), "T_Stars", False),
-        (os.path.join(DOCS, "Logo.jpg"), "T_UI_Logo", True),
+        (os.path.join(DOCS, "Logo.png"), "T_UI_Logo", True),
         (os.path.join(DOCS, "Character more detail.jpg"), "T_UI_Bit", True),
     ]
     for src, name, ui in tex:

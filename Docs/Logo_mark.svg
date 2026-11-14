@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Infinisat mark</title>
+  <defs>
+    <radialGradient id="earth" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#5aa8ff"/>
+      <stop offset="0.65" stop-color="#2569c9"/>
+      <stop offset="1" stop-color="#123a7a"/>
+    </radialGradient>
+    <linearGradient id="path" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#4fd1ff"/>
+    </linearGradient>
+    <clipPath id="globe"><circle cx="186" cy="334" r="128"/></clipPath>
+    <clipPath id="front"><rect x="-20" y="334" width="420" height="80"/></clipPath>
+  </defs>
+
+  <!-- stars -->
+  <g fill="#ffffff">
+    <circle cx="70" cy="80" r="2.2"/><circle cx="140" cy="140" r="1.4"/><circle cx="250" cy="60" r="1.8"/>
+    <circle cx="470" cy="250" r="2"/><circle cx="440" cy="400" r="1.4"/><circle cx="330" cy="230" r="1.2"/>
+    <circle cx="60" cy="210" r="1.2"/><circle cx="485" cy="40" r="1.6"/>
+  </g>
+
+  <!-- parking orbit: back half (behind Earth) -->
+  <ellipse cx="186" cy="334" rx="182" ry="58" transform="rotate(-24 186 334)" fill="none" stroke="#4fd1ff" stroke-width="4" stroke-opacity="0.35"/>
+
+  <!-- Earth -->
+  <circle cx="186" cy="334" r="128" fill="url(#earth)"/>
+  <g clip-path="url(#globe)" fill="#3fbf7a">
+    <!-- stylised Americas: French Guiana sits on the north-east coast of South America -->
+    <path d="M150 230 C175 222 205 232 214 252 C222 270 238 276 246 292 C254 310 236 330 226 352 C216 376 214 404 196 430 C186 444 176 440 178 420 C180 396 170 376 160 356 C150 336 132 324 136 300 C140 278 128 262 132 248 C135 238 140 234 150 230 Z"/>
+    <path d="M96 196 C122 186 150 196 160 214 C150 222 132 222 120 232 C108 242 92 238 86 224 C82 212 86 202 96 196 Z"/>
+    <path d="M286 300 C300 296 312 306 312 322 C312 340 300 352 290 346 C282 340 278 312 286 300 Z" opacity="0.85"/>
+  </g>
+  <!-- terminator shading -->
+  <circle cx="186" cy="334" r="128" fill="none" stroke="#0b1e3f" stroke-opacity="0.35" stroke-width="18" clip-path="url(#globe)"/>
+  <!-- atmosphere rim -->
+  <circle cx="186" cy="334" r="131" fill="none" stroke="#9fdcff" stroke-width="3" stroke-opacity="0.8"/>
+
+  <!-- parking orbit: front half (in front of Earth) -->
+  <g transform="rotate(-24 186 334)" clip-path="url(#front)">
+    <ellipse cx="186" cy="334" rx="182" ry="58" fill="none" stroke="#4fd1ff" stroke-width="4"/>
+  </g>
+
+  <!-- launch site: Guiana Space Centre, Kourou -->
+  <circle cx="214" cy="254" r="11" fill="#ffb347" fill-opacity="0.35"/>
+  <circle cx="214" cy="254" r="5.5" fill="#ffb347"/>
+
+  <!-- departure trajectory: launch, swing around Earth, escape to deep space -->
+  <path d="M214 254 C 244 186 300 168 344 164" fill="none" stroke="url(#path)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M214 254 C 244 186 300 168 344 164" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.6" stroke-linecap="round"/>
+
+  <!-- destination halo -->
+  <circle cx="392" cy="118" r="66" fill="#0b1e3f" fill-opacity="0.6" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- satellite with solar sail (diamond sail, four booms) -->
+  <g transform="translate(392 118) rotate(-20)">
+    <polygon points="0,-50 50,0 0,50 -50,0" fill="#ffc94a" fill-opacity="0.92" stroke="#fff3c4" stroke-width="2"/>
+    <polygon points="0,-50 50,0 0,0" fill="#ffffff" fill-opacity="0.18"/>
+    <polygon points="0,50 -50,0 0,0" fill="#000000" fill-opacity="0.12"/>
+    <g stroke="#7a5a12" stroke-width="2.4" stroke-linecap="round">
+      <line x1="0" y1="-50" x2="0" y2="50"/>
+      <line x1="-50" y1="0" x2="50" y2="0"/>
+    </g>
+    <rect x="-8" y="-8" width="16" height="16" rx="2" fill="#ffffff" stroke="#0b1e3f" stroke-width="2"/>
+    <circle cx="0" cy="0" r="3" fill="#4fd1ff"/>
+  </g>
+</svg>

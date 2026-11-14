@@ -1,4 +1,5 @@
 #include "ISGame.h"
+#include "Infinisat.h"
 #include "ISScene.h"
 #include "ISWorld.h"
 #include "ISBit.h"
@@ -42,7 +43,9 @@ void AISPlayerController::BeginPlay()
 		GEngine->GameViewport->AddViewportWidgetContent(UIContainer.ToSharedRef(), 10);
 	}
 	EnterMenu();
-	if (FParse::Param(FCommandLine::Get(), TEXT("ISWorld"))) EnterWorld();
+	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld"));
+	UE_LOG(LogInfinisat, Log, TEXT("PC BeginPlay: world=%d scene=%d ui=%d arg=%d"), World != nullptr, Scene != nullptr, UI.IsValid(), bWorldArg);
+	if (bWorldArg) EnterWorld();
 }
 
 void AISPlayerController::EndPlay(const EEndPlayReason::Type Reason)
@@ -72,6 +75,7 @@ void AISPlayerController::SetCursorMode(bool bCursor)
 
 void AISPlayerController::EnterMenu()
 {
+	UE_LOG(LogInfinisat, Log, TEXT("EnterMenu"));
 	Mode = EISMode::Menu;
 	if (World) World->SetActive(false);
 	if (Bit) Bit->SetActorHiddenInGame(true);
@@ -92,6 +96,7 @@ void AISPlayerController::EnterWorld()
 		SetControlRotation(World->SpawnPoint().Rotator());
 	}
 	if (Bit) { Bit->SetActorHiddenInGame(false); SetViewTarget(Bit); }
+	UE_LOG(LogInfinisat, Log, TEXT("EnterWorld: bit=%d"), Bit != nullptr);
 	Mode = EISMode::Walk;
 	SetCursorMode(false);
 	if (PlayerCameraManager) PlayerCameraManager->StartCameraFade(1.f, 0.f, 1.2f, FLinearColor::Black, false, false);

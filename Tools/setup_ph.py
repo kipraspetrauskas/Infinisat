@@ -193,6 +193,21 @@ def import_models():
                     unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(mi, "Tex", tex)
                 eal.save_loaded_asset(mi)
                 mesh.set_material(i, mi)
+            # automatic LODs so hundreds of trees stay cheap at distance
+            if aid in ("fir_tree_01", "pine_tree_01", "tree_small_02", "shrub_01", "shrub_02", "shrub_04", "boulder_01"):
+                opts = unreal.EditorScriptingMeshReductionOptions()
+                opts.auto_compute_lod_screen_size = False
+                opts.reduction_settings = [
+                    unreal.EditorScriptingMeshReductionSettings(1.0, 1.0),
+                    unreal.EditorScriptingMeshReductionSettings(0.25, 0.5),
+                    unreal.EditorScriptingMeshReductionSettings(0.06, 0.2),
+                    unreal.EditorScriptingMeshReductionSettings(0.015, 0.06),
+                ]
+                try:
+                    n = unreal.EditorStaticMeshLibrary.set_lods(mesh, opts)
+                    log("lods", aid, n)
+                except Exception as e:
+                    log("lod fail", aid, e)
             eal.save_loaded_asset(mesh)
         log("model", aid)
 

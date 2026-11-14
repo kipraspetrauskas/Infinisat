@@ -352,8 +352,8 @@ void AISHomeWorld::BuildNature()
 		AllComps.Add(H);
 	};
 	const FVector C(7500, 1200, 0);
-	Scatter(TEXT("fir_tree_01"), 220, 3000.f, 60000.f, C, 0.8f, 1.3f, 120000.f);
-	Scatter(TEXT("pine_tree_01"), 160, 3000.f, 60000.f, C, 0.8f, 1.2f, 120000.f);
+	Scatter(TEXT("fir_tree_01"), 150, 3000.f, 60000.f, C, 0.8f, 1.3f, 120000.f);
+	Scatter(TEXT("pine_tree_01"), 70, 3000.f, 60000.f, C, 0.8f, 1.2f, 120000.f);
 	Scatter(TEXT("tree_small_02"), 90, 1600.f, 25000.f, C, 0.9f, 1.4f, 60000.f);
 	Scatter(TEXT("shrub_01"), 150, 1500.f, 30000.f, C, 0.8f, 1.5f, 20000.f);
 	Scatter(TEXT("shrub_02"), 150, 1500.f, 30000.f, C, 0.8f, 1.5f, 20000.f);

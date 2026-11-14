@@ -30,7 +30,7 @@ public:
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
 private:
-	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause };
+	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos };
 
 	// navigation / state changes (deferred rebuild)
 	void Go(EScreen S);
@@ -51,6 +51,9 @@ private:
 	TSharedRef<SWidget> BuildOps();
 	TSharedRef<SWidget> BuildDebrief();
 	TSharedRef<SWidget> BuildPedia();
+	TSharedRef<SWidget> BuildCosmos();
+	TSharedPtr<SScrollBox> CosmosBox;
+	float CosmosScroll = 0.f;
 	TSharedRef<SWidget> BuildHelp();
 	TSharedRef<SWidget> BuildPlay();
 	TSharedRef<SWidget> BuildBench();

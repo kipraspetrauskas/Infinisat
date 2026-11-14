@@ -169,6 +169,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); }
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
+		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } }
 		else if (DevScreen == TEXT("missions")) Go(EScreen::Missions);
 		else if (DevScreen == TEXT("help")) Go(EScreen::Help);
 	}
@@ -314,6 +315,7 @@ void SISGameUI::UpdateScene()
 		break;
 	case EScreen::Debrief: Scene->ShowCompare(Design, Mission().RealMesh, Mission().RealName); break;
 	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: case EScreen::Pause: break;
+	case EScreen::Cosmos: Scene->ShowCosmos(Design); Scene->SetBitMood(1); break;
 	case EScreen::Pedia:
 		Scene->ShowModelOnly(MeshOf(Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Mesh), Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Name);
 		break;
@@ -389,6 +391,8 @@ void SISGameUI::Rebuild()
 {
 	bDirty = false;
 	if (PartsBox.IsValid()) PartsScroll = PartsBox->GetScrollOffset();
+	if (CosmosBox.IsValid()) CosmosScroll = CosmosBox->GetScrollOffset();
+	CosmosBox.Reset();
 	if (BudgetBox.IsValid()) BudgetScroll = BudgetBox->GetScrollOffset();
 	PartsBox.Reset(); BudgetBox.Reset();
 
@@ -402,6 +406,7 @@ void SISGameUI::Rebuild()
 	case EScreen::Ops: W = BuildOps(); break;
 	case EScreen::Debrief: W = BuildDebrief(); break;
 	case EScreen::Pedia: W = BuildPedia(); break;
+	case EScreen::Cosmos: W = BuildCosmos(); break;
 	case EScreen::Help: W = BuildHelp(); break;
 	case EScreen::Play: W = BuildPlay(); break;
 	case EScreen::Bench: W = BuildBench(); break;
@@ -410,6 +415,7 @@ void SISGameUI::Rebuild()
 	}
 	Root->SetContent(W);
 	if (PartsBox.IsValid()) PartsBox->SetScrollOffset(PartsScroll);
+	if (CosmosBox.IsValid()) CosmosBox->SetScrollOffset(CosmosScroll);
 	if (BudgetBox.IsValid()) BudgetBox->SetScrollOffset(BudgetScroll);
 }
 
@@ -458,6 +464,7 @@ TSharedRef<SWidget> SISGameUI::BuildTitle()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Start campaign (enter the world)"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 16)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Order board (jump to any chapter)"), [this]() { Go(EScreen::Missions); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sandbox: design anything"), [this]() { StartMission(ISData::Missions().Num() - 1); }, 0, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Cosmos explorer: fly the universe"), [this]() { Go(EScreen::Cosmos); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sat-o-pedia: real spacecraft"), [this]() { Go(EScreen::Pedia); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Settings (graphics, mouse)"), [this]() { Screen = EScreen::Pause; bDirty = true; }, 0, 14)]
@@ -1607,4 +1614,56 @@ FString SISGameUI::WriteReport(const FISScore& S)
 	const FString File = FPaths::Combine(Dir, FString::Printf(TEXT("%s_%s.html"), *M.Id.ToString(), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
 	FFileHelper::SaveStringToFile(H, *File, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 	return File;
+}
+
+// ----------------------------------------------------------------------------------------------- COSMOS EXPLORER
+TSharedRef<SWidget> SISGameUI::BuildCosmos()
+{
+	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+	const int32 N = Scene.IsValid() ? Scene->CosmosCount() : 0;
+	const int32 Sel = Scene.IsValid() ? Scene->CosmosFocusIdx() : 0;
+	FString LastGroup;
+	for (int32 i = 0; i < N; ++i)
+	{
+		const FString Grp = Scene->CosmosGroup(i);
+		if (Grp != LastGroup)
+		{
+			List->AddSlot().AutoHeight().Padding(0, LastGroup.IsEmpty() ? 0 : 10, 0, 3)[Txt(Grp.ToUpper(), 13, CAccent, true)];
+			LastGroup = Grp;
+		}
+		List->AddSlot().AutoHeight().Padding(FMath::Min(3, Scene->CosmosDepth(i)) * 14.f, 1, 0, 1)
+			[Btn(Scene->CosmosName(i), [this, i]() { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; }, i == Sel ? 2 : 0, 12)];
+	}
+	const float Rate = Scene.IsValid() ? Scene->GetCosmosRate() : 1.f;
+	TSharedRef<SHorizontalBox> Speeds = SNew(SHorizontalBox);
+	struct FSpd { const TCHAR* L; float R; } Spd[] = { { TEXT("||"), 0.f }, { TEXT("1 day/s"), 1.f }, { TEXT("1 month/s"), 30.f }, { TEXT("1 year/s"), 365.f } };
+	for (const FSpd& S : Spd)
+	{
+		const float R = S.R;
+		Speeds->AddSlot().AutoWidth().Padding(0, 0, 6, 0)[Btn(S.L, [this, R]() { if (Scene.IsValid()) Scene->SetCosmosRate(R); bDirty = true; }, FMath::IsNearlyEqual(Rate, R) ? 2 : 0, 12)];
+	}
+	Speeds->AddSlot().AutoWidth()[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels: on") : TEXT("Labels: off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 12)];
+	const FString Name = Scene.IsValid() ? Scene->CosmosName(Sel) : FString();
+	const FString Facts = Scene.IsValid() ? Scene->CosmosFacts(Sel) : FString();
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("COSMOS EXPLORER  -  click a world to fly there"))]
+		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(320)[Panel(SAssignNew(CosmosBox, SScrollBox) + SScrollBox::Slot()[List])]]
+			+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SSpacer)]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
+			[
+				SNew(SBox).WidthOverride(520)
+				[
+					Panel(
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()[Txt(Name, 18, CAccent, true)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6)[Txt(Facts, 13, CText)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 4)[Txt(TEXT("Time speed"), 12, CDim)]
+						+ SVerticalBox::Slot().AutoHeight()[Speeds]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[Txt(TEXT("Drag to look around, mouse wheel to zoom. Distances are squeezed so everything fits; sizes, tilts, spins and periods of real worlds are true to life. Worlds marked FICTIONAL are invented but follow real physics."), 11, CDim)], 16.f)
+				]
+			]
+		];
 }

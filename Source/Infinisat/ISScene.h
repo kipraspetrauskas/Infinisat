@@ -17,7 +17,9 @@ class UDirectionalLightComponent;
 class UMaterialInstanceDynamic;
 class ULineBatchComponent;
 
-enum class EISView : uint8 { Title, Workshop, Orbit, Compare };
+enum class EISView : uint8 { Title, Workshop, Orbit, Compare, Cosmos };
+class UTexture2D;
+class UPointLightComponent;
 
 UCLASS()
 class AISSpaceScene : public AActor
@@ -41,6 +43,21 @@ public:
 	void ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FISDesign& D, int32 Fleet);
 	void ShowCompare(const FISDesign& D, const FString& RealMesh, const FString& RealName);
 	void ShowModelOnly(const FString& MeshPath, const FString& Label);
+
+	// Cosmos explorer (ISCosmos.cpp): solar system, exoplanet systems, black hole, nebulae, galaxies.
+	void ShowCosmos(const FISDesign& D);
+	void FocusCosmos(int32 Idx);
+	int32 CosmosCount() const { return CosmosBodies.Num(); }
+	int32 CosmosFocusIdx() const { return CosmosSel; }
+	FString CosmosName(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Name : FString(); }
+	FString CosmosFacts(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Facts : FString(); }
+	FString CosmosGroup(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Group : FString(); }
+	int32 CosmosDepth(int32 I) const;
+	void SetCosmosRate(float DaysPerSecond) { CosmosRate = DaysPerSecond; }
+	float GetCosmosRate() const { return CosmosRate; }
+	double GetCosmosDays() const { return CosmosDays; }
+	void ToggleCosmosLabels() { bCosmosLabels = !bCosmosLabels; }
+	bool CosmosLabelsOn() const { return bCosmosLabels; }
 
 	// Operations: place the player's spacecraft along its path (0..1 of mission, orbit phase in days)
 	void SetMissionTime(double Day, double EndDay, double PeriodMin, bool bAlive);
@@ -134,6 +151,49 @@ private:
 	FVector BitHome = FVector::ZeroVector;
 	double MissionDay = 0.0;
 	float FollowYaw = 25.f, FollowPitch = -18.f;
+
+	// ---- cosmos explorer
+	struct FCosmosBody
+	{
+		FString Name, Facts, Group;
+		int32 Parent = -1;            // orbits this body (-1: fixed at Center)
+		FVector Center = FVector::ZeroVector;
+		float OrbitR = 0.f, PeriodDays = 1.f, Phase = 0.f, Inc = 0.f, Node = 0.f;
+		float Radius = 100.f, SpinDegPerDay = 0.f, Tilt = 0.f;
+		float Angle = 0.f, SpinAngle = 0.f;   // accumulated (visual speed is capped so fast moons stay watchable)
+		USceneComponent* Pivot = nullptr;   // moves along the orbit, holds everything that travels with the body
+		USceneComponent* Spinner = nullptr; // rotates (surface)
+		UMaterialInstanceDynamic* SunDirMID = nullptr; // Earth day/night material needs the sun direction
+		int32 Star = -1;                    // which star lights it
+	};
+	TArray<FCosmosBody> CosmosBodies;
+	UPROPERTY() TArray<USceneComponent*> CosmosComps;
+	UPROPERTY() TArray<USceneComponent*> CosmosBillboards;
+	UPROPERTY() TMap<FString, UTexture2D*> CosmosTexCache;
+	UPROPERTY() USceneComponent* CosmosBackdrop = nullptr;
+	UPROPERTY() UMaterialInterface* MatGlow = nullptr;
+	UPROPERTY() UMaterialInterface* MatRing = nullptr;
+	int32 CosmosSel = 0;
+	double CosmosDays = 0.0;
+	float CosmosRate = 1.f;
+	bool bCosmosLabels = true;
+	void TickCosmos(float Dt, const FVector& CamLoc);
+	void ClearCosmos();
+	UTexture2D* CosmosTex(const FString& Key, int32 W, int32 H, TFunctionRef<FLinearColor(float U, float V)> F);
+	int32 AddCosmosBody(const FString& Name, const FString& Group, int32 Parent, float OrbitR, float PeriodDays, float Radius, float SpinDegPerDay, const FString& Facts);
+	USceneComponent* CosmosNode(USceneComponent* Parent);
+	UStaticMeshComponent* CosmosSphere(USceneComponent* Parent, float Radius, UMaterialInterface* Mat, bool bHi = true);
+	void CosmosPlanetTex(int32 Body, UTexture2D* Tex, float Tilt, float Ambient = 0.03f);
+	void CosmosAtmo(int32 Body, const FLinearColor& C, float Scale, float Intensity);
+	void CosmosRing(USceneComponent* Parent, float R0, float R1, UTexture2D* Tex, bool bGlow, float Brightness, float Tilt);
+	UStaticMeshComponent* CosmosSprite(USceneComponent* Parent, const FVector& Loc, float Size, UTexture2D* Tex, const FLinearColor& C, float Intensity, bool bFaceCamera);
+	void CosmosOrbitDots(int32 Body, const FLinearColor& C);
+	int32 CosmosStar(const FString& Name, const FVector& Center, float Radius, const FLinearColor& C, float Light, const FString& Facts);
+	void CosmosLabel(int32 Body, const FString& Text, const FColor& C);
+	void BuildSolarSystem(const FISDesign& D);
+	void BuildExoSystem(int32 Seed, const FString& StarName, const FVector& Center, const FLinearColor& StarC, float StarR, const FString& StarFacts);
+	void BuildBlackHole(const FVector& Center);
+	void BuildCosmosBackdrop();
 
 	// camera state
 	FVector CamFocus = FVector::ZeroVector, CamFocusGoal = FVector::ZeroVector;

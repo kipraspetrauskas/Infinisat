@@ -247,6 +247,7 @@ void AISSpaceScene::SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVec
 
 void AISSpaceScene::ClearView()
 {
+	ClearCosmos();
 	bTrueScale = false;
 	TruePts.Reset();
 	if (Lines) Lines->Flush();
@@ -853,6 +854,7 @@ void AISSpaceScene::Tick(float Dt)
 
 	if (bTrueScale) TickTrueScale(Dt);
 	if (bTrueScale) Sky->SetWorldLocation(CamLoc);
+	if (View == EISView::Cosmos) TickCosmos(Dt, CamLoc);
 
 	// planets spin
 	if (Planet->IsVisible() && !bTrueScale) Planet->AddLocalRotation(FRotator(0, Dt * (View == EISView::Orbit ? 3.f : 0.6f), 0));
@@ -862,7 +864,7 @@ void AISSpaceScene::Tick(float Dt)
 	for (UTextRenderComponent* L : Labels)
 	{
 		if (!L) continue;
-		L->SetVisibility(!(View == EISView::Orbit && bFollow));   // follow view: clean screen, map view: labels
+		L->SetVisibility(!(View == EISView::Orbit && bFollow) && (View != EISView::Cosmos || bCosmosLabels));   // follow view: clean screen, map view: labels
 		const FVector P = L->GetComponentLocation();
 		L->SetWorldRotation((CamLoc - P).Rotation());
 		L->SetWorldSize(FMath::Max(8.f, FVector::Dist(CamLoc, P) * 0.014f));

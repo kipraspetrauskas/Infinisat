@@ -25,3 +25,17 @@ From the user's "Cosmos_Logic" PDFs (part.hpp/.cpp, pile_up.hpp/.cpp, vessel.hpp
 - Mass loss keeps the angular velocity (lost propellant carries its own angular momentum, as Principia does for solid motors).
 - History / prediction: an authoritative past trajectory and a forward-integrated prediction. Ported as `History` and
   `Predict()` (velocity-Verlet, symplectic), drawn as orange / cyan lines in the flight view.
+
+## CanSat component prices (checked 2026-11-14, qty 1, rounded; EUR x 1.08 = USD)
+| Game part | Real part | Source | Price |
+|---|---|---|---|
+| cpu_ard | Espressif ESP32-WROOM-32E-N4 (C701341) | LCSC | $3.80 |
+| com_433 | Silicontra SX1278ZTR4-GC 433 MHz LoRa (C5448471) | LCSC | $5.39 |
+| pl_temp | Aosong DHT11 (C117051) | LCSC | $1.29 |
+| ex_buzzer | TMB12A05 5 V buzzer (C96093) | LCSC | $0.19 |
+| bat_aa | MYOUNG BH-18650 holder (LCSC $1.41) + Samsung INR18650-25R cell (18650batterystore.com $4.99; neither LCSC nor Mouser sells loose cells) | | $6.40 |
+| pl_gnss_mini | u-blox MAX-M10S-00B | Mouser EU | EUR 8.41 |
+| pl_cam_mini | Olimex CAMERA-OV2640 | Mouser EU | EUR 10.48 |
+| ex_wires | Adafruit 1957 jumper wires + 2.54 mm headers (LCSC ~$0.02/pin) | Mouser EU | EUR 1.73 + $0.20 |
+| gnd_yard | second LoRa module + ESP32 + home-made Yagi | (sum of the above) | ~$15 |
+Not from a parts store (estimates): CanSat shell $5 (3D print), parachutes $5-10, hobby-rocket launch $200.

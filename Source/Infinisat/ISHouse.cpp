@@ -676,7 +676,7 @@ void AISHomeWorld::SpawnHunt()
 	Add("ex_chute_l", TEXT("Parachute (ripstop nylon)"), TEXT("Folded on the bed"), FVector(BedX, BedY, BedTopZ), true, nullptr, 1.f);
 	Add("ex_wires", TEXT("Jumper wires + pin headers"), TEXT("Garage workbench"), BenchTop + FVector(-30, 10, 0), true, TEXT("header_1x15"), 1.f);
 	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-690, 130, JunkBoxTop), false, TEXT("buzzer"), 1.f);
-	Add("pl_gnss", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
+	Add("pl_gnss_mini", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
 	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("Office desk, behind the laptop"), FVector(DeskBox.Max.X - 12.f, DeskTopY + 22.f, DeskTopZ), false, nullptr, 1.f);
 }
 

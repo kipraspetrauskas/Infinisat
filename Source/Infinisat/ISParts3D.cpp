@@ -217,7 +217,7 @@ namespace ISBuild
 			Prim(O, P, ISMat::Cyl(), B + FVector(1.21f, 0, 0.75f), FVector(0.6f, 0.6f, 0.02f), FLinearColor(0.1f, 0.2f, 0.5f), M, FRotator(90, 0, 0), 0.9f, 0.05f);
 			return 1.6f;
 		}
-		if (S == TEXT("pl_gnss"))
+		if (S == TEXT("pl_gnss") || S == TEXT("pl_gnss_mini"))
 		{
 			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.3f), FVector(2.5f, 2.5f, 0.16f), PCBBlue, M);
 			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.6f), FVector(2.2f, 2.2f, 0.45f), FLinearColor(0.85f, 0.75f, 0.55f), M);

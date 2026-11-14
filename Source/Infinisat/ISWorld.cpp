@@ -28,7 +28,7 @@ namespace
 	FString TexPath(const TCHAR* T) { return FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T); }
 	const TArray<FName>& CanSatTray()
 	{
-		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss", "pl_cam_mini", "bat_cube", "ex_chute_s", "adcs_mag", "pwr_body" };
+		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss_mini", "pl_cam_mini", "bat_cube", "ex_chute_s", "adcs_mag", "pwr_body" };
 		return T;
 	}
 	int32 StackOrder(EISCat C)
@@ -441,7 +441,7 @@ void AISHomeWorld::StartCanSatOrder(int32 Index)
 {
 	MissionIdx = Index;
 	Design = FISDesign();
-	for (const char* Id : { "bus_can", "pwr_none", "adcs_none", "prop_none", "thm_passive", "gnd_yard" }) Design.Parts.Add(FName(Id));
+	for (const char* Id : { "bus_can", "pwr_none", "adcs_none", "prop_none", "thm_none", "gnd_yard" }) Design.Parts.Add(FName(Id));
 	Design.Vehicle = "lv_hobby";
 	Design.Dest = EISDest::Backyard;
 	Eval = ISSim::Evaluate(Design, ISData::Missions()[Index]);
@@ -930,6 +930,12 @@ void AISHomeWorld::LoadProgress()
 	GConfig->GetString(Sec, TEXT("Parts"), Parts, GGameUserSettingsIni);
 	GConfig->GetInt(Sec, TEXT("Stage"), St, GGameUserSettingsIni);
 	GConfig->GetInt(Sec, TEXT("Mission"), Mi, GGameUserSettingsIni);
+	// saves from before the hobby GNSS part / the no-thermal option existed
+	Found.ReplaceInline(TEXT("pl_gnss"), TEXT("pl_gnss_mini"));
+	Found.ReplaceInline(TEXT("pl_gnss_mini_mini"), TEXT("pl_gnss_mini"));
+	Parts.ReplaceInline(TEXT("pl_gnss"), TEXT("pl_gnss_mini"));
+	Parts.ReplaceInline(TEXT("pl_gnss_mini_mini"), TEXT("pl_gnss_mini"));
+	Parts.ReplaceInline(TEXT("thm_passive"), TEXT("thm_none"));
 	TArray<FString> F; Found.ParseIntoArray(F, TEXT(","));
 	for (FISHuntItem& H : Hunt)
 		if (F.Contains(H.Part.ToString()))

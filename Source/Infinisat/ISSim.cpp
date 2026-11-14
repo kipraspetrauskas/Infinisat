@@ -522,6 +522,9 @@ namespace ISSim
 						*Fmt(RadDosePerYear(E.Dest), 1), bVault ? TEXT(" / 50 (vault)") : TEXT(""), *Fmt(Life, 1), *Fmt(E.RadDose, 1), *Fmt(E.RadTol, 0),
 						bOk ? TEXT("") : TEXT("\nFIX: radiation-hardened computer and/or a radiation vault.")));
 			}
+			if (D.GetSingle(EISCat::Thermal) == FName("thm_none") && E.Dest != EISDest::Backyard)
+				AddLine(E, TEXT("Thermal"), TEXT("none"), TEXT("passive or better"), EISStatus::Fail,
+					TEXT("In vacuum there is no air to carry heat away: the sunlit side bakes above +100 C while the shadow side drops below -100 C.\nFIX: pick at least passive thermal control (paint + insulation)."));
 			if (E.SunAU > 2.0)
 			{
 				const bool bWarm = D.HasTag(ISTag::Heaters) || Rtg > 0;

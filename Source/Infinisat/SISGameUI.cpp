@@ -350,7 +350,7 @@ void SISGameUI::StarterDesign(const FISMission& M)
 	};
 	Design = FISDesign();
 	const FName Id = M.Id;
-	if (Id == "m0") Set({ "bus_can", "pwr_none", "bat_aa", "adcs_none", "com_433", "prop_none", "cpu_ard", "thm_passive", "gnd_yard" }, "lv_hobby");
+	if (Id == "m0") Set({ "bus_can", "pwr_none", "bat_aa", "adcs_none", "com_433", "prop_none", "cpu_ard", "thm_none", "gnd_yard" }, "lv_hobby");
 	else if (Id == "m1") Set({ "bus_med", "pwr_s", "bat_s", "adcs_mtq", "com_s", "prop_none", "cpu_cube", "thm_passive", "gnd_own", "pl_clock" }, "lv_f9");
 	else if (Id == "m2") Set({ "bus_small", "pwr_s", "bat_s", "adcs_mtq", "com_s", "prop_none", "cpu_cube", "thm_passive", "gnd_own", "pl_mss" }, "lv_electron");
 	else if (Id == "m3") Set({ "bus_geo", "pwr_m", "bat_m", "adcs_rw", "com_x", "prop_hyd_l", "cpu_rh", "thm_heat", "gnd_own", "pl_wx" }, "lv_a6");
@@ -1495,7 +1495,7 @@ TSharedRef<SWidget> SISGameUI::BuildCanDebrief()
 	Add(TEXT("Survive the landing"), !R.bBroken, R.bBroken ? TEXT("Impact over 15 m/s broke it") : TEXT("Intact"));
 	Add(TEXT("Beacon still transmitting when found (2 h battery)"), R.bBeaconAlive, FString::Printf(TEXT("Battery runtime %.1f h"), Eval.RuntimeH));
 	Add(TEXT("Stay within budget"), Eval.TotalCostM <= M.BudgetM, ISSim::FmtMoney(Eval.TotalCostM));
-	Add(TEXT("BONUS: GNSS receiver (uses GPS/Galileo)"), W->Design.HasTag(ISTag::GNSSRx), TEXT("Makes finding it much easier"), true);
+	Add(TEXT("BONUS: GNSS module (GPS/Galileo)"), W->Design.HasTag(ISTag::GNSSRx), TEXT("Makes finding it much easier"), true);
 	Add(TEXT("BONUS: camera"), W->Design.HasTag(ISTag::Camera), TEXT("Pictures from the sky!"), true);
 	int32 Req = 0, Met = 0, Bonus = 0;
 	FString FirstFail;

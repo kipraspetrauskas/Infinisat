@@ -359,9 +359,23 @@ void AISHomeWorld::UpdateBenchCamera(float Dt)
 UTextureRenderTarget2D* AISHomeWorld::PartThumb(FName Id)
 {
 	if (UTextureRenderTarget2D** T = Thumbs.Find(Id)) return *T;
+	UTextureRenderTarget2D* RT = NewObject<UTextureRenderTarget2D>(this);
+	RT->RenderTargetFormat = RTF_RGBA8;
+	RT->ClearColor = FLinearColor(0.035f, 0.04f, 0.05f, 1.f);
+	RT->InitAutoFormat(192, 192);
+	RT->UpdateResourceImmediate(true);
+	Thumbs.Add(Id, RT);
+	ThumbQueue.Add(Id);   // photographed by ProcessThumbs(), one part at a time
+	return RT;
+}
+
+// Photo booth 200 m above the house. One part per round: build it (frame 0), let the renderer pick it up, capture
+// (frame 3), clear it (frame 5), next part. Only the part and a dark backdrop card are rendered (show-only list).
+void AISHomeWorld::ProcessThumbs()
+{
+	if (ThumbQueue.Num() == 0) return;
 	if (!ThumbStage)
 	{
-		// a private photo booth 200 m above the house: only the part itself is rendered (show-only list)
 		ThumbStage = NewObject<USceneComponent>(this);
 		ThumbStage->SetupAttachment(Root);
 		ThumbStage->RegisterComponent();
@@ -373,6 +387,8 @@ UTextureRenderTarget2D* AISHomeWorld::PartThumb(FName Id)
 		ThumbCam->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 		ThumbCam->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
 		ThumbCam->FOVAngle = 30.f;
+		ThumbCam->bOverride_CustomNearClippingPlane = true;   // tiny parts sit a few cm from the lens (default near clip ~10 cm cut them away)
+		ThumbCam->CustomNearClippingPlane = 0.05f;
 		ThumbCam->ShowFlags.SetAtmosphere(false);
 		ThumbCam->ShowFlags.SetFog(false);
 		ThumbCam->ShowFlags.SetVolumetricFog(false);
@@ -384,40 +400,50 @@ UTextureRenderTarget2D* AISHomeWorld::PartThumb(FName Id)
 		ThumbCam->PostProcessSettings.AutoExposureBias = 11.f;
 		ThumbCam->RegisterComponent();
 	}
-	UTextureRenderTarget2D* RT = NewObject<UTextureRenderTarget2D>(this);
-	RT->RenderTargetFormat = RTF_RGBA8;
-	RT->ClearColor = FLinearColor(0.06f, 0.08f, 0.11f, 1.f);
-	RT->InitAutoFormat(192, 192);
-	Thumbs.Add(Id, RT);
-	USceneComponent* Holder = NewObject<USceneComponent>(this);
-	Holder->SetupAttachment(ThumbStage);
-	Holder->RegisterComponent();
-	FISModel M;
-	ISBuild::CanSatPart(this, Holder, Id, FVector::ZeroVector, &M);
-	// frame the body of the part, not thin wires/antennas (they would shrink it to a dot)
-	double Big = 0;
-	for (UStaticMeshComponent* C : M.Parts) if (IsValid(C)) Big = FMath::Max(Big, C->Bounds.GetBox().GetVolume());
-	FBox B(ForceInit);
-	for (UStaticMeshComponent* C : M.Parts) if (IsValid(C) && C->Bounds.GetBox().GetVolume() >= Big * 0.01) B += C->Bounds.GetBox();
-	if (B.IsValid)
+	const FName Id = ThumbQueue[0];
+	// photograph the part lying on the bench (already on screen, so it renders); parts not on the bench are built in the booth
+	TArray<UStaticMeshComponent*> Subject;
+	if (const FISModel* T = TrayModels.Find(Id)) { for (int32 i = 1; i < T->Parts.Num(); ++i) if (IsValid(T->Parts[i])) Subject.Add(T->Parts[i]); }   // [0] is the mat
+	if (ThumbFrames < 0)
 	{
-		const FVector Ctr = B.GetCenter();
-		const float Rad = FMath::Max(0.5f, (float)B.GetExtent().Size());
-		const FVector Dir = FRotator(-35.f, 50.f, 0).Vector();
-		ThumbCam->SetWorldLocation(Ctr - Dir * Rad / FMath::Tan(FMath::DegreesToRadians(15.f)) * 1.05f);
-		ThumbCam->SetWorldRotation(Dir.Rotation());
-		ThumbCam->ShowOnlyComponents.Reset();
-		for (UStaticMeshComponent* C : M.Parts) ThumbCam->ShowOnlyComponents.Add(C);
-		ThumbCam->TextureTarget = RT;
-		ThumbCam->CaptureScene();
+		ThumbModel.Destroy();
+		if (Subject.Num() == 0) ISBuild::CanSatPart(this, ThumbStage, Id, FVector::ZeroVector, &ThumbModel);
+		ThumbFrames = 0;
+		return;
 	}
-	// the photo is taken on the render thread with this frame's scene: remove the model a moment later
-	TArray<UStaticMeshComponent*> Kill = M.Parts;
-	FTimerHandle Th;
-	GetWorldTimerManager().SetTimer(Th, FTimerDelegate::CreateWeakLambda(this, [Kill, Holder]()
+	if (Subject.Num() == 0) for (UStaticMeshComponent* C : ThumbModel.Parts) if (IsValid(C)) Subject.Add(C);
+	++ThumbFrames;
+	if (ThumbFrames == 3)
 	{
-		for (UStaticMeshComponent* C : Kill) if (IsValid(C)) C->DestroyComponent();
-		if (IsValid(Holder)) Holder->DestroyComponent();
-	}), 0.5f, false);
-	return RT;
+		double Big = 0;
+		for (UStaticMeshComponent* C : Subject) Big = FMath::Max(Big, C->Bounds.GetBox().GetVolume());
+		FBox B(ForceInit);
+		for (UStaticMeshComponent* C : Subject) if (C->Bounds.GetBox().GetVolume() >= Big * 0.01) B += C->Bounds.GetBox();
+		if (B.IsValid)
+		{
+			const FVector Ctr = B.GetCenter();
+			const float Rad = FMath::Max(0.5f, (float)B.GetExtent().Size());
+			const FVector Dir = FRotator(-35.f, 50.f, 0).Vector();
+			// dark backdrop card, visible to the photo camera only
+			UStaticMeshComponent* Back = ISBuild::Prim(this, ThumbStage, ISMat::Cube(), ThumbStage->GetComponentTransform().InverseTransformPosition(Ctr + Dir * Rad * 3.f),
+				FVector(Rad * 14.f, Rad * 14.f, 1.f), FLinearColor(0.035f, 0.04f, 0.05f), &ThumbModel, Dir.Rotation() + FRotator(90, 0, 0), 0.f, 0.9f);
+			if (Back) Back->SetVisibleInSceneCaptureOnly(true);
+			ThumbCam->SetWorldLocation(Ctr - Dir * Rad / FMath::Tan(FMath::DegreesToRadians(15.f)) * 1.05f);
+			ThumbCam->SetWorldRotation(Dir.Rotation());
+		}
+	}
+	if (ThumbFrames == 5 || ThumbFrames == 30)
+	{
+		ThumbCam->ShowOnlyComponents.Reset();
+		for (UStaticMeshComponent* C : Subject) ThumbCam->ShowOnlyComponents.Add(C);
+		for (UStaticMeshComponent* C : ThumbModel.Parts) if (IsValid(C)) ThumbCam->ShowOnlyComponents.AddUnique(C);
+		if (UTextureRenderTarget2D** RT = Thumbs.Find(Id)) { ThumbCam->TextureTarget = *RT; ThumbCam->CaptureScene(); }
+	}
+	if (ThumbFrames >= 32)
+	{
+		ThumbModel.Destroy();
+		ThumbCam->ShowOnlyComponents.Reset();
+		ThumbQueue.RemoveAt(0);
+		ThumbFrames = -1;
+	}
 }

@@ -221,6 +221,10 @@ private:
 	FISModel DragModel, GuideModel;
 	UPROPERTY() TMap<FName, class UTextureRenderTarget2D*> Thumbs;
 	UPROPERTY() class USceneCaptureComponent2D* ThumbCam = nullptr;
+	TArray<FName> ThumbQueue;            // pictures are taken one at a time (build, wait, capture, clear)
+	FISModel ThumbModel;
+	int32 ThumbFrames = -1;
+	void ProcessThumbs();
 	UPROPERTY() USceneComponent* ThumbStage = nullptr;
 	void UpdatePlacementFlags();
 	void UpdateBenchCamera(float Dt);

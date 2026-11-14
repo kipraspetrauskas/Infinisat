@@ -688,6 +688,7 @@ void AISHomeWorld::Tick(float Dt)
 	ScanT = FMath::Max(0.f, ScanT - Dt);
 
 	UpdateBenchCamera(Dt);
+	ProcessThumbs();
 	// bench hands animation
 	const bool bBench = Stage == EISStage::Build;
 	BenchHandModel.SetVisible(false);

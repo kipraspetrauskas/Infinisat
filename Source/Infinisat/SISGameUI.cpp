@@ -1569,6 +1569,9 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 }
 
 // ----------------------------------------------------------------------------------------------- BENCH
+// Builder in the KSP 2 manner: a narrow dark part catalogue on the left (category tabs + picture grid with size tags),
+// an info column for the part under the mouse, the can big in the middle, the main action top right and the key numbers
+// bottom right. Only what still fails is listed.
 TSharedRef<SWidget> SISGameUI::BuildBench()
 {
 	AISHomeWorld* W = HW();
@@ -1576,24 +1579,51 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 	Eval = W->Eval;
 	TWeakObjectPtr<AISHomeWorld> WW = W;
 	const TArray<AISHomeWorld::FCanSlot>& Slots = AISHomeWorld::CanSlots();
+	const FLinearColor Dark(0.035f, 0.04f, 0.05f, 0.94f), Dark2(0.06f, 0.07f, 0.085f, 0.96f), Faint(1, 1, 1, 0.55f);
 
-	// ---- PARTS: picture cards (KSP-style picker). Press and drag a card onto a deck of the can; a click puts it in its usual deck.
-	TSharedRef<SVerticalBox> Cards = SNew(SVerticalBox);
+	// category of a part for the catalogue tabs
+	auto CatOf = [](const FISPart* P) -> int32
+	{
+		if (P->Cat == EISCat::Battery || P->Cat == EISCat::Computer) return 1;
+		if (P->Cat == EISCat::Comms) return 2;
+		if (P->Cat == EISCat::Payload) return 3;
+		return 4;
+	};
+	struct FTab { const TCHAR* Short; const TCHAR* Name; } Tabs[] = { { TEXT("ALL"), TEXT("All parts") }, { TEXT("PWR"), TEXT("Power + computer") }, { TEXT("RF"), TEXT("Radio") }, { TEXT("SEN"), TEXT("Sensors + cameras") }, { TEXT("REC"), TEXT("Recovery + wiring") } };
+	TSharedRef<SVerticalBox> TabCol = SNew(SVerticalBox);
+	for (int32 t = 0; t < 5; ++t)
+	{
+		const bool bOn = BenchCat == t;
+		TabCol->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(SButton).ButtonStyle(FCoreStyle::Get(), "NoBorder").ContentPadding(0).ToolTipText(FText::FromString(Tabs[t].Name))
+			.OnClicked_Lambda([this, t]() { BenchCat = t; bDirty = true; return FReply::Handled(); })
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(bOn ? FLinearColor(0.25f, 0.33f, 0.9f, 0.9f) : FLinearColor(1, 1, 1, 0.05f)).Padding(FMargin(4, 9))
+				[SNew(SBox).WidthOverride(36)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, bOn ? 1.f : 0.7f)).Justification(ETextJustify::Center).Text(FText::FromString(Tabs[t].Short))]]
+			]
+		];
+	}
+
+	// picture grid (3 across), size tag from the mass
+	TSharedRef<SVerticalBox> Grid = SNew(SVerticalBox);
 	TSharedPtr<SHorizontalBox> Row;
-	int32 Col = 0;
+	int32 Col = 0, Shown = 0;
 	for (const FName& Id : W->TrayParts)
 	{
 		const FISPart* P = ISData::FindPart(Id);
-		if (!P) continue;
-		if (Col == 0) { Cards->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SAssignNew(Row, SHorizontalBox)]; }
+		if (!P || (BenchCat != 0 && CatOf(P) != BenchCat)) continue;
+		++Shown;
+		if (Col == 0) Grid->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SAssignNew(Row, SHorizontalBox)];
 		const FSlateBrush* Pic = ThumbBrush(Id);
-		const int32 Ideal = AISHomeWorld::IdealSlot(Id);
-		Row->AddSlot().FillWidth(1.f).Padding(Col == 0 ? 0 : 6, 0, 0, 0)
+		const float G = P->MassKg * 1000.f;
+		const TCHAR* Size = G < 6.f ? TEXT("XS") : G < 15.f ? TEXT("SM") : G < 40.f ? TEXT("MD") : TEXT("LG");
+		const FLinearColor SizeC = G < 6.f ? FLinearColor(0.9f, 0.3f, 0.3f) : G < 15.f ? FLinearColor(0.85f, 0.65f, 0.15f) : G < 40.f ? FLinearColor(0.45f, 0.8f, 0.2f) : FLinearColor(0.2f, 0.75f, 0.75f);
+		Row->AddSlot().AutoWidth().Padding(Col == 0 ? 0 : 6, 0, 0, 0)
 		[
-			SNew(SBorder)
-			.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-			.BorderBackgroundColor_Lambda([WW, Id]() { return WW.IsValid() && WW->BenchInfoPart == Id ? FLinearColor(0.16f, 0.3f, 0.42f, 0.95f) : FLinearColor(0.1f, 0.14f, 0.2f, 0.92f); })
-			.Padding(6)
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			.BorderBackgroundColor_Lambda([WW, Id]() { return WW.IsValid() && WW->BenchInfoPart == Id ? FLinearColor(0.2f, 0.3f, 0.75f, 0.55f) : FLinearColor(1, 1, 1, 0.04f); })
+			.Padding(4)
 			.OnMouseButtonDown_Lambda([this, WW, Id](const FGeometry&, const FPointerEvent& E)
 			{
 				if (E.GetEffectingButton() == EKeys::LeftMouseButton && WW.IsValid())
@@ -1605,133 +1635,114 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 			})
 			.OnMouseMove_Lambda([WW, Id](const FGeometry&, const FPointerEvent&) { if (WW.IsValid() && WW->DragPart.IsNone()) WW->BenchInfoPart = Id; return FReply::Unhandled(); })
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(SBox).WidthOverride(96).HeightOverride(96)[Pic ? StaticCastSharedRef<SWidget>(SNew(SImage).Image(Pic)) : SNullWidget::NullWidget]]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[Txt(P->Name, 11, CText)]
-				+ SVerticalBox::Slot().AutoHeight()[Txt(FString::Printf(TEXT("%s  |  %s"), *ISSim::FmtMass(P->MassKg), *ISSim::FmtMoney(P->CostM)), 11, CDim)]
-				+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("-> ") + Slots[Ideal].Name, 10, Slots[Ideal].Color)]
+				SNew(SOverlay)
+				+ SOverlay::Slot()[SNew(SBox).WidthOverride(84).HeightOverride(84)[Pic ? StaticCastSharedRef<SWidget>(SNew(SImage).Image(Pic)) : SNullWidget::NullWidget]]
+				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top)
+				[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(SizeC).Padding(FMargin(4, 0))[SNew(STextBlock).Font(ISFont("Bold", 9)).ColorAndOpacity(FLinearColor(0.05f, 0.05f, 0.05f)).Text(FText::FromString(Size))]]
 			]
 		];
-		Col = (Col + 1) % 2;
+		Col = (Col + 1) % 3;
 	}
-	if (Col == 1 && Row.IsValid()) Row->AddSlot().FillWidth(1.f)[SNew(SSpacer)];
-	if (W->TrayParts.Num() == 0) Cards->AddSlot().AutoHeight()[Txt(TEXT("No parts on the bench. Find them around the house (press Q while walking to scan)."), 12, CDim)];
+	if (Shown == 0) Grid->AddSlot().AutoHeight()[Txt(W->TrayParts.Num() ? TEXT("Nothing in this category.") : TEXT("No parts on the bench yet: find them around the house (Q scans)."), 11, Faint)];
 
-	// ---- IN THE CAN, deck by deck (click x to take a part out)
-	TSharedRef<SVerticalBox> Decks = SNew(SVerticalBox);
-	for (int32 s = Slots.Num() - 1; s >= 0; --s)
+	// what still fails (only the red items), plus where-it-sits warnings
+	TArray<FString> Fails;
 	{
-		TSharedRef<SVerticalBox> In = SNew(SVerticalBox);
-		for (const auto& KV : W->Placed)
-			if (KV.Value == s)
-				if (const FISPart* P = ISData::FindPart(KV.Key))
-				{
-					const FName Id = KV.Key;
-					In->AddSlot().AutoHeight()[Btn(FString::Printf(TEXT("x  %s  (%s)"), *P->Name, *ISSim::FmtMass(P->MassKg)), [WW, Id]() { if (WW.IsValid()) WW->BenchRemove(Id); }, 0, 11)];
-				}
-		Decks->AddSlot().AutoHeight().Padding(0, 2)
+		const FISDesign& D = W->Design;
+		if (D.GetSingle(EISCat::Battery).IsNone()) Fails.Add(TEXT("No battery"));
+		if (D.GetSingle(EISCat::Computer).IsNone()) Fails.Add(TEXT("No computer"));
+		if (D.GetSingle(EISCat::Comms).IsNone()) Fails.Add(TEXT("No radio"));
+		if (!D.HasTag(ISTag::Wiring)) Fails.Add(TEXT("No wires"));
+		if (!D.HasTag(ISTag::TempSensor)) Fails.Add(TEXT("No temperature sensor"));
+		if (W->Eval.TotalKg > 0.35f) Fails.Add(FString::Printf(TEXT("Too heavy: %.0f g (max 350 g)"), W->Eval.TotalKg * 1000.f));
+	}
+	const int32 MustFix = Fails.Num();
+	if (!W->Design.HasTag(ISTag::Parachute)) Fails.Add(TEXT("! No parachute: it lands at ~40 m/s"));
+	for (const FString& I : W->PlacementIssues()) Fails.Add(TEXT("! ") + I);
+	TSharedRef<SVerticalBox> FailBox = SNew(SVerticalBox);
+	for (const FString& F : Fails)
+	{
+		const bool bWarn = F.StartsWith(TEXT("!"));
+		FailBox->AddSlot().AutoHeight().Padding(0, 2)
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[Txt(Slots[s].Name, 12, Slots[s].Color, true)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(10, 0, 0, 0)[In]
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(bWarn ? FLinearColor(0.35f, 0.25f, 0.05f, 0.85f) : FLinearColor(0.4f, 0.08f, 0.06f, 0.85f)).Padding(FMargin(8, 4))
+			[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1)).AutoWrapText(true).Text(FText::FromString(bWarn ? F.RightChop(2) : F))]
 		];
 	}
 
-	// ---- LAUNCH CHECKLIST + what the placement will do in flight
-	TSharedRef<SVerticalBox> Check = SNew(SVerticalBox);
-	TArray<FString> Missing;
-	auto Line = [&](bool bOk, bool bMust, const FString& Text)
+	// key numbers, bottom right (big)
+	auto Big = [](const FString& L, const FString& V, bool bOk) -> TSharedRef<SWidget>
 	{
-		Check->AddSlot().AutoHeight().Padding(0, 1)[Txt(FString::Printf(TEXT("%s  %s"), bOk ? TEXT("OK") : (bMust ? TEXT("X ") : TEXT("! ")), *Text), 12,
-			bOk ? FLinearColor(0.45f, 1.f, 0.6f) : (bMust ? FLinearColor(1.f, 0.42f, 0.35f) : CGold))];
-		if (!bOk && bMust) Missing.Add(Text);
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.6f)).Text(FText::FromString(L))]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 0, 0, 8)[SNew(STextBlock).Font(ISFont("Bold", 24)).ColorAndOpacity(bOk ? FLinearColor(1, 1, 1) : FLinearColor(1.f, 0.45f, 0.35f)).ShadowOffset(FVector2D(1, 1)).Text(FText::FromString(V))];
 	};
-	{
-		const FISDesign& D = W->Design;
-		Line(!D.GetSingle(EISCat::Battery).IsNone(), true, TEXT("Battery (18650 cell)"));
-		Line(!D.GetSingle(EISCat::Computer).IsNone(), true, TEXT("Computer (ESP32)"));
-		Line(!D.GetSingle(EISCat::Comms).IsNone(), true, TEXT("Radio (LoRa 433 MHz)"));
-		Line(D.HasTag(ISTag::Wiring), true, TEXT("Wires (connect everything)"));
-		Line(D.HasTag(ISTag::TempSensor), true, TEXT("Temperature sensor (the client's measurement)"));
-		Line(D.HasTag(ISTag::Parachute), false, TEXT("Parachute (without it the can lands at ~40 m/s)"));
-		Line(W->Eval.TotalKg * 1000.f <= 350.f, true, FString::Printf(TEXT("Mass %.0f g of max 350 g"), W->Eval.TotalKg * 1000.f));
-		for (const FString& I : W->PlacementIssues()) Check->AddSlot().AutoHeight().Padding(0, 1)[Txt(TEXT("!  ") + I, 12, CGold)];
-		TArray<FString> ToFind;
-		for (const FISHuntItem& H : W->Hunt) if (H.bRequired && !H.bFound) ToFind.Add(H.Name);
-		if (ToFind.Num()) Check->AddSlot().AutoHeight().Padding(0, 4, 0, 0)[Txt(TEXT("Still to find in the house: ") + FString::Join(ToFind, TEXT(", ")), 11, CDim)];
-	}
-	const FString SealLabel = Missing.Num() ? FString::Printf(TEXT("Seal: %d missing"), Missing.Num()) : FString(TEXT("Seal the can - READY"));
+	const FISMission& M = ISData::Missions()[FMath::Clamp(W->MissionIdx, 0, ISData::Missions().Num() - 1)];
+	const float Grams = W->Eval.TotalKg * 1000.f;
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(SISSlotOverlay, WW, PC).Visibility(EVisibility::HitTestInvisible)]
-		+ SOverlay::Slot()
+		// catalogue + info column
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Fill)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark).Padding(FMargin(8, 12))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(2, 0, 0, 8)[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(Faint).Text(FText::FromString(TEXT("PART CATALOGUE")))]
+					+ SVerticalBox::Slot().FillHeight(1.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)[TabCol]
+						+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(288)[SNew(SScrollBox) + SScrollBox::Slot()[Grid]]]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(2, 8, 0, 0)[SNew(SBox).WidthOverride(330)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("Drag a part onto a deck of the can, or click it to put it where it usually goes. Drag a part out of the can to remove it. G: guide.")))]]
+				]
+			]
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark2).Padding(FMargin(14, 12))
+				.Visibility_Lambda([WW]() { return WW.IsValid() && ISData::FindPart(WW->BenchInfoPart) ? EVisibility::Visible : EVisibility::Collapsed; })
+				[
+					SNew(SBox).WidthOverride(250)
+					[
+						SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f)).AutoWrapText(true)
+						.Text_Lambda([WW]()
+						{
+							const FISPart* P = WW.IsValid() ? ISData::FindPart(WW->BenchInfoPart) : nullptr;
+							if (!P) return FText();
+							const AISHomeWorld::FCanSlot& S = AISHomeWorld::CanSlots()[AISHomeWorld::IdealSlot(P->Id)];
+							return FText::FromString(FString::Printf(TEXT("%s\n\n## Statistics\nMass      %s\nPower     %s W\nCost      %s\nGoes in   %s\n\n%s\n\n%s"),
+								*P->Name.ToUpper(), *ISSim::FmtMass(P->MassKg), *ISSim::Fmt(P->PowerW, 2), *ISSim::FmtMoney(P->CostM), *S.Name, *S.Why, *P->Edu));
+						})
+					]
+				]
+			]
+		]
+		// main action, top right
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(20)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("WORKBENCH  -  assemble your CanSat"))]
-			+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 0)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth()
-				[
-					SNew(SBox).WidthOverride(360)
-					[
-						Panel(SNew(SVerticalBox)
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("PARTS"), 13, CAccent, true)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)[Txt(TEXT("Drag a part onto a deck of the can. Click = its usual deck. Drag a part out of the can to remove it. G = guide on/off."), 11, CDim)]
-							+ SVerticalBox::Slot().FillHeight(1.f)[SNew(SScrollBox) + SScrollBox::Slot()[Cards]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
-							[
-								SNew(SBox).HeightOverride(150)
-								[
-									SNew(SScrollBox) + SScrollBox::Slot()
-									[
-										SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(CText).AutoWrapText(true)
-										.Text_Lambda([WW]()
-										{
-											const FISPart* P = WW.IsValid() ? ISData::FindPart(WW->BenchInfoPart) : nullptr;
-											if (!P) return FText::FromString(TEXT("Point at a part to read about it."));
-											const AISHomeWorld::FCanSlot& S = AISHomeWorld::CanSlots()[AISHomeWorld::IdealSlot(P->Id)];
-											return FText::FromString(FString::Printf(TEXT("%s\n%s  |  %s W  |  %s\nUsual place: %s. %s\n\n%s"), *P->Name, *ISSim::FmtMass(P->MassKg), *ISSim::Fmt(P->PowerW, 2), *ISSim::FmtMoney(P->CostM), *S.Name, *S.Why, *P->Edu));
-										})
-									]
-								]
-							])
-					]
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SSpacer)]
-				+ SHorizontalBox::Slot().AutoWidth()
-				[
-					SNew(SBox).WidthOverride(420)
-					[
-						Panel(SNew(SVerticalBox)
-							+ SVerticalBox::Slot().FillHeight(1.f)
-							[
-								SAssignNew(BudgetBox, SScrollBox)
-								+ SScrollBox::Slot()[Txt(TEXT("IN THE CAN (top to bottom)"), 13, CAccent, true)]
-								+ SScrollBox::Slot()[Decks]
-								+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(TEXT("BEFORE LAUNCH"), 13, CAccent, true)]
-								+ SScrollBox::Slot()[Check]
-								+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(TEXT("BUDGETS  (click a line: WHY?)"), 13, CAccent, true)]
-								+ SScrollBox::Slot()[BuildBudgets(false)]
-							])
-					]
-				]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Leave (E)"), [this]() { if (IPC()) IPC()->LeaveBench(); }, 0, 13)]
+				+ SHorizontalBox::Slot().AutoWidth()[Btn(MustFix ? FString::Printf(TEXT("Seal  (%d to fix)"), MustFix) : FString(TEXT(">>  Seal the can  >>")), [this, WW]() { if (WW.IsValid()) { WW->BenchSeal(); if (WW->Stage == EISStage::Sealed && IPC()) IPC()->LeaveBench(); } }, MustFix ? 0 : 1, 15)]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(12)
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f)[BuildBitTip(Eval.Hint)]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0, 0, 0)
-				[
-					SNew(SBox).WidthOverride(240)
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(SealLabel, [this, WW]() { if (WW.IsValid()) { WW->BenchSeal(); if (WW->Stage == EISStage::Sealed && IPC()) IPC()->LeaveBench(); } }, 1, 14)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(W->bGuide ? TEXT("Guide: ON  (G)") : TEXT("Guide: OFF  (G)"), [this, WW]() { if (WW.IsValid()) { WW->bGuide = !WW->bGuide; ++WW->DesignVersion; } })]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Leave the bench (E)"), [this]() { if (IPC()) IPC()->LeaveBench(); })]
-					]
-				]
-			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 10, 0, 0)[SNew(SBox).WidthOverride(380)[FailBox]]
+		]
+		// key numbers + guide, bottom right
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(24)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Mass"), FString::Printf(TEXT("%.0f g / 350 g"), Grams), Grams <= 350.f)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Cost"), ISSim::FmtMoney(W->Eval.TotalCostM) + TEXT(" / ") + ISSim::FmtMoney(M.BudgetM), W->Eval.TotalCostM <= M.BudgetM)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Descent speed"), FString::Printf(TEXT("%.1f m/s"), W->Eval.DescentMs), W->Eval.DescentMs <= 10.f && !W->bChuteBuried)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Battery runtime"), FString::Printf(TEXT("%.1f h"), W->Eval.RuntimeH), W->Eval.RuntimeH >= 2.f)]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[Btn(W->bGuide ? TEXT("Guide: on (G)") : TEXT("Guide: off (G)"), [WW]() { if (WW.IsValid()) { WW->bGuide = !WW->bGuide; ++WW->DesignVersion; } }, 0, 11)]
 		];
 }
 

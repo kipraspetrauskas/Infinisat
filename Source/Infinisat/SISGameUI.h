@@ -131,6 +131,7 @@ private:
 	const FSlateBrush* BodyBrush(int32 Body);
 	bool bOpsInCosmos = false;   // the mission is running while the player looks at the solar system
 	bool bShowLog = false;       // mission view: full event log open
+	int32 BenchCat = 0;          // builder catalogue tab (0 = all)
 	const FSlateBrush* ThumbBrush(FName PartId);
 	FProgressBarStyle BarStyle;
 	FString DevShot;

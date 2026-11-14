@@ -54,6 +54,16 @@ void AISPlayerController::BeginPlay()
 		GConfig->GetBool(TEXT("Infinisat"), TEXT("InvertY"), bInvertY, GGameUserSettingsIni);
 		GConfig->GetFloat(TEXT("Infinisat"), TEXT("Fov"), Fov, GGameUserSettingsIni);
 		GConfig->GetInt(TEXT("Infinisat"), TEXT("Graphics"), Graphics, GGameUserSettingsIni);
+		// settings v2: Epic used to be auto-picked on fast GPUs and is far heavier than the look needs -> move to High once
+		int32 Ver = 1;
+		GConfig->GetInt(TEXT("Infinisat"), TEXT("SettingsVersion"), Ver, GGameUserSettingsIni);
+		if (Ver < 2)
+		{
+			if (Graphics > 2) Graphics = 2;
+			GConfig->SetInt(TEXT("Infinisat"), TEXT("SettingsVersion"), 2, GGameUserSettingsIni);
+			GConfig->SetInt(TEXT("Infinisat"), TEXT("Graphics"), Graphics, GGameUserSettingsIni);
+			GConfig->Flush(false, GGameUserSettingsIni);
+		}
 	}
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISGraphics="), Graphics)) {}
 	if (Graphics < 0)
@@ -62,7 +72,7 @@ void AISPlayerController::BeginPlay()
 		if (UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr)
 		{
 			GS->RunHardwareBenchmark();
-			Graphics = FMath::Clamp(GS->GetRecommendedResolutionScale() < 60.f ? 0 : (int32)GS->ScalabilityQuality.GetSingleQualityLevel(), 0, 3);
+			Graphics = FMath::Clamp(GS->GetRecommendedResolutionScale() < 60.f ? 0 : (int32)GS->ScalabilityQuality.GetSingleQualityLevel(), 0, 2);   // Epic is opt-in
 		}
 		else Graphics = 2;
 	}
@@ -229,16 +239,21 @@ void AISPlayerController::ApplyGraphics()
 	{
 		if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(Name)) C->Set(V, ECVF_SetByGameSetting);
 	};
-	const bool bLow = Graphics == 0;
+	// Presets sized for this game's look (simple shapes, flat colours): the expensive UE5 features (Lumen, virtual
+	// shadow maps) only on Epic. Measured on an RTX 4070 at 1440p in the house: Epic was 21.6 ms GPU for a low-poly room.
+	const bool bLow = Graphics == 0, bEpic = Graphics >= 3;
 	CV(TEXT("r.Nanite"), bLow ? 0.f : 1.f);                       // Nanite off = simplified fallback meshes (the low-poly look)
 	CV(TEXT("r.MipMapLODBias"), bLow ? 2.f : 0.f);                 // chunkier textures, far less memory
-	CV(TEXT("r.DynamicGlobalIlluminationMethod"), Graphics >= 2 ? 1.f : 0.f);
-	CV(TEXT("r.ReflectionMethod"), Graphics >= 2 ? 1.f : (Graphics == 1 ? 2.f : 0.f));
-	CV(TEXT("r.Shadow.Virtual.Enable"), Graphics >= 2 ? 1.f : 0.f);
-	CV(TEXT("r.ScreenPercentage"), bLow ? 70.f : 100.f);
+	CV(TEXT("r.DynamicGlobalIlluminationMethod"), bEpic ? 1.f : 0.f);   // Lumen GI only on Epic
+	CV(TEXT("r.SSGI.Enable"), (Graphics == 1 || Graphics == 2) ? 1.f : 0.f);   // cheap screen-space bounce light instead
+	CV(TEXT("r.ReflectionMethod"), bEpic ? 1.f : (bLow ? 0.f : 2.f)); // Lumen reflections on Epic, screen-space otherwise
+	CV(TEXT("r.Shadow.Virtual.Enable"), bEpic ? 1.f : 0.f);       // virtual shadow maps only on Epic
+	CV(TEXT("r.ScreenPercentage"), bLow ? 70.f : (Graphics == 1 ? 80.f : (Graphics == 2 ? 85.f : 100.f)));   // TSR upscales the rest
 	CV(TEXT("r.ViewDistanceScale"), bLow ? 0.6f : 1.f);
-	CV(TEXT("r.VolumetricCloud"), bLow ? 0.f : 1.f);
+	CV(TEXT("r.VolumetricCloud"), Graphics >= 2 ? 1.f : 0.f);
 	CV(TEXT("r.Fog"), 1.f);
+	CV(TEXT("t.MaxFPS"), 120.f);                                   // no point burning the GPU at 300 fps in a menu
+	if (World) World->ApplyLightQuality();
 }
 
 void AISPlayerController::ClosePanel()

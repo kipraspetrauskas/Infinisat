@@ -66,6 +66,7 @@ public:
 	virtual void Tick(float Dt) override;
 
 	void SetActive(bool bOn);
+	void ApplyLightQuality();     // room-light shadows follow the graphics preset (Epic: 2 main lights only)
 	FTransform SpawnPoint() const;
 
 	// --- order / design
@@ -140,7 +141,8 @@ private:
 	TArray<FISPlaced> Furniture;
 	TArray<FBox> Openings;      // keep-clear volumes in front of doors and windows
 	void ValidateLayout();
-	void SettleProps();          // drop decor + hunt items onto real surfaces (needs physics to be up: runs after activation)
+	void SettleProps();
+	UPROPERTY() TArray<class UPointLightComponent*> RoomLights;          // drop decor + hunt items onto real surfaces (needs physics to be up: runs after activation)
 	bool bSettled = false;
 	FBox GarageShelfBox = FBox(FVector(-760, 290, 0), FVector(-700, 370, 180)), DeskBox = FBox(FVector(170, 960, 0), FVector(330, 1045, 80));
 	FTimerHandle SettleTimer;

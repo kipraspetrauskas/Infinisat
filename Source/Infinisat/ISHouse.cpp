@@ -93,8 +93,9 @@ void AISHomeWorld::RoomLight(const FVector& Pos, float Lumens, bool bFixture)
 	L->SetAttenuationRadius(900.f);
 	L->SetLightColor(FLinearColor(1.f, 0.88f, 0.72f));   // warm 2700 K
 	L->SetSourceRadius(15.f);
-	L->SetCastShadows(ISQuality::Level >= 1);
+	L->SetCastShadows(ISQuality::Level >= 3 && RoomLights.Num() < 2);   // 6 shadow passes per shadowed point light: only 2, only on Epic
 	L->RegisterComponent();
+	RoomLights.Add(L);
 	if (bFixture) PlaceMesh(this, Root, AllComps, KPath(TEXT("furn"), TEXT("lampSquareCeiling")), FVector(Pos.X, Pos.Y, FZ + WallH - 50.f), 0.f, KF, false, true);
 }
 
@@ -830,4 +831,10 @@ void AISHomeWorld::SettleProps()
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] settled %d props onto their surfaces"), Moved);
+}
+
+void AISHomeWorld::ApplyLightQuality()
+{
+	for (int32 i = 0; i < RoomLights.Num(); ++i)
+		if (RoomLights[i]) RoomLights[i]->SetCastShadows(ISQuality::Level >= 3 && i < 2);
 }

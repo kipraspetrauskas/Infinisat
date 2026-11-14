@@ -58,6 +58,12 @@ public:
 	double GetCosmosDays() const { return CosmosDays; }
 	void ToggleCosmosLabels() { bCosmosLabels = !bCosmosLabels; }
 	bool CosmosLabelsOn() const { return bCosmosLabels; }
+	FVector CosmosPos(int32 I) const;
+	int32 CosmosParent(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Parent : -1; }
+	float CosmosRadius(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Radius : 0.f; }
+	FString CosmosLabelText(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Label : FString(); }
+	FColor CosmosLabelColor(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].LabelColor : FColor::White; }
+	FVector GetCameraLocation() const;
 
 	// Operations: place the player's spacecraft along its path (0..1 of mission, orbit phase in days)
 	void SetMissionTime(double Day, double EndDay, double PeriodMin, bool bAlive);
@@ -161,6 +167,7 @@ private:
 		float OrbitR = 0.f, PeriodDays = 1.f, Phase = 0.f, Inc = 0.f, Node = 0.f;
 		float Radius = 100.f, SpinDegPerDay = 0.f, Tilt = 0.f;
 		float Angle = 0.f, SpinAngle = 0.f;   // accumulated (visual speed is capped so fast moons stay watchable)
+		FString Label; FColor LabelColor = FColor::White; FLinearColor OrbitColor = FLinearColor::Transparent;
 		USceneComponent* Pivot = nullptr;   // moves along the orbit, holds everything that travels with the body
 		USceneComponent* Spinner = nullptr; // rotates (surface)
 		UMaterialInstanceDynamic* SunDirMID = nullptr; // Earth day/night material needs the sun direction
@@ -171,6 +178,7 @@ private:
 	UPROPERTY() TArray<USceneComponent*> CosmosBillboards;
 	UPROPERTY() TMap<FString, UTexture2D*> CosmosTexCache;
 	UPROPERTY() USceneComponent* CosmosBackdrop = nullptr;
+	UPROPERTY() ULineBatchComponent* CosmosLines = nullptr;
 	UPROPERTY() UMaterialInterface* MatGlow = nullptr;
 	UPROPERTY() UMaterialInterface* MatRing = nullptr;
 	int32 CosmosSel = 0;

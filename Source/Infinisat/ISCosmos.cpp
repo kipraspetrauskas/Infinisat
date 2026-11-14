@@ -15,6 +15,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
 #include "Async/ParallelFor.h"
+#include "Components/LineBatchComponent.h"
 
 namespace ISCos
 {
@@ -308,26 +309,24 @@ UStaticMeshComponent* AISSpaceScene::CosmosSprite(USceneComponent* Parent, const
 
 void AISSpaceScene::CosmosOrbitDots(int32 Body, const FLinearColor& C)
 {
-	const FCosmosBody& B = CosmosBodies[Body];
-	if (B.Parent < 0) return;
-	UInstancedStaticMeshComponent* I = AddDots(MSphere, C, 1.2f);
-	I->AttachToComponent(CosmosBodies[B.Parent].Pivot, FAttachmentTransformRules::KeepRelativeTransform);
-	I->SetRelativeLocation(FVector::ZeroVector);
-	I->SetRelativeRotation(FQuat(FVector::UpVector, FMath::DegreesToRadians(B.Node)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(B.Inc)));
-	const int32 N = FMath::Clamp(FMath::RoundToInt(B.OrbitR / 45.f), 90, 900);
-	const float Dot = FMath::Clamp(B.OrbitR * 0.00045f, 0.08f, 0.6f);
-	for (int32 i = 0; i < N; ++i)
-	{
-		const float A = 2.f * PI * i / N;
-		I->AddInstance(FTransform(FRotator::ZeroRotator, FVector(B.OrbitR * FMath::Cos(A), B.OrbitR * FMath::Sin(A), 0), FVector(Dot)));
-	}
+	if (CosmosBodies.IsValidIndex(Body) && CosmosBodies[Body].Parent >= 0) CosmosBodies[Body].OrbitColor = C;
 }
 
 void AISSpaceScene::CosmosLabel(int32 Body, const FString& Text, const FColor& C)
 {
-	UTextRenderComponent* T = AddLabel(Text, FVector::ZeroVector, C);
-	T->AttachToComponent(CosmosBodies[Body].Pivot, FAttachmentTransformRules::KeepRelativeTransform);
-	T->SetRelativeLocation(FVector(0, 0, CosmosBodies[Body].Radius * 1.3f));
+	// drawn by the UI as crisp screen-space text (SISCosmosOverlay), not as 3D text
+	CosmosBodies[Body].Label = Text;
+	CosmosBodies[Body].LabelColor = C;
+}
+
+FVector AISSpaceScene::CosmosPos(int32 I) const
+{
+	return CosmosBodies.IsValidIndex(I) && CosmosBodies[I].Pivot ? CosmosBodies[I].Pivot->GetComponentLocation() : FVector::ZeroVector;
+}
+
+FVector AISSpaceScene::GetCameraLocation() const
+{
+	return Camera ? Camera->GetActorLocation() : FVector::ZeroVector;
 }
 
 int32 AISSpaceScene::CosmosStar(const FString& Name, const FVector& Center, float Radius, const FLinearColor& C, float Light, const FString& Facts)
@@ -346,7 +345,7 @@ int32 AISSpaceScene::CosmosStar(const FString& Name, const FVector& Center, floa
 	UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(MatGlow, this);
 	M->SetTextureParameterValue(TEXT("Tex"), Surf);
 	M->SetVectorParameterValue(TEXT("Color"), C);
-	M->SetScalarParameterValue(TEXT("Intensity"), 6.f);
+	M->SetScalarParameterValue(TEXT("Intensity"), 0.95f / FMath::Max3(C.R, C.G, C.B));   // keep the hue: brightest channel ~1
 	CosmosSphere(B.Spinner, Radius, M);
 	UTexture2D* Corona = CosmosTex(TEXT("corona"), 256, 256, [](float U, float V)
 	{
@@ -356,7 +355,7 @@ int32 AISSpaceScene::CosmosStar(const FString& Name, const FVector& Center, floa
 		const float Gl = (FMath::Exp(-(R - 0.28f) * 9.f) * Streams + 0.35f * FMath::Exp(-R * 3.f)) * (1.f - Smooth(0.75f, 1.f, R));
 		return L(Gl, Gl, Gl);
 	});
-	CosmosSprite(B.Pivot, FVector::ZeroVector, Radius * 7.f, Corona, C, 2.2f, true);
+	CosmosSprite(B.Pivot, FVector::ZeroVector, Radius * 7.f, Corona, C, 1.1f, true);
 	UPointLightComponent* PL = NewObject<UPointLightComponent>(this);
 	PL->bUseInverseSquaredFalloff = false;
 	PL->LightFalloffExponent = 0.25f;
@@ -387,6 +386,10 @@ void AISSpaceScene::ShowCosmos(const FISDesign& D)
 		SkyM->SetScalarParameterValue(TEXT("Brightness"), 0.55f);
 		Sky->SetMaterial(0, SkyM);
 	}
+	CosmosLines = NewObject<ULineBatchComponent>(this);
+	CosmosLines->SetupAttachment(SceneRoot);
+	CosmosLines->RegisterComponent();
+	CosmosComps.Add(CosmosLines);
 	FMath::RandInit(42);
 	BuildCosmosBackdrop();
 	BuildSolarSystem(D);
@@ -416,9 +419,9 @@ void AISSpaceScene::FocusCosmos(int32 Idx)
 void AISSpaceScene::BuildSolarSystem(const FISDesign& D)
 {
 	const FString G = TEXT("Solar System");
-	const int32 Sun = CosmosStar(TEXT("Sun"), FVector::ZeroVector, 2200.f, FLinearColor(1.f, 0.82f, 0.55f), 130000.f,
+	const int32 SunI = CosmosStar(TEXT("Sun"), FVector::ZeroVector, 2200.f, FLinearColor(1.f, 0.82f, 0.55f), 130000.f,
 		TEXT("Our star: a G-type main-sequence star, 4.6 billion years old. 1.39 million km across (109 Earths), 99.86% of the Solar System's mass. Surface 5,800 K, core 15 million K where 600 million tonnes of hydrogen fuse into helium every second. Light takes 8 min 20 s to reach Earth."));
-	CosmosBodies[Sun].Group = G;
+	CosmosBodies[SunI].Group = G;
 	struct FPl { const TCHAR* N; const TCHAR* Tex; float R, Orbit, Period, Spin, Tilt, Inc; FLinearColor Atmo; float AtmoI; const TCHAR* Facts; };
 	const FPl Pl[] = {
 		{ TEXT("Mercury"), TEXT("T_Mercury"), 90.f, 7000.f, 87.97f, 6.1f, 0.03f, 7.f, FLinearColor(0, 0, 0, 0), 0.f,
@@ -441,7 +444,7 @@ void AISSpaceScene::BuildSolarSystem(const FISDesign& D)
 	TMap<FString, int32> Idx;
 	for (const FPl& P : Pl)
 	{
-		const int32 I = AddCosmosBody(P.N, G, Sun, P.Orbit, P.Period, P.R, P.Spin, P.Facts);
+		const int32 I = AddCosmosBody(P.N, G, SunI, P.Orbit, P.Period, P.R, P.Spin, P.Facts);
 		CosmosBodies[I].Inc = P.Inc;
 		CosmosBodies[I].Node = FMath::FRandRange(0.f, 360.f);
 		Idx.Add(P.N, I);
@@ -530,7 +533,7 @@ void AISSpaceScene::BuildSolarSystem(const FISDesign& D)
 		{ TEXT("Juno"), TEXT("Juno"), TEXT("Jupiter"), 900.f * 1.5f, 53.f, 30.f, 90.f, TEXT("Solar-powered, in a long polar orbit of Jupiter since 2016, diving under the radiation belts every 53 days.") },
 		{ TEXT("Parker Solar Probe"), TEXT("Parker"), TEXT("Sun"), 2200.f * 1.7f, 88.f, 40.f, 3.4f, TEXT("Touches the Sun's corona behind a carbon heat shield; at 192 km/s the fastest object humans have built.") },
 	};
-	Idx.Add(TEXT("Sun"), Sun);
+	Idx.Add(TEXT("Sun"), SunI);
 	for (int32 i = 0; i < CosmosBodies.Num(); ++i) if (CosmosBodies[i].Name == TEXT("Moon")) Idx.Add(TEXT("Moon"), i);
 	auto AddModel = [this](int32 Body, const TCHAR* Model, float Size)
 	{
@@ -557,13 +560,13 @@ void AISSpaceScene::BuildSolarSystem(const FISDesign& D)
 	// asteroid belt between Mars and Jupiter + Kuiper belt beyond Neptune (instanced rocks)
 	for (int32 Belt = 0; Belt < 2; ++Belt)
 	{
-		UInstancedStaticMeshComponent* I = AddDots(MSphere, Belt ? FLinearColor(0.55f, 0.65f, 0.8f) : FLinearColor(0.5f, 0.45f, 0.4f), 0.35f);
+		UInstancedStaticMeshComponent* I = AddDots(MSphere, Belt ? FLinearColor(0.55f, 0.65f, 0.8f) : FLinearColor(0.5f, 0.45f, 0.4f), 0.25f);
 		const int32 N = Belt ? 2500 : 3000;
 		const float R0 = Belt ? 70000.f : 19500.f, R1 = Belt ? 82000.f : 23000.f;
 		for (int32 k = 0; k < N; ++k)
 		{
 			const float A = FMath::FRandRange(0.f, 2.f * PI), R = FMath::FRandRange(R0, R1);
-			I->AddInstance(FTransform(FRotator::ZeroRotator, FVector(R * FMath::Cos(A), R * FMath::Sin(A), FMath::FRandRange(-1.f, 1.f) * (R1 - R0) * 0.08f), FVector(FMath::FRandRange(0.15f, 0.5f) * (Belt ? 1.6f : 1.f))));
+			I->AddInstance(FTransform(FRotator::ZeroRotator, FVector(R * FMath::Cos(A), R * FMath::Sin(A), FMath::FRandRange(-1.f, 1.f) * (R1 - R0) * 0.08f), FVector(FMath::FRandRange(0.04f, 0.16f) * (Belt ? 1.6f : 1.f))));
 		}
 	}
 }
@@ -645,7 +648,7 @@ void AISSpaceScene::BuildBlackHole(const FVector& Center)
 	FCosmosBody& B = CosmosBodies[I];
 	B.Center = Center;
 	B.Pivot->SetWorldLocation(Center);
-	AddMesh(B.Pivot, MSphere, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(R / 50.f)), FLinearColor(0, 0, 0, 1), true, 0.001f, nullptr);
+	{ UMaterialInstanceDynamic* BM = UMaterialInstanceDynamic::Create(MatUnlit, this); BM->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black); BM->SetScalarParameterValue(TEXT("Intensity"), 0.f); CosmosSphere(B.Pivot, R, BM); }
 	UTexture2D* Disk = CosmosTex(TEXT("accretion"), 512, 256, [](float U, float V)
 	{
 		const float A = V * 2.f * PI;
@@ -654,7 +657,7 @@ void AISSpaceScene::BuildBlackHole(const FVector& Center)
 		const FLinearColor C = Ramp(1.f - U, { {0.f, L(0.5f, 0.08f, 0.02f)}, {0.5f, L(1.f, 0.45f, 0.1f)}, {0.85f, L(1.f, 0.85f, 0.6f)}, {1.f, L(0.85f, 0.9f, 1.f)} });
 		return C * Hot;
 	});
-	CosmosRing(B.Spinner, R * 1.5f, R * 6.f, Disk, true, 3.5f, 72.f);
+	CosmosRing(B.Spinner, R * 1.5f, R * 6.f, Disk, true, 0.55f, 72.f);
 	B.SpinDegPerDay = 40.f;
 	UTexture2D* Photon = CosmosTex(TEXT("photon_ring"), 256, 256, [](float U, float V)
 	{
@@ -776,6 +779,26 @@ void AISSpaceScene::TickCosmos(float Dt, const FVector& CamLoc)
 			B.SunDirMID->SetVectorParameterValue(TEXT("SunDir"), FLinearColor((CosmosBodies[B.Star].Pivot->GetComponentLocation() - B.Pivot->GetComponentLocation()).GetSafeNormal()));
 	}
 	if (CosmosBodies.IsValidIndex(CosmosSel)) CamFocusGoal = CosmosBodies[CosmosSel].Pivot->GetComponentLocation();
+	// orbits: 1-pixel screen-space lines, redrawn every frame so moon orbits follow their planet (KSP map style)
+	if (CosmosLines)
+	{
+		CosmosLines->Flush();
+		for (const FCosmosBody& B : CosmosBodies)
+		{
+			if (B.Parent < 0 || B.OrbitColor.A <= 0.f) continue;
+			const FVector C = CosmosBodies[B.Parent].Pivot->GetComponentLocation();
+			const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(B.Node)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(B.Inc));
+			const int32 N = B.OrbitR > 20000.f ? 256 : 128;
+			FVector Prev = C + Q.RotateVector(FVector(B.OrbitR, 0, 0));
+			for (int32 k = 1; k <= N; ++k)
+			{
+				const float A = 2.f * PI * k / N;
+				const FVector P = C + Q.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0.f) * B.OrbitR);
+				CosmosLines->DrawLine(Prev, P, B.OrbitColor, SDPG_World, 0.f, 0.f);
+				Prev = P;
+			}
+		}
+	}
 	if (CosmosBackdrop) CosmosBackdrop->SetWorldLocation(CamLoc);
 	Sky->SetWorldLocation(CamLoc);
 	for (USceneComponent* S : CosmosBillboards)

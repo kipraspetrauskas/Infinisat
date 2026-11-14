@@ -29,6 +29,10 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "UnrealClient.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {
@@ -1617,13 +1621,121 @@ FString SISGameUI::WriteReport(const FISScore& S)
 }
 
 // ----------------------------------------------------------------------------------------------- COSMOS EXPLORER
+namespace
+{
+	// Screen-space body labels + markers for the cosmos (crisp at any distance, decluttered like the KSP map).
+	// Click a label to fly there; clicks elsewhere fall through to the camera controls.
+	class SISCosmosOverlay : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SISCosmosOverlay) {}
+		SLATE_END_ARGS()
+		TWeakObjectPtr<AISSpaceScene> Scene;
+		TWeakObjectPtr<APlayerController> PC;
+		TFunction<void(int32)> OnPick;
+		void Construct(const FArguments&, TWeakObjectPtr<AISSpaceScene> InScene, TWeakObjectPtr<APlayerController> InPC, TFunction<void(int32)> InPick)
+		{
+			Scene = InScene; PC = InPC; OnPick = MoveTemp(InPick);
+		}
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(100, 100); }
+		virtual FReply OnMouseButtonDown(const FGeometry& G, const FPointerEvent& E) override
+		{
+			const FVector2f L = FVector2f(G.AbsoluteToLocal(E.GetScreenSpacePosition()));
+			for (const TPair<int32, FSlateRect>& H : Hits)
+				if (H.Value.ContainsPoint(FVector2D(L))) { if (OnPick) OnPick(H.Key); return FReply::Handled(); }
+			return FReply::Unhandled();
+		}
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+		{
+			Hits.Reset();
+			AISSpaceScene* S = Scene.Get();
+			APlayerController* P = PC.Get();
+			if (!S || !P || !S->CosmosLabelsOn() || !GEngine || !GEngine->GameViewport) return Layer;
+			FVector2D VP; GEngine->GameViewport->GetViewportSize(VP);
+			if (VP.X < 1 || VP.Y < 1) return Layer;
+			const FVector2f K = FVector2f(G.GetLocalSize()) / FVector2f(VP);
+			const FVector Cam = S->GetCameraLocation();
+			const int32 N = S->CosmosCount();
+			TArray<FVector2f> Scr; Scr.SetNum(N);
+			TArray<bool> On; On.Init(false, N);
+			for (int32 i = 0; i < N; ++i)
+			{
+				FVector2D Px;
+				if (P->ProjectWorldLocationToScreen(S->CosmosPos(i), Px, true)) { Scr[i] = FVector2f(Px) * K; On[i] = true; }
+			}
+			const FSlateFontInfo Font = ISFont("Bold", 11);
+			const TSharedRef<FSlateFontMeasure> FM = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+			const int32 Sel = S->CosmosFocusIdx();
+			// priority: selected body, then stars, planets, moons, spacecraft (tree depth); lower ones yield on overlap
+			TArray<int32> Order;
+			for (int32 i = 0; i < N; ++i) Order.Add(i);
+			Order.Sort([S, Sel](int32 A, int32 B)
+			{
+				const int32 DA = A == Sel ? -1 : S->CosmosDepth(A), DB = B == Sel ? -1 : S->CosmosDepth(B);
+				return DA != DB ? DA < DB : A < B;
+			});
+			TArray<FSlateRect> Taken;
+			for (const int32 i : Order)
+			{
+				const FString Text = S->CosmosLabelText(i);
+				if (!On[i] || Text.IsEmpty()) continue;
+				const int32 Par = S->CosmosParent(i);
+				if (Par >= 0)
+				{
+					// hidden behind its parent planet (seen through it)?
+					const FVector Pp = S->CosmosPos(Par), Bp = S->CosmosPos(i);
+					const float PR = S->CosmosRadius(Par);
+					const FVector D = (Bp - Cam).GetSafeNormal();
+					const double T = FVector::DotProduct(Pp - Cam, D);
+					if (T > 0.0 && T < FVector::Dist(Cam, Bp) && FVector::DistSquared(Cam + D * T, Pp) < (double)PR * PR) continue;
+				}
+				// hide moons and spacecraft until their parent is far enough apart on screen
+				if (Par >= 0 && S->CosmosParent(Par) >= 0 && On[Par] && FVector2f::Distance(Scr[i], Scr[Par]) < 46.f && i != Sel) continue;
+				if (Par >= 0 && S->CosmosParent(Par) < 0 && On[Par] && FVector2f::Distance(Scr[i], Scr[Par]) < 22.f && i != Sel) continue;
+				const float Dist = FMath::Max(1.f, (float)FVector::Dist(Cam, S->CosmosPos(i)));
+				const float Rpx = S->CosmosRadius(i) / Dist * (float)VP.X * 1.072f * K.X;   // focal length for a 50 deg horizontal FOV
+				const FLinearColor C = FLinearColor(S->CosmosLabelColor(i)) * (i == Sel ? 1.f : 0.85f);
+				if (Rpx < 5.f)
+				{
+					TArray<FVector2f> Ring;
+					for (int32 k = 0; k <= 16; ++k) { const float A = 2.f * PI * k / 16; Ring.Add(Scr[i] + FVector2f(FMath::Cos(A), FMath::Sin(A)) * 6.f); }
+					FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), Ring, ESlateDrawEffect::None, C, true, i == Sel ? 2.f : 1.2f);
+				}
+				const FVector2f Sz = FVector2f(FM->Measure(Text, Font));
+				const FVector2f At = Scr[i] - FVector2f(Sz.X * 0.5f, FMath::Max(Rpx, 6.f) + 6.f + Sz.Y);
+				const FSlateRect Box(At.X - 3, At.Y - 2, At.X + Sz.X + 3, At.Y + Sz.Y + 2);
+				bool bOverlap = false;
+				for (const FSlateRect& Rc : Taken) if (FSlateRect::DoRectanglesIntersect(Rc, Box)) { bOverlap = true; break; }
+				if (bOverlap) continue;
+				Taken.Add(Box);
+				FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(Sz, FSlateLayoutTransform(At + FVector2f(1.f, 1.f))), Text, Font, ESlateDrawEffect::None, FLinearColor(0, 0, 0, 0.85f));
+				FSlateDrawElement::MakeText(Out, Layer + 2, G.ToPaintGeometry(Sz, FSlateLayoutTransform(At)), Text, Font, ESlateDrawEffect::None, C);
+				Hits.Add(TPair<int32, FSlateRect>(i, FSlateRect(At.X - 4, At.Y - 2, At.X + Sz.X + 4, Scr[i].Y + 8)));
+			}
+			return Layer + 3;
+		}
+	private:
+		mutable TArray<TPair<int32, FSlateRect>> Hits;
+	};
+}
+
 TSharedRef<SWidget> SISGameUI::BuildCosmos()
 {
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	const int32 N = Scene.IsValid() ? Scene->CosmosCount() : 0;
 	const int32 Sel = Scene.IsValid() ? Scene->CosmosFocusIdx() : 0;
+	// tree order: every body directly followed by its moons / spacecraft
+	TArray<int32> Order;
+	{
+		TFunction<void(int32)> Visit = [&](int32 P)
+		{
+			for (int32 c = 0; c < N; ++c)
+				if (Scene->CosmosParent(c) == P) { Order.Add(c); Visit(c); }
+		};
+		Visit(-1);
+	}
 	FString LastGroup;
-	for (int32 i = 0; i < N; ++i)
+	for (const int32 i : Order)
 	{
 		const FString Grp = Scene->CosmosGroup(i);
 		if (Grp != LastGroup)
@@ -1645,7 +1757,10 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	Speeds->AddSlot().AutoWidth()[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels: on") : TEXT("Labels: off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 12)];
 	const FString Name = Scene.IsValid() ? Scene->CosmosName(Sel) : FString();
 	const FString Facts = Scene.IsValid() ? Scene->CosmosFacts(Sel) : FString();
-	return SNew(SVerticalBox)
+	return SNew(SOverlay)
+		+ SOverlay::Slot()[SNew(SISCosmosOverlay, Scene, PC, [this](int32 i) { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; })]
+		+ SOverlay::Slot()[
+		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("COSMOS EXPLORER  -  click a world to fly there"))]
 		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)
 		[
@@ -1665,5 +1780,5 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[Txt(TEXT("Drag to look around, mouse wheel to zoom. Distances are squeezed so everything fits; sizes, tilts, spins and periods of real worlds are true to life. Worlds marked FICTIONAL are invented but follow real physics."), 11, CDim)], 16.f)
 				]
 			]
-		];
+		]];
 }

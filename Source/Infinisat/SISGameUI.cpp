@@ -745,49 +745,54 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 		+ SScrollBox::Slot()[BuildObjectives(Eval.Objectives)]
 	];
 
-	return SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("DESIGN  -  ") + M.Title)]
-		+ SVerticalBox::Slot().AutoHeight().Padding(12, 0, 12, 8)[BuildTeamBar()]
-		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 0)
+	// KSP 2 manner: dark part catalogue down the left, the satellite big in the middle, the next step top right,
+	// a slim budgets column on the right
+	const FLinearColor Dark(0.035f, 0.04f, 0.05f, 0.94f);
+	return SNew(SOverlay)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Fill)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark).Padding(FMargin(10, 12))
 			[
-				SNew(SBox).WidthOverride(440)
-				[
-					Panel(
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()[Tabs]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 4)[Txt(ISData::CatName(Cat), 15, CAccent, true)]
-						+ SVerticalBox::Slot().FillHeight(1.f)[SAssignNew(PartsBox, SScrollBox) + SScrollBox::Slot()[List]]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
-						[
-							SNew(SBox).MaxDesiredHeight(190)
-							[
-								Panel(SNew(SScrollBox) + SScrollBox::Slot()[Txt(InfoText, 12, CText)], 10.f, 1)
-							]
-						])
-				]
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SSpacer)]
-			+ SHorizontalBox::Slot().AutoWidth()
-			[
-				SNew(SBox).WidthOverride(480)[Panel(Right)]
-			]
-		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(12)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(1.f)[BuildBitTip(Eval.Hint)]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0, 0, 0)
-			[
-				SNew(SBox).WidthOverride(240)
+				SNew(SBox).WidthOverride(420)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Mission briefing"), [this]() { Go(EScreen::Missions); })]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Copy design code (share)"), [this]() { FPlatformApplicationMisc::ClipboardCopy(*DesignCode()); Notice = TEXT("Design code copied: paste it to a teammate or another team to compare."); bDirty = true; }, 0, 12)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Paste design code"), [this]() { FString C; FPlatformApplicationMisc::ClipboardPaste(C); Notice = ApplyDesignCode(C) ? TEXT("Design loaded from the clipboard.") : TEXT("The clipboard does not contain a design code for this mission."); Recompute(); }, 0, 12)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Next: choose rocket  >"), [this]() { Go(EScreen::Launch); }, 1, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 2)[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.55f)).Text(FText::FromString(TEXT("PART CATALOGUE  -  ") + M.Title.ToUpper()))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[BuildTeamBar()]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Tabs]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 4)[Txt(ISData::CatName(Cat), 14, CAccent, true)]
+					+ SVerticalBox::Slot().FillHeight(1.f)[SAssignNew(PartsBox, SScrollBox) + SScrollBox::Slot()[List]]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+					[
+						SNew(SBox).MaxDesiredHeight(200)
+						[
+							SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(1, 1, 1, 0.04f)).Padding(10)
+							[SNew(SScrollBox) + SScrollBox::Slot()[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f)).AutoWrapText(true).Text(FText::FromString(InfoText))]]
+						]
+					]
+				]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(20)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Briefing"), [this]() { Go(EScreen::Missions); }, 0, 12)]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Copy code"), [this]() { FPlatformApplicationMisc::ClipboardCopy(*DesignCode()); Notice = TEXT("Design code copied: paste it to a teammate or another team to compare."); bDirty = true; }, 0, 12)]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Paste code"), [this]() { FString C; FPlatformApplicationMisc::ClipboardPaste(C); Notice = ApplyDesignCode(C) ? TEXT("Design loaded from the clipboard.") : TEXT("The clipboard does not contain a design code for this mission."); Recompute(); }, 0, 12)]
+				+ SHorizontalBox::Slot().AutoWidth()[Btn(TEXT(">>  Choose rocket  >>"), [this]() { Go(EScreen::Launch); }, 1, 15)]
+			]
+			+ SVerticalBox::Slot().FillHeight(1.f).HAlign(HAlign_Right).Padding(0, 12, 0, 0)
+			[
+				SNew(SBox).WidthOverride(430).MaxDesiredHeight(760)
+				[
+					SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.02f, 0.025f, 0.03f, 0.8f)).Padding(12)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().FillHeight(1.f)[Right]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(CGold).AutoWrapText(true).Text(FText::FromString(Eval.Hint))]
+					]
 				]
 			]
 		];

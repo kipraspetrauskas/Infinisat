@@ -493,36 +493,50 @@ TSharedRef<SWidget> SISGameUI::BuildBitTip(const FString& Text)
 }
 
 // ----------------------------------------------------------------------------------------------- TITLE
+// Main menu: a game menu, not a form. Big title, text entries that light up orange, credits small in the corner.
 TSharedRef<SWidget> SISGameUI::BuildTitle()
 {
-	return SNew(SOverlay)
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(60, 40)
-		[
-			SNew(SBox).WidthOverride(560)
+	auto Item = [this](const FString& L, TFunction<void()> F, bool bMain = false) -> TSharedRef<SWidget>
+	{
+		TSharedPtr<SButton> B;
+		return SAssignNew(B, SButton).ButtonStyle(FCoreStyle::Get(), "NoBorder").ContentPadding(FMargin(0, 3))
+			.OnClicked_Lambda([F]() { if (F) F(); return FReply::Handled(); })
 			[
-				Panel(
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)[SNew(SImage).Image(&LogoBrush)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 0)[Txt(TEXT("INFINISAT"), 44, CAccent, true)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 14)[Txt(TEXT("Design it. Launch it. Fly it. Learn why it works.\nFrom a back-yard CanSat to interstellar space."), 15, CText)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Start campaign (enter the world)"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 16)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Order board (jump to any chapter)"), [this]() { Go(EScreen::Missions); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sandbox: design anything"), [this]() { StartMission(ISData::Missions().Num() - 1); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Cosmos explorer: fly the universe"), [this]() { Go(EScreen::Cosmos); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sat-o-pedia: real spacecraft"), [this]() { Go(EScreen::Pedia); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Settings (graphics, mouse)"), [this]() { Screen = EScreen::Pause; bDirty = true; }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Quit"), [this]() { if (PC.IsValid()) PC->ConsoleCommand(TEXT("quit")); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 14, 0, 0)
-					[
-						SNew(SCheckBox)
-						.IsChecked_Lambda([this]() { return bJudgeMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-						.OnCheckStateChanged_Lambda([this](ECheckBoxState S) { bJudgeMode = S == ECheckBoxState::Checked; bDirty = true; })
-						[Txt(TEXT("Judge / teacher mode: all chapters and parts unlocked"), 12, CText)]
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 14, 0, 0)
-					[Txt(TEXT("NASA Space Apps 2026 - Space Mission Design Game.  3D models & planet textures: NASA 3D Resources (public domain). Data: NASA, USGS, NASA Earthdata, planet4589.org. Hackathon prototype, not affiliated with NASA."), 12, CDim)],
-					24.f)
+				SNew(STextBlock).Font(ISFont(bMain ? "Bold" : "SemiBold", bMain ? 26 : 20)).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8f))
+				.ColorAndOpacity_Lambda([B, bMain]() { return FSlateColor(B.IsValid() && B->IsHovered() ? FLinearColor(1.f, 0.6f, 0.15f) : (bMain ? FLinearColor(1, 1, 1) : FLinearColor(1, 1, 1, 0.8f))); })
+				.Text(FText::FromString(L.ToUpper()))
+			];
+	};
+	return SNew(SOverlay)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(90, 0)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 64)).ColorAndOpacity(FLinearColor(1, 1, 1)).ShadowOffset(FVector2D(2, 2)).Text(FText::FromString(TEXT("INFINISAT")))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(4, 0, 0, 36)[SNew(STextBlock).Font(ISFont("Regular", 16)).ColorAndOpacity(FLinearColor(1.f, 0.6f, 0.15f)).Text(FText::FromString(TEXT("From a back-yard CanSat to interstellar space")))]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Play"), [this]() { if (IPC()) IPC()->EnterWorld(); }, true)]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Missions"), [this]() { Go(EScreen::Missions); })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Sandbox"), [this]() { StartMission(ISData::Missions().Num() - 1); })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Solar system"), [this]() { bOpsInCosmos = false; Go(EScreen::Cosmos); })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Sat-o-pedia"), [this]() { Go(EScreen::Pedia); })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("How to play"), [this]() { Go(EScreen::Help); })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Settings"), [this]() { Screen = EScreen::Pause; bDirty = true; })]
+			+ SVerticalBox::Slot().AutoHeight()[Item(TEXT("Quit"), [this]() { if (PC.IsValid()) PC->ConsoleCommand(TEXT("quit")); })]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(90, 0, 0, 30)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SCheckBox)
+				.IsChecked_Lambda([this]() { return bJudgeMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([this](ECheckBoxState S) { bJudgeMode = S == ECheckBoxState::Checked; bDirty = true; })
+				[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.7f)).Text(FText::FromString(TEXT("Judge / teacher mode: everything unlocked")))]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+			[
+				SNew(SBox).WidthOverride(720)
+				[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.45f)).AutoWrapText(true)
+					.Text(FText::FromString(TEXT("NASA Space Apps 2026.  3D models and planet textures: NASA 3D Resources (public domain), Poly Haven (CC0). Data: NASA, USGS, Earthdata, UCS, planet4589.org. Prototype, not affiliated with NASA.")))]
 			]
 		];
 }
@@ -532,16 +546,40 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 {
 	const TArray<FISMission>& Ms = ISData::Missions();
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+	// contracts arrive like real-world requests (dated, from a client), not numbered levels
+	auto MonthShort = [](int32 Mo) { static const TCHAR* N[] = { TEXT("Jan"), TEXT("Feb"), TEXT("Mar"), TEXT("Apr"), TEXT("May"), TEXT("Jun"), TEXT("Jul"), TEXT("Aug"), TEXT("Sep"), TEXT("Oct"), TEXT("Nov"), TEXT("Dec") }; return N[FMath::Clamp(Mo, 1, 12) - 1]; };
+	const FDateTime Today = FDateTime::Now();
 	for (int32 i = 0; i < Ms.Num(); ++i)
 	{
 		const FISMission& M = Ms[i];
 		const bool bOpen = bJudgeMode || M.Chapter <= MaxChapter || M.Id == "sandbox";
-		FString Stars;
-		for (int32 s = 0; s < 3; ++s) Stars += (BestStars.IsValidIndex(i) && BestStars[i] > s) ? TEXT("*") : TEXT("-");
-		List->AddSlot().AutoHeight().Padding(0, 3)
+		const bool bDone = BestStars.IsValidIndex(i) && BestStars[i] >= 2;
+		FString Title = M.Title;
+		if (Title.StartsWith(TEXT("Ch."))) { int32 Sp; if (Title.FindChar(TEXT(' '), Sp)) Title = Title.Mid(Sp).TrimStart(); }
+		const FDateTime Posted = Today - FTimespan::FromDays(FMath::Max(0, (int32)M.Chapter * 9 - 3));
+		const FString Status = M.Id == "sandbox" ? TEXT("FREE DESIGN") : bDone ? TEXT("COMPLETED") : bOpen ? TEXT("OPEN") : TEXT("ARRIVES LATER");
+		const FLinearColor StatusC = bDone ? COk : bOpen ? CAccent : FLinearColor(1, 1, 1, 0.35f);
+		const bool bSel = i == MissionIdx;
+		List->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
 		[
-			Btn(FString::Printf(TEXT("%s   %s%s"), *M.Title, M.Id == "sandbox" ? TEXT("") : *Stars, bOpen ? TEXT("") : TEXT("   (locked)")),
-				[this, i]() { MissionIdx = i; bDirty = true; }, i == MissionIdx ? 2 : 0, 13, bOpen)
+			SNew(SButton).ButtonStyle(FCoreStyle::Get(), "NoBorder").ContentPadding(0).IsEnabled(bOpen)
+			.OnClicked_Lambda([this, i]() { MissionIdx = i; bDirty = true; return FReply::Handled(); })
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).Padding(FMargin(12, 8))
+				.BorderBackgroundColor(bSel ? FLinearColor(0.22f, 0.13f, 0.05f, 0.95f) : FLinearColor(1, 1, 1, bOpen ? 0.05f : 0.02f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f)).Text(FText::FromString(FString::Printf(TEXT("%s  -  %s"), *M.Client.Left(30), M.Id == "sandbox" ? TEXT("any time") : *FString::Printf(TEXT("%d %s %d"), Posted.GetDay(), MonthShort(Posted.GetMonth()), Posted.GetYear()))))]
+						+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(StatusC).Text(FText::FromString(Status))]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)[SNew(STextBlock).Font(ISFont("SemiBold", 15)).ColorAndOpacity(FLinearColor(1, 1, 1, bOpen ? 1.f : 0.45f)).Text(FText::FromString(Title))]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(CGold.CopyWithNewOpacity(bOpen ? 1.f : 0.4f))
+						.Text(FText::FromString(M.Id == "sandbox" ? FString(TEXT("No budget limit")) : FString::Printf(TEXT("Budget %s   |   %s"), *ISSim::FmtMoney(M.BudgetM), *ISData::DestName(M.Dest))))]
+				]
+			]
 		];
 	}
 	const FISMission& M = Mission();
@@ -549,7 +587,7 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 	for (const FString& L : M.Learn) Learn->AddSlot().AutoHeight().Padding(8, 1)[Txt(TEXT("- ") + L, 12, CText)];
 
 	return SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("Order board: choose a mission"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("Contracts"))]
 		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)
 		[
 			SNew(SHorizontalBox)
@@ -564,7 +602,7 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 				[
 					Panel(
 						SNew(SScrollBox)
-						+ SScrollBox::Slot()[Txt(M.Title, 20, CAccent, true)]
+						+ SScrollBox::Slot()[Txt(M.Title.StartsWith(TEXT("Ch.")) && M.Title.Contains(TEXT(" ")) ? M.Title.Mid(M.Title.Find(TEXT(" "))).TrimStart() : M.Title, 20, CAccent, true)]
 						+ SScrollBox::Slot().Padding(0, 4)[Txt(TEXT("Client: ") + M.Client, 12, CDim)]
 						+ SScrollBox::Slot().Padding(0, 8)[Txt(M.Brief, 14, CText)]
 						+ SScrollBox::Slot().Padding(0, 4)[Txt(FString::Printf(TEXT("Destination: %s   |   Budget: %s   |   Life: %s"),

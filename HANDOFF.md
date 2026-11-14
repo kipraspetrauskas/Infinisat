@@ -24,3 +24,11 @@ Do, in order (commit + push after each step):
 8. Fusion add-in source is in Tools/FusionAddin (copy to %APPDATA%/Autodesk/Autodesk Fusion 360/API/AddIns/InfinisatCAD).
    Raw downloads (_downloads/, 2.2 GB) were NOT uploaded; all imported assets are already in Content/ (LFS). Re-fetch with Tools/*.py only if re-importing.
    v0.2 playable zip: GitHub Release v0.2.
+
+## Status (main PC, 2026-11-14)
+Steps 1-6 DONE: editor builds; screens verified; new logo on title + exe icon + splash (Build/Windows, force-added);
+-ISValidate = 0 [LAYOUT] issues; Shipping packaged + smoke-tested (Low graphics -ISGraphics=0 renders OK);
+Release v0.3 published (945 MB zip), `playable` README points to it.
+Toolchain installed on this PC via winget: VS 2022 Build Tools (VC + Win SDK 22621), gh. 7-Zip not installed (use `tar -a -cf x.zip dir`).
+Known: ops-screen satellite is very dark (needs a fill light); Low graphics sky is dark/flat.
+Backlog (step 7) remaining: parts stores, configurator, KSP map, better car, roof-light triangle.

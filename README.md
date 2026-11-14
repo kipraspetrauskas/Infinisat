@@ -1,6 +1,6 @@
 # Infinisat - download & play
 
-**Download:** https://github.com/kipraspetrauskas/Infinisat/releases/latest (Infinisat-Windows.zip)
+**Download (newest: v0.3):** https://github.com/kipraspetrauskas/Infinisat/releases/latest (Infinisat-Windows.zip, about 945 MB). Direct: https://github.com/kipraspetrauskas/Infinisat/releases/tag/v0.3
 
 # Infinisat - playable build (Windows)
 
@@ -9,7 +9,7 @@
 3. Run `Infinisat.exe`. If Windows SmartScreen appears: More info -> Run anyway.
    If it asks for the Visual C++ runtime / DirectX, run `Engine/Extras/Redist/en-us/UEPrereqSetup_x64.exe` once.
 
-Laptop without a graphics card? Pause (Esc) -> Settings -> Graphics -> **Low (low-poly)**.
+Laptop without a graphics card? The game picks **Low (low-poly)** by itself on weak GPUs; you can also set it in Pause (Esc) -> Settings -> Graphics.
 
 ## Controls
 | Key | Action |

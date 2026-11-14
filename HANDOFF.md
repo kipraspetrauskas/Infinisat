@@ -32,3 +32,21 @@ Release v0.3 published (945 MB zip), `playable` README points to it.
 Toolchain installed on this PC via winget: VS 2022 Build Tools (VC + Win SDK 22621), gh. 7-Zip not installed (use `tar -a -cf x.zip dir`).
 Known: ops-screen satellite is very dark (needs a fill light); Low graphics sky is dark/flat.
 Backlog (step 7) remaining: parts stores, configurator, KSP map, better car, roof-light triangle.
+
+## Player feedback 2026-11-14 -> roadmap (in this order)
+A. Bugs/glitches: lighting pass; workbench part pickup broken; floating objects; objects hanging over table edges;
+   CanSat parts in illogical places (must sit on shelves/desks, physically resting); launch pad too far;
+   rocket model broken; exhaust is a cone on the SIDE (must be at the nozzle, bottom); Earth faceted
+   ("3D hexagon") - check Nanite fallback on Low (r.Nanite 0) and use a smooth high-res sphere.
+B. Look: realistic PBR like PowerWash Simulator / Car Mechanic Simulator 2021. Cars, other houses and the map must
+   match the main house style. Sources: Poly Haven CC0, Fab free, NASA 3D, own models in Fusion. No paid assets.
+C. Rocket: real flight engine (thrust, Isp/mass flow, drag, gravity turn, staging, Tsiolkovsky), player control
+   (launch time, throttle, pitch/heading, staging, abort), detailed rocket model, realistic costs.
+D. Satellite builder (KSP 2 VAB style): start from a blank slate, drag parts into the correct slots with a guide
+   OR place freely and let the sim respond; zoom to the slot being changed; part pictures; no overlaps;
+   realistic numbers (benchmark against UCS data).
+E. World structure: main base = house, then random rocket sites, ESA etc. Missions are real-world events
+   (KSP-style contracts), not levels. Clock ticks in milliseconds with slow-motion and warp.
+F. UI redesign: Universe Sandbox for the main pages, KSP 2 for the builder.
+G. Data/map: real satellites from Content/Infinisat/Data/ucs_satellites.csv (UCS DB 5-1-2023, 7,560 sats)
+   in the orbit map; proper map. Cosmos explorer (branch dev, ISCosmos.cpp) still needs its first compile.

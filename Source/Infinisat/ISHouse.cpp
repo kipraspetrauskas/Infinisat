@@ -445,7 +445,7 @@ void AISHomeWorld::BuildHome()
 
 	// ---- mudroom: washer in the corner, low shelf, coat rack
 	KW(TEXT("washerDryerStacked"), false, 1500, -1, 985);
-	UStaticMeshComponent* Mud = KW(TEXT("bookcaseOpenLow"), false, 1250, 1, 925);
+	UStaticMeshComponent* Mud = KW(TEXT("bookcaseOpenLow"), false, 1250, 1, 905);
 	MudShelfTop = TopOf(Mud, FZ + 90.f);
 	MudShelfX = CenterOf(Mud, FVector(1290, 880, 0)).X;
 

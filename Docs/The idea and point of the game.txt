@@ -1,0 +1,286 @@
+INFINISAT - THE IDEA AND POINT OF THE GAME
+==========================================
+Last updated: 2026-11-14
+Engine: Unreal Engine 5.8 (installed at C:\Program Files\Epic Games\UE_5.8)
+Budget: zero. Free tools, free and open-licence assets only.
+
+
+1. THE CHALLENGE (NASA Space Apps 2026: "Space Mission Design Game")
+--------------------------------------------------------------------
+Designing a space mission means balancing demands that compete with each other:
+mission objectives, spacecraft design, scientific instruments, launch vehicles,
+budget, power, mass, communications and orbital constraints. Students rarely get
+to try a whole mission from concept to operation, so these trade-offs stay
+abstract.
+
+The challenge: build an interactive game where players design, manage and
+simulate a complete space mission. They make engineering decisions, manage
+limited resources, and see how each choice shapes whether the mission succeeds.
+
+What Infinisat must show to answer the challenge:
+  - Every design choice costs something: mass, power, money, data rate or time.
+  - The full mission life cycle: request -> design -> build -> launch -> orbit
+    -> operations -> end of life (deorbit or graveyard orbit).
+  - Clear feedback that explains WHY a mission succeeded or failed.
+  - Real-world grounding: the numbers come from real missions (see section 4).
+
+
+2. ONE-LINE PITCH
+-----------------
+You are BIT, a small spherical engineering robot. Clients send you orders. You
+design, build, launch and fly satellites into a crowded, realistic sky, starting
+with a CanSat from your back yard and ending with a probe that leaves the solar
+system.
+
+
+3. WHAT MAKES INFINISAT DIFFERENT
+---------------------------------
+Infinisat is about the SATELLITE, not the rocket. Rockets are mostly bought as a
+launch service (pick vehicle, launch site, rideshare or dedicated). The depth goes
+into the spacecraft itself:
+
+  - Bus design at subsystem level: structure, power (solar, battery, RTG),
+    thermal, attitude control (magnetorquers, reaction wheels, star trackers,
+    thrusters), propulsion, onboard computer, communications, payload.
+  - Budgets that must close: mass budget, power budget (sunlight vs eclipse),
+    link budget (antenna size, frequency band, distance -> data rate),
+    thermal range, delta-v budget, money and schedule.
+  - Failure modes taken from real history (e.g. Landsat 1's camera power fault,
+    section 4). Parts have reliability; redundancy costs mass but saves missions.
+  - A shared, crowded sky: thousands of existing satellites (GNSS, weather,
+    Starlink-style constellations). Players can RENT existing networks (ground
+    stations, relay satellites, GNSS for navigation) instead of building their
+    own, and must avoid collisions and debris.
+  - Scale from tiny to huge: CanSat (350 g, balloon or hobby rocket) -> CubeSat
+    -> small sat -> GEO comsat -> lunar orbiter -> RTG-powered outer planet probe
+    -> solar-sail interstellar probe.
+
+Legal / originality note: Kerbal Space Program is used ONLY as a design
+reference (play it to study what feels good). Its code, models, textures,
+sounds and names are not copied, decompiled or extracted. KSP is a Unity game
+and its assets and code are copyrighted, and its EULA forbids reverse
+engineering. Infinisat is built from scratch in Unreal with its own art style,
+its own characters and a satellite-first design.
+
+
+4. REAL-WORLD DATA (from the reference links)
+---------------------------------------------
+Use these numbers for in-game parts, orbits and missions.
+
+4.1 Landsat 1 (sources: science.nasa.gov/mission/landsat-1, usgs.gov)
+  - Launched 23 July 1972 as ERTS-1 on a Delta 900 from Vandenberg AFB.
+  - Orbit: 917 km, sun-synchronous near-polar, inclination 99.2 deg,
+    period 103 min (~14 orbits/day), repeat cycle 18 days.
+    Equator crossing ~9:30-9:42 local time (descending).
+  - Mass ~953 kg. 3 m tall, 1.5 m diameter, solar paddles span 4 m.
+    Attitude control +/-0.7 deg. Hydrazine, 3 thrusters. S-band and VHF radio.
+    Bus was a modified Nimbus weather satellite.
+  - Instruments:
+      RBV: 3 cameras, 80 m. A power-switching fault caused an attitude upset
+           on 6 Aug 1972; the RBV was switched off 15 days after launch.
+      MSS: 4 bands (green 0.5-0.6, red 0.6-0.7, NIR 0.7-0.8, NIR 0.8-1.1 um),
+           80 m resolution, 185 km swath, 6-bit data. Became the main sensor.
+  - Design life 1 year; actually ran until 6 Jan 1978 (~5.5 years).
+  - First image: Dallas-Fort Worth, 25 July 1972. Imaged an 81,000-acre
+    Alaska fire within days. Near-global land coverage by end of 1973.
+  -> GAME USE: Chapter 2 "Eyes on Earth" mission template. Teaches
+     sun-synchronous orbits, swath vs revisit time, instrument bands, and
+     "design life vs actual life". The RBV fault becomes a scripted failure
+     event the player must recover from.
+
+4.2 GNSS (source: earthdata.nasa.gov/.../gnss)
+  - GPS: 24 operational satellites, circular 12-hour orbits at 20,200 km.
+    About 6 visible from anywhere at almost any time.
+  - GLONASS: 24 operational (26 total), 19,140 km.
+  - Galileo: operational since Dec 2016; 30 satellites (27 + 3 spares) in
+    3 planes at 23,222 km.
+  - BeiDou: 35 nominal: 5 GEO, 3 IGSO, 27 MEO.
+  - Regional: QZSS (Japan, 4 sats), NavIC (India, geosynchronous).
+  - Receivers decode ranging codes on two radio carriers. Geodesy uses
+    several hundred permanent ground receivers to measure plate motion,
+    earthquake displacement and Earth orientation. Many satellites also
+    carry laser retroreflectors.
+  -> GAME USE: Chapter 1 "Where Am I?" (build one GNSS satellite and fill a gap
+     in a constellation; learn MEO, clocks, coverage, why you need 4+ satellites
+     for a position fix). Later, GNSS is a SERVICE the player's own satellites
+     use for navigation in LEO.
+
+4.3 Starlink / mega-constellations (source: planet4589.org, data 13 Nov 2026)
+  - 13,096 launched; 20 failed to reach orbit; 1,903 re-entered.
+  - 11,193 in orbit, 11,179 working, 9,704 in operational orbit.
+  - Shells at inclinations 43, 53, 70 and 97 deg.
+  - Gen3: 46 launched, 20 failed to orbit, none operational yet.
+  -> GAME USE: the sky is crowded. Starlink-style shells appear as a live
+     background population (generic name in game, e.g. "MegaNet"). Collision
+     avoidance, debris and end-of-life disposal are real mechanics. A
+     late-game order asks for a deorbit-compliant constellation.
+
+4.4 Weather satellites (rmets.org page blocked automated access; the figures
+    below are standard reference values, check them against the article)
+  - Geostationary (GEO): 35,786 km above the equator, period = 1 day, stays
+    over one spot. Images a full disc every 10-15 min. Examples: Meteosat
+    (EUMETSAT), GOES (NOAA), Himawari (Japan).
+  - Polar-orbiting (LEO, ~800-850 km, sun-synchronous): covers the whole Earth
+    twice a day in strips, higher resolution, sounders measure temperature and
+    humidity profiles. Examples: Metop, NOAA-20/21.
+  - Satellite data is the largest single input to numerical weather prediction.
+  -> GAME USE: Chapter 3 "Storm Watch": the player chooses GEO (constant view,
+     expensive launch, low resolution) vs polar (cheap, detailed, gaps in time)
+     or both. A clear trade-off lesson.
+
+4.5 Challenge page (spaceappschallenge.org) could not be fetched automatically
+    (certificate error). Read it in a browser and copy the "Objectives",
+    "Potential Considerations" and "Resources" sections here.
+
+
+5. PLAYER CHARACTER: "BIT"  (from Character.jpg / Character more detail.jpg)
+----------------------------------------------------------------------------
+  - Spherical robot body. Horizontal band around the middle.
+  - One big circular eye in the centre (iris ring + dark pupil). The eye is the
+    main way it shows emotion: widen, squint, blink, change colour.
+  - Floating, detached hands (no arms): round palms with small floating
+    fingertip spheres. Hands drift and bob; they snap together to build.
+  - Small panel lines on the body (four short slashes).
+  - Role: the hands do the building in the assembly hall (pick up parts, bolt,
+    solder). The eye is the camera in tutorials. BIT can float around the
+    satellite in the build bay.
+  - Working name "BIT" can be changed.
+
+
+6. LOGO  (from Logo.jpg)
+-------------------------
+"A satellite with a solar sail launches from ESA's site in French Guiana
+(Kourou), circles Earth and heads into deep space."
+  - Sketch: Earth (lower) with a launch streak crossing it diagonally, a
+    trajectory line leading up to a smaller sphere with a satellite and
+    radiating sail lines (upper left).
+  - Logo version: flat 2-3 colour vector. Earth circle, one swooping orbit arc
+    that becomes an escape trajectory, a square solar sail at the end. The
+    "INFINISAT" wordmark could put an infinity sign into the orbit arc.
+  - Free tools: Inkscape (vector), Krita (painting).
+  Note: Kourou is in French Guiana, an overseas region of France, so "ESA France"
+  in the sketch fits. ESA's spaceport is the Guiana Space Centre.
+
+
+7. ART STYLE
+------------
+"Not hyper-real, not PS2." Target: stylized, clean, readable.
+  - Soft PBR materials with slightly bold colours. Clean silhouettes.
+    Subtle outline post-process on parts in the build bay.
+  - Earth: real NASA Blue Marble / Black Marble textures (public domain),
+    slightly stylized atmosphere glow.
+  - UI: blueprint / engineering-drawing look (white lines on navy) for design
+    screens, so budgets read like real spec sheets.
+  - Satellites: chunky readable parts, gold MLI foil, blue solar cells. They
+    should look like real hardware, just simplified.
+
+
+8. GAME STRUCTURE
+-----------------
+8.1 Core loop
+  ORDER BOARD -> DESIGN (bus + payload, budgets must close) -> TEST (thermal-vac,
+  vibration, cost/time vs risk) -> LAUNCH (buy a ride: vehicle, site, slot)
+  -> COMMISSIONING (deploy panels, detumble, first contact) -> OPERATIONS
+  (time-warp, downlink data, handle anomalies) -> RESULTS (client score,
+  money, reputation, unlocks) -> END OF LIFE (deorbit, graveyard, or keep).
+
+8.2 Resources the player manages
+  Money, reputation, schedule (deadlines), research points, ground station
+  time, launch slots, and the in-orbit budgets: mass, power, data, delta-v,
+  thermal.
+
+8.3 Campaign (progression from basic to interstellar)
+  Ch 0  Back Yard     CanSat on a weather balloon / hobby rocket. Basics:
+                      mass, battery, radio range, parachute.
+  Ch 1  Where Am I?   GNSS satellite at MEO (20,200 km). Clocks, coverage,
+                      constellation geometry.
+  Ch 2  Eyes on Earth Landsat-like imager, sun-synchronous 900 km.
+                      Resolution vs swath vs data rate.
+  Ch 3  Storm Watch   Weather: GEO vs polar trade.
+  Ch 4  Connect       Comms constellation in a crowded LEO. Debris and
+                      deorbit rules. Use or compete with MegaNet.
+  Ch 5  Moonshot      Lunar orbiter that maps and ranks landing sites
+                      (slope, sunlight, comms visibility to Earth, ice).
+  Ch 6  Big Planet    RTG ("nuclear") probe to Jupiter; radiation hardening,
+                      Deep Space Network-style rented antennas, light-time
+                      delay. Final act: atmospheric entry probe that "beeps"
+                      until it is crushed.
+  Ch 7  Infinity      Solar-sail interstellar probe (the logo mission). Leave
+                      the solar system; data return across decades.
+  Sandbox: free design of anything from a CanSat to an interstellar probe.
+
+8.4 EDUCATION IS THE CORE (every mechanic must teach something)
+  Rule: no number in the game is magic. Every value can be clicked to show
+  WHERE it comes from (formula + real-world example + source).
+
+  a) Learning objectives per chapter, shown before and checked after:
+     Ch0 mass, battery capacity, radio range, drag/parachute
+     Ch1 orbital period (Kepler's 3rd law), MEO, atomic clocks, trilateration,
+         why 4 satellites for a GNSS fix
+     Ch2 sun-synchronous orbit, swath, resolution, revisit, spectral bands,
+         data volume vs downlink
+     Ch3 GEO vs LEO trade, coverage, latency, launch cost per kg
+     Ch4 constellations, collision risk, debris, deorbit rules
+     Ch5 transfer orbits, delta-v (rocket equation), lunar landing-site
+         criteria, light-time
+     Ch6 inverse-square sunlight -> RTG, radiation, Deep Space Network,
+         link budget over huge distances
+     Ch7 solar sail physics (radiation pressure), escape velocity,
+         heliopause, decades-long missions
+  b) BIT is the mentor: short hints, "Why?" buttons, and a post-mission
+     debrief that names the ONE limiting factor and how to fix it
+     ("Your battery emptied in eclipse at minute 36").
+  c) Live formulas in the design screen, e.g. T = 2*pi*sqrt(a^3/mu),
+     dv = Isp*g0*ln(m0/mf), battery depth = load * eclipse_time / capacity.
+     Values update as parts change, so cause and effect is visible.
+  d) "Compare with reality": after each mission the player's design is shown
+     next to the real one (Landsat 1, GOES, LRO, Juno, Voyager...) with
+     mass, power, lifetime side by side, using the NASA 3D models.
+  e) Quick checks: 2-3 multiple-choice questions per chapter (unlock bonus
+     parts). "Sat-o-pedia" encyclopedia of every part and real spacecraft.
+  f) Failure is a lesson: anomalies come from real history (Landsat 1 RBV
+     power fault) and the debrief explains what engineers did.
+  g) Teacher/judge mode: all chapters unlocked, sandbox, exportable report
+     of choices and results.
+
+
+9. TECHNICAL PLAN (Unreal Engine 5.8, free tools only)
+------------------------------------------------------
+  - Physics: do NOT simulate orbits with the physics engine. Use patched-conic
+    two-body orbits (Kepler) computed in C++, with double precision and
+    floating origin (UE5 Large World Coordinates). Time warp is analytic.
+  - Background satellites: load real orbital elements (TLEs, free from
+    CelesTrak) and propagate with SGP4 (open-source C++ implementation by
+    Vallado, free licence). Render thousands as instanced points (Niagara).
+  - Data-driven parts: every part is a row in a DataTable/JSON (mass, power,
+    cost, reliability, size), so designers add parts without code.
+  - Systems: Mission/Contract system, Design validator (budgets), Ops simulator
+    (power/thermal/data tick per orbit), Event/anomaly system, Save/load.
+  - UI: UMG (+ CommonUI plugin, built in).
+  - Two PCs (local + AnyDesk machine): use Git + Git LFS (free on GitHub up to
+    the free limits) or a free Perforce Helix Core server (free for up to
+    5 users) for version control. Do not sync a UE project via OneDrive; it
+    corrupts files. Move the project out of OneDrive, e.g. C:\Dev\Infinisat.
+
+  Free asset sources (check each licence; CC0 or public domain preferred):
+    - NASA 3D Resources (nasa3d.arc.nasa.gov / science.nasa.gov 3D models):
+      public domain spacecraft models, NASA image use guidelines apply
+      (no NASA logo as endorsement).
+    - NASA Visible Earth: Blue Marble / Black Marble Earth textures.
+    - Solar System Scope textures (CC BY 4.0) for planets.
+    - Quixel Megascans / Fab free content (free for Unreal use).
+    - Poly Haven (CC0) HDRIs, textures, models.
+    - Kenney.nl (CC0) UI and sound.
+    - Blender (modelling), Krita/Inkscape/GIMP (2D), Audacity (sound),
+      freesound.org (check per-file licence).
+
+
+10. FIRST MILESTONE (vertical slice for the hackathon demo)
+-----------------------------------------------------------
+  1. Order board with 1 order: "GNSS gap filler" (or CanSat for tutorial).
+  2. Design screen: choose ~15 parts; live mass/power/cost/link budgets.
+  3. Launch: choose 1 of 3 vehicles (different cost/capacity/orbits).
+  4. Orbit view: Earth, player sat, ~1,000 real background satellites.
+  5. Ops: time warp, eclipse, battery graph, one anomaly.
+  6. Result screen with explanation of success or failure.
+  7. BIT as a simple animated sphere with eye + floating hands.

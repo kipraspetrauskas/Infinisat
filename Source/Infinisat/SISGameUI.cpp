@@ -201,7 +201,25 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 		W->Toasts.Reset();
 		if (Screen == EScreen::Bench && SeenDesignVersion != W->DesignVersion) { SeenDesignVersion = W->DesignVersion; Eval = W->Eval; bDirty = true; }
 	}
-	if (Screen == EScreen::Ops && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
+	// one continuous space: wheel past the outer zoom limit around the satellite -> the solar system (Earth in view);
+	// wheel all the way back into Earth -> the satellite again. The mission clock keeps running in both.
+	if (Scene.IsValid())
+	{
+		const int32 Z = Scene->TakeZoomPast();
+		if (Z < 0 && Screen == EScreen::Ops && !Scene->IsLaunching() && !Scene->IsFlightActive())
+		{
+			bOpsInCosmos = true;
+			Go(EScreen::Cosmos);
+			const int32 Earth = Scene->CosmosFind(TEXT("Earth"));
+			if (Earth >= 0) Scene->FocusCosmos(Earth);
+		}
+		else if (Z > 0 && Screen == EScreen::Cosmos && bOpsInCosmos && Scene->CosmosName(Scene->CosmosFocusIdx()) == TEXT("Earth"))
+		{
+			bOpsInCosmos = false;
+			Go(EScreen::Ops);
+		}
+	}
+	if ((Screen == EScreen::Ops || (Screen == EScreen::Cosmos && bOpsInCosmos)) && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
 	{
 		// real time: 1x = one second per second; Warp multiplies
 		if (Ops.Advance(Warp * Dt / 86400.0)) bDirty = true;
@@ -864,65 +882,85 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 
 	auto WarpBtn = [this](const TCHAR* L, float W) { return Btn(L, [this, W]() { Warp = W; bDirty = true; }, Warp == W ? 2 : 0, 12); };
 
+	// Mission view in the Universe Sandbox manner: space fills the screen; a small status card, a short event feed and one
+	// slim bar at the bottom. Hidden while a launch is flown (the flight HUD takes over).
+	const FLinearColor Bar(0.02f, 0.025f, 0.03f, 0.82f);
+	auto NotFlying = [this]() { return Scene.IsValid() && (Scene->IsFlightActive() || Scene->IsLaunching()) ? EVisibility::Collapsed : EVisibility::SelfHitTestInvisible; };
+	auto Slim = [](const TCHAR* L, TFunction<float()> F, const FLinearColor& C) -> TSharedRef<SWidget>
+	{
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 1)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.55f)).Text(FText::FromString(L))]
+			+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(5)[SNew(SProgressBar).Percent_Lambda([F]() { return TOptional<float>(F()); }).FillColorAndOpacity(C)]];
+	};
+	TSharedRef<SVerticalBox> Feed = SNew(SVerticalBox);
+	for (int32 i = Ops.Log.Num() - 1, k = 0; i >= 0 && k < 4; --i, ++k)
+	{
+		const FISEvent& E = Ops.Log[i];
+		const FLinearColor C = E.Type == EISEvt::Good ? COk : E.Type == EISEvt::Warn ? CWarn : (E.Type == EISEvt::Fatal || E.Type == EISEvt::Anomaly) ? CFail : FLinearColor(1, 1, 1);
+		Feed->AddSlot().AutoHeight().Padding(0, 2)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(C.CopyWithNewOpacity(1.f - k * 0.2f)).AutoWrapText(true)
+			.ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8f)).Text(FText::FromString(FString::Printf(TEXT("T+%s   %s"), *ISSim::FmtDays(E.Day), *E.Text)))];
+	}
+	TSharedRef<SVerticalBox> FullLog = SNew(SVerticalBox);
+	for (int32 i = Ops.Log.Num() - 1; i >= 0; --i)
+	{
+		const FISEvent& E = Ops.Log[i];
+		FullLog->AddSlot().AutoHeight().Padding(0, 3)[Txt(FString::Printf(TEXT("T+%s   %s"), *ISSim::FmtDays(E.Day), *E.Text), 12, CText)];
+		if (!E.Edu.IsEmpty()) FullLog->AddSlot().AutoHeight().Padding(14, 0, 0, 2)[Txt(E.Edu, 11, CDim)];
+	}
 	TSharedRef<SOverlay> O = SNew(SOverlay)
-		+ SOverlay::Slot()
+		// status card, top left
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(20)
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("MISSION CONTROL  -  ") + M.Title)]
-			+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)
+			SNew(SBox).WidthOverride(320).Visibility_Lambda(NotFlying)
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(14, 10))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 13)).ColorAndOpacity(CAccent).Text(FText::FromString(M.Title.ToUpper()))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)[SNew(STextBlock).Font(ISFont("Mono", 22)).ColorAndOpacity(FLinearColor(1, 1, 1))
+						.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("T+ %s"), *ISSim::FmtDays(Ops.Day))); })]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.55f)).Text(FText::FromString(TEXT("of ") + ISSim::FmtDays(Ops.EndDay) + TEXT(" planned")))]
+					+ SVerticalBox::Slot().AutoHeight()[Slim(TEXT("Battery"), [this]() { return (float)Ops.Battery; }, COk)]
+					+ SVerticalBox::Slot().AutoHeight()[Slim(TEXT("Health"), [this]() { return Ops.bMissionLost ? 0.f : (float)Ops.Health; }, CAccent)]
+					+ SVerticalBox::Slot().AutoHeight()[Slim(TEXT("Mission"), [this]() { return (float)(Ops.Day / FMath::Max(1e-9, Ops.EndDay)); }, CGold)]
+				]
+			]
+		]
+		// event feed, top right (latest four; the full log on demand)
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(20)
+		[
+			SNew(SBox).WidthOverride(bShowLog ? 520.f : 440.f).Visibility_Lambda(NotFlying)
+			[
+				bShowLog
+				? StaticCastSharedRef<SWidget>(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(12)
+					[
+						SNew(SBox).MaxDesiredHeight(560)[SNew(SScrollBox) + SScrollBox::Slot()[FullLog]]
+					])
+				: StaticCastSharedRef<SWidget>(Feed)
+			]
+		]
+		// bottom bar: time | numbers | views
+		+ SOverlay::Slot().VAlign(VAlign_Bottom)
+		[
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 8)).Visibility_Lambda(NotFlying)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth()
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[WarpBtn(TEXT("||"), 0.f)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[WarpBtn(TEXT("1x"), 1.f)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[WarpBtn(TEXT("100x"), 100.f)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[WarpBtn(TEXT("10k"), 1.0e4f)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[WarpBtn(TEXT("1M"), 1.0e6f)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0, 0, 0)[Btn(TEXT("Next event >>"), [this]() { const double Nx = Ops.NextEventDay(); if (Nx > Ops.Day) { Ops.Advance(Nx - Ops.Day + 1e-6); bDirty = true; } }, 0, 11)]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).HAlign(HAlign_Center)
 				[
-					SNew(SBox).WidthOverride(380)
-					[
-						Panel(
-							SNew(SVerticalBox)
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("MISSION CLOCK"), 12, CAccent, true)]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 22)).ColorAndOpacity(CText)
-								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("T+ %s"), *ISSim::FmtDays(Ops.Day))); })]
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("of ") + ISSim::FmtDays(Ops.EndDay) + TEXT(" planned"), 12, CDim)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
-							[
-								SNew(SHorizontalBox)
-								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("||"), 0.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("1x"), 1.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("100x"), 100.f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("10k"), 1.0e4f)]
-								+ SHorizontalBox::Slot().AutoWidth().Padding(1)[WarpBtn(TEXT("1M"), 1.0e6f)]
-							]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)
-							[
-								Btn(TEXT("Warp to next event  >>"), [this]() { const double Nx = Ops.NextEventDay(); if (Nx > Ops.Day) { Ops.Advance(Nx - Ops.Day + 1e-6); bDirty = true; } }, 0, 12)
-							]
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("Time runs in real time at 1x (like KSP). One orbit of a low satellite takes ~95 minutes: try 100x."), 12, CDim)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Battery"), 12, CDim)]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)Ops.Battery); }).FillColorAndOpacity(COk)]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Spacecraft health"), 12, CDim)]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>(Ops.bMissionLost ? 0.f : (float)Ops.Health); }).FillColorAndOpacity(CAccent)]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Mission progress"), 12, CDim)]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)(Ops.Day / FMath::Max(1e-9, Ops.EndDay))); }).FillColorAndOpacity(CGold)]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
-							[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
-								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("Data downloaded: %s Gb\nLink: %s kbps  |  contact %s min/day\nPower avg: %s W for %s W load"),
-									*ISSim::Fmt(Ops.DataGb, 2), *ISSim::Fmt(Eval.LinkKbps, 1), *ISSim::Fmt(Eval.ContactMin, 0), *ISSim::Fmt(Eval.AvgGenW, 0), *ISSim::Fmt(Eval.LoadW, 0))); })]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("Tip: drag with the mouse to rotate, wheel to zoom. The satellite is drawn much bigger than real size so you can see it."), 12, CDim)]
-							+ SVerticalBox::Slot().FillHeight(1.f)[SNew(SSpacer)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Toggle follow camera / orbit map"), [this]() { if (Scene.IsValid()) Scene->ToggleMap(); }, 0, 13)]
-							+ SVerticalBox::Slot().AutoHeight()[Ops.IsFinished() ? Btn(TEXT("Debrief  >"), [this]() { Go(EScreen::Debrief); }, 1, 16) : Btn(TEXT("Abort and redesign"), [this]() { Go(EScreen::Design); })])
-					]
+					SNew(STextBlock).Font(ISFont("Mono", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.8f))
+					.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("DATA %s Gb     LINK %s kbps, %s min/day     POWER %s W / %s W load"),
+						*ISSim::Fmt(Ops.DataGb, 2), *ISSim::Fmt(Eval.LinkKbps, 1), *ISSim::Fmt(Eval.ContactMin, 0), *ISSim::Fmt(Eval.AvgGenW, 0), *ISSim::Fmt(Eval.LoadW, 0))); })
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SSpacer)]
-				+ SHorizontalBox::Slot().AutoWidth()
-				[
-					SNew(SBox).WidthOverride(500)
-					[
-						Panel(
-							SNew(SVerticalBox)
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("EVENT LOG (newest first)"), 12, CAccent, true)]
-							+ SVerticalBox::Slot().FillHeight(1.f)[SNew(SScrollBox) + SScrollBox::Slot()[Log]])
-					]
-				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[Btn(TEXT("Orbit map"), [this]() { if (Scene.IsValid()) Scene->ToggleMap(); }, 0, 11)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[Btn(TEXT("Solar system"), [this]() { bOpsInCosmos = true; Go(EScreen::Cosmos); if (Scene.IsValid()) { const int32 Ea = Scene->CosmosFind(TEXT("Earth")); if (Ea >= 0) Scene->FocusCosmos(Ea); } }, 0, 11)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[Btn(bShowLog ? TEXT("Hide log") : TEXT("Log"), [this]() { bShowLog = !bShowLog; bDirty = true; }, 0, 11)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4, 0, 0, 0)[Ops.IsFinished() ? Btn(TEXT("Debrief >"), [this]() { Go(EScreen::Debrief); }, 1, 12) : Btn(TEXT("Abort"), [this]() { Go(EScreen::Design); }, 0, 11)]
 			]
 		];
 
@@ -2125,66 +2163,100 @@ namespace
 	};
 }
 
+const FSlateBrush* SISGameUI::BodyBrush(int32 Body)
+{
+	if (TSharedPtr<FSlateBrush>* B = BodyBrushes.Find(Body)) return B->Get();
+	UTexture2D* T = Scene.IsValid() ? Scene->CosmosThumb(Body) : nullptr;
+	TSharedPtr<FSlateBrush> Br = MakeShared<FSlateBrush>();
+	Br->DrawAs = ESlateBrushDrawType::RoundedBox;
+	Br->OutlineSettings.RoundingType = ESlateBrushRoundingType::HalfHeightRadius;
+	Br->ImageSize = FVector2D(58, 58);
+	if (T) { T->AddToRoot(); Br->SetResourceObject(T); }
+	else Br->TintColor = FSlateColor(Scene.IsValid() ? Scene->CosmosColor(Body) : FLinearColor::Gray);
+	BodyBrushes.Add(Body, Br);
+	return Br.Get();
+}
+
+// Space map in the Universe Sandbox manner: space fills the screen; thin labels; one slim bar at the bottom with time
+// on the left, a strip of round body pictures in the middle and a few tools on the right; a small card for the selection.
 TSharedRef<SWidget> SISGameUI::BuildCosmos()
 {
-	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	const int32 N = Scene.IsValid() ? Scene->CosmosCount() : 0;
 	const int32 Sel = Scene.IsValid() ? Scene->CosmosFocusIdx() : 0;
-	// tree order: every body directly followed by its moons / spacecraft
 	TArray<int32> Order;
 	{
-		TFunction<void(int32)> Visit = [&](int32 P)
-		{
-			for (int32 c = 0; c < N; ++c)
-				if (Scene->CosmosParent(c) == P) { Order.Add(c); Visit(c); }
-		};
+		TFunction<void(int32)> Visit = [&](int32 P) { for (int32 c = 0; c < N; ++c) if (Scene->CosmosParent(c) == P) { Order.Add(c); Visit(c); } };
 		Visit(-1);
 	}
-	FString LastGroup;
+	const FLinearColor Bar(0.02f, 0.025f, 0.03f, 0.82f), Faint(1, 1, 1, 0.55f);
+	TSharedRef<SHorizontalBox> Strip = SNew(SHorizontalBox);
 	for (const int32 i : Order)
 	{
-		const FString Grp = Scene->CosmosGroup(i);
-		if (Grp != LastGroup)
-		{
-			List->AddSlot().AutoHeight().Padding(0, LastGroup.IsEmpty() ? 0 : 10, 0, 3)[Txt(Grp.ToUpper(), 13, CAccent, true)];
-			LastGroup = Grp;
-		}
-		List->AddSlot().AutoHeight().Padding(FMath::Min(3, Scene->CosmosDepth(i)) * 14.f, 1, 0, 1)
-			[Btn(Scene->CosmosName(i), [this, i]() { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; }, i == Sel ? 2 : 0, 12)];
+		if (Scene->CosmosDepth(i) > 2) continue;   // planets, moons and spacecraft; deeper levels stay in the 3D view
+		const bool bSel = i == Sel;
+		Strip->AddSlot().AutoWidth().Padding(5, 0)
+		[
+			SNew(SButton).ButtonStyle(FCoreStyle::Get(), "NoBorder").ContentPadding(0)
+			.OnClicked_Lambda([this, i]() { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; return FReply::Handled(); })
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[
+					SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).Padding(2)
+					.BorderBackgroundColor(bSel ? FLinearColor(1.f, 0.56f, 0.12f) : FLinearColor(1, 1, 1, 0.f))
+					[SNew(SBox).WidthOverride(58).HeightOverride(58)[SNew(SImage).Image(BodyBrush(i))]]
+				]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 3, 0, 0)
+				[SNew(SBox).WidthOverride(76)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(bSel ? FLinearColor(1.f, 0.7f, 0.3f) : Faint).Justification(ETextJustify::Center).Text(FText::FromString(Scene->CosmosName(i).Left(14)))]]
+			]
+		];
 	}
 	const float Rate = Scene.IsValid() ? Scene->GetCosmosRate() : 1.f;
 	TSharedRef<SHorizontalBox> Speeds = SNew(SHorizontalBox);
-	struct FSpd { const TCHAR* L; float R; } Spd[] = { { TEXT("||"), 0.f }, { TEXT("1 day/s"), 1.f }, { TEXT("1 month/s"), 30.f }, { TEXT("1 year/s"), 365.f } };
+	struct FSpd { const TCHAR* L; float R; } Spd[] = { { TEXT("||"), 0.f }, { TEXT("1 d/s"), 1.f }, { TEXT("30 d/s"), 30.f }, { TEXT("1 y/s"), 365.f } };
 	for (const FSpd& S : Spd)
 	{
 		const float R = S.R;
-		Speeds->AddSlot().AutoWidth().Padding(0, 0, 6, 0)[Btn(S.L, [this, R]() { if (Scene.IsValid()) Scene->SetCosmosRate(R); bDirty = true; }, FMath::IsNearlyEqual(Rate, R) ? 2 : 0, 12)];
+		Speeds->AddSlot().AutoWidth().Padding(0, 0, 4, 0)[Btn(S.L, [this, R]() { if (Scene.IsValid()) Scene->SetCosmosRate(R); bDirty = true; }, FMath::IsNearlyEqual(Rate, R) ? 2 : 0, 11)];
 	}
-	Speeds->AddSlot().AutoWidth()[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels: on") : TEXT("Labels: off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 12)];
 	const FString Name = Scene.IsValid() ? Scene->CosmosName(Sel) : FString();
-	const FString Facts = Scene.IsValid() ? Scene->CosmosFacts(Sel) : FString();
+	FString Facts = Scene.IsValid() ? Scene->CosmosFacts(Sel) : FString();
+	TSharedRef<SVerticalBox> Tools = SNew(SVerticalBox);
+	if (bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to your satellite"), [this]() { bOpsInCosmos = false; Go(EScreen::Ops); }, 1, 12)];
+	Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels on") : TEXT("Labels off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 11)];
+	Tools->AddSlot().AutoHeight()[Btn(TEXT("Menu"), [this]() { bOpsInCosmos = false; Go(EScreen::Title); }, 0, 11)];
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(SISCosmosOverlay, Scene, PC, [this](int32 i) { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; })]
-		+ SOverlay::Slot()[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("COSMOS EXPLORER  -  click a world to fly there"))]
-		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)
+		// selection card, top left (small)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(20)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(320)[Panel(SAssignNew(CosmosBox, SScrollBox) + SScrollBox::Slot()[List])]]
-			+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SSpacer)]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
+			SNew(SBox).WidthOverride(380)
 			[
-				SNew(SBox).WidthOverride(520)
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(14, 10))
 				[
-					Panel(
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()[Txt(Name, 18, CAccent, true)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6)[Txt(Facts, 13, CText)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 4)[Txt(TEXT("Time speed"), 12, CDim)]
-						+ SVerticalBox::Slot().AutoHeight()[Speeds]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[Txt(TEXT("Drag to look around, mouse wheel to zoom. Distances are squeezed so everything fits; sizes, tilts, spins and periods of real worlds are true to life. Worlds marked FICTIONAL are invented but follow real physics."), 11, CDim)], 16.f)
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(FLinearColor(1, 1, 1)).Text(FText::FromString(Name))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.75f)).AutoWrapText(true).Text(FText::FromString(Facts))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f)).AutoWrapText(true)
+						.Text(FText::FromString(bOpsInCosmos ? TEXT("Wheel: zoom. Zoom all the way into Earth to return to your satellite.") : TEXT("Wheel: zoom.  Drag: look around.  Click a world to fly there.")))]
 				]
 			]
-		]];
+		]
+		// bottom bar: time | bodies | tools
+		+ SOverlay::Slot().VAlign(VAlign_Bottom)
+		[
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 10))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 18, 0)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Mono", 13)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.9f))
+						.Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? FString::Printf(TEXT("Day %.1f"), Scene->GetCosmosDays()) : FString()); })]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[Speeds]
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SScrollBox).Orientation(Orient_Horizontal).ScrollBarVisibility(EVisibility::Collapsed) + SScrollBox::Slot()[Strip]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18, 0, 0, 0)[SNew(SBox).WidthOverride(190)[Tools]]
+			]
+		];
 }

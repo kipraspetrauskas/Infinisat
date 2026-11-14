@@ -127,6 +127,10 @@ private:
 	FGeometry RootGeo;
 	void CardDragRay(const FPointerEvent& E);
 	TMap<FName, TSharedPtr<FSlateBrush>> ThumbBrushes;   // part pictures (render targets owned by the world)
+	TMap<int32, TSharedPtr<FSlateBrush>> BodyBrushes;    // round planet pictures for the cosmos body strip
+	const FSlateBrush* BodyBrush(int32 Body);
+	bool bOpsInCosmos = false;   // the mission is running while the player looks at the solar system
+	bool bShowLog = false;       // mission view: full event log open
 	const FSlateBrush* ThumbBrush(FName PartId);
 	FProgressBarStyle BarStyle;
 	FString DevShot;

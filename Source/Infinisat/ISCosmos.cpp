@@ -245,6 +245,7 @@ void AISSpaceScene::CosmosPlanetTex(int32 Body, UTexture2D* Tex, float Tilt, flo
 {
 	FCosmosBody& B = CosmosBodies[Body];
 	B.Tilt = Tilt;
+	if (Tex) B.Thumb = Tex;
 	UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(MatPlanet, this);
 	if (Tex) M->SetTextureParameterValue(TEXT("Tex"), Tex);
 	M->SetScalarParameterValue(TEXT("Ambient"), Ambient);

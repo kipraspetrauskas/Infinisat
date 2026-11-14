@@ -308,7 +308,28 @@ void AISSpaceScene::OrbitCamera(float DYaw, float DPitch)
 
 void AISSpaceScene::ZoomCamera(float Steps)
 {
-	CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(bTrueScale ? 0.75f : 0.88f, Steps), CamMin, CamMax);
+	const float Old = CamDistGoal;
+	// cosmos zooms in bigger steps so the whole Solar System is a few wheel notches away (Universe Sandbox feel)
+	const float Rate = bTrueScale ? 0.75f : (View == EISView::Cosmos ? 0.7f : 0.88f);
+	CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(Rate, Steps), CamMin, CamMax);
+	// pushing on against a limit (2 notches) asks the UI to move to the next scale: mission <-> solar system
+	const bool bAtMax = Steps < 0 && Old >= CamMax * 0.995f, bAtMin = Steps > 0 && Old <= CamMin * 1.005f;
+	if (bAtMax || bAtMin)
+	{
+		const int32 Dir = bAtMax ? -1 : 1;
+		ZoomPastCount = (FMath::Sign(ZoomPastCount) == Dir) ? ZoomPastCount + Dir : Dir;
+		if (FMath::Abs(ZoomPastCount) >= 2) { ZoomPast = Dir; ZoomPastCount = 0; }
+	}
+	else ZoomPastCount = 0;
+}
+
+UTexture2D* AISSpaceScene::CosmosThumb(int32 I) const
+{
+	if (!CosmosBodies.IsValidIndex(I)) return nullptr;
+	if (CosmosBodies[I].Thumb) return CosmosBodies[I].Thumb;
+	if (CosmosBodies[I].Name == TEXT("Earth")) return LoadObject<UTexture2D>(nullptr, TEXT("/Game/Infinisat/Textures/T_EarthDay.T_EarthDay"));
+	if (CosmosBodies[I].Parent < 0) return LoadObject<UTexture2D>(nullptr, TEXT("/Game/Infinisat/Textures/T_Sun.T_Sun"));
+	return nullptr;
 }
 
 // ------------------------------------------------------------------------------------------------ BIT

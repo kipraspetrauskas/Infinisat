@@ -67,6 +67,12 @@ public:
 	double GetCosmosDays() const { return CosmosDays; }
 	void ToggleCosmosLabels() { bCosmosLabels = !bCosmosLabels; }
 	bool CosmosLabelsOn() const { return bCosmosLabels; }
+	UTexture2D* CosmosThumb(int32 I) const;
+	FLinearColor CosmosColor(int32 I) const { return CosmosBodies.IsValidIndex(I) ? FLinearColor(CosmosBodies[I].LabelColor) : FLinearColor::White; }
+	int32 CosmosFind(const FString& Name) const { for (int32 i = 0; i < CosmosBodies.Num(); ++i) if (CosmosBodies[i].Name == Name) return i; return -1; }
+	// the player pushed the wheel past the zoom limit (-1 out, +1 in): the UI moves between the mission view and the solar system
+	int32 TakeZoomPast() { const int32 Z = ZoomPast; ZoomPast = 0; return Z; }
+	int32 ZoomPast = 0, ZoomPastCount = 0;
 	FVector CosmosPos(int32 I) const;
 	int32 CosmosParent(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Parent : -1; }
 	float CosmosRadius(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Radius : 0.f; }
@@ -181,6 +187,7 @@ private:
 		USceneComponent* Spinner = nullptr; // rotates (surface)
 		UMaterialInstanceDynamic* SunDirMID = nullptr; // Earth day/night material needs the sun direction
 		int32 Star = -1;                    // which star lights it
+		UTexture2D* Thumb = nullptr;        // surface texture, used as the picture in the body strip
 	};
 	TArray<FCosmosBody> CosmosBodies;
 	UPROPERTY() TArray<USceneComponent*> CosmosComps;

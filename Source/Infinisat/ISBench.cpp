@@ -213,6 +213,51 @@ void AISHomeWorld::RebuildCan()
 	if (Stage == EISStage::Sealed) CanHit = AddInteract(CanRoot->GetComponentLocation() + FVector(0, 0, 6), FVector(8, 8, 9), "cansat");
 }
 
+// ------------------------------------------------------------------------------------------------ aim highlight
+void AISHomeWorld::SetHighlight(FName Action, UPrimitiveComponent* Hit)
+{
+	if (Action == HighlightAction) return;
+	for (const TWeakObjectPtr<UPrimitiveComponent>& C : Highlighted) if (C.IsValid()) C->SetRenderCustomDepth(false);
+	Highlighted.Reset();
+	HighlightAction = Action;
+	if (Action.IsNone() || !Hit) return;
+	const FString A = Action.ToString();
+	if (A.StartsWith(TEXT("item:")))
+	{
+		const FName Part(*A.RightChop(5));
+		for (const FISHuntItem& H : Hunt) if (H.Part == Part) for (UStaticMeshComponent* C : H.Model.Parts) if (IsValid(C)) Highlighted.Add(C);
+	}
+	else
+	{
+		// the visible meshes that sit inside the interaction volume (laptop, workbench, can, rocket...)
+		const FBox Zone = Hit->Bounds.GetBox().ExpandBy(4.f);
+		const double ZoneVol = Zone.GetVolume();
+		for (UPrimitiveComponent* C : AllComps)
+		{
+			if (!IsValid(C) || !C->IsVisible() || C == Hit) continue;
+			const FBox B = C->Bounds.GetBox();
+			if (!Zone.IsInside(B.GetCenter()) || B.GetVolume() > ZoneVol * 3.0) continue;
+			Highlighted.Add(C);
+		}
+		if (Highlighted.Num() == 0 && Hit->IsVisible()) Highlighted.Add(Hit);
+	}
+	for (const TWeakObjectPtr<UPrimitiveComponent>& C : Highlighted) if (C.IsValid()) C->SetRenderCustomDepth(true);
+}
+
+FString AISHomeWorld::ModeTag() const
+{
+	switch (Stage)
+	{
+	case EISStage::NoOrder: return TEXT("NEW ORDER WAITING");
+	case EISStage::Build: return UsesHunt() && FoundCount(true) < RequiredCount() ? FString::Printf(TEXT("FIND PARTS  %d/%d"), FoundCount(true), RequiredCount()) : FString(TEXT("BUILD THE CANSAT"));
+	case EISStage::Sealed: case EISStage::Carry: return TEXT("CARRY TO THE PAD");
+	case EISStage::OnPad: case EISStage::Countdown: return TEXT("LAUNCH");
+	case EISStage::Boost: case EISStage::Coast: case EISStage::Descent: return TEXT("IN FLIGHT");
+	case EISStage::Landed: return TEXT("FIND THE CANSAT");
+	default: return TEXT("RECOVERED");
+	}
+}
+
 FVector AISHomeWorld::CanRootLocation() const { return CanRoot ? CanRoot->GetComponentLocation() : FVector::ZeroVector; }
 
 // ------------------------------------------------------------------------------------------------ drag & drop

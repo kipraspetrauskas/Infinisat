@@ -181,6 +181,9 @@ void AISHomeWorld::BuildSky()
 	S.bOverride_ColorContrast = true; S.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.f);
 	S.bOverride_ColorGain = true; S.ColorGain = FVector4(1.03f, 1.01f, 0.97f, 1.f);
 	S.bOverride_SceneFringeIntensity = true; S.SceneFringeIntensity = 0.f;
+	// thin yellow outline around whatever BIT is aiming at (objects flagged with Custom Depth; see SetHighlight)
+	if (UMaterialInterface* Ol = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Outline.M_IS_Outline")))
+		S.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Ol));
 	S.bOverride_AmbientOcclusionIntensity = true; S.AmbientOcclusionIntensity = 0.6f;
 }
 
@@ -649,7 +652,7 @@ FString AISHomeWorld::Objective() const
 {
 	switch (Stage)
 	{
-	case EISStage::NoOrder: return TEXT("Check the ORDER laptop on the workbench.");
+	case EISStage::NoOrder: return TEXT("Check the order laptop on the office desk.");
 	case EISStage::Build:
 		if (UsesHunt() && FoundCount(true) < RequiredCount())
 			return FString::Printf(TEXT("Find the CanSat parts around the house: %d/%d found.  Press Q to scan for parts nearby."), FoundCount(true), RequiredCount());

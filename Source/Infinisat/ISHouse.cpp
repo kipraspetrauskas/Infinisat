@@ -77,7 +77,7 @@ static const FISRealSwap* RealSwap(const FString& KenneyName)
 		{ TEXT("table"), { TEXT("dining_table"), 1.f } }, { TEXT("chair"), { TEXT("dining_chair_02"), 1.f } },
 		{ TEXT("chairModernCushion"), { TEXT("plastic_monobloc_chair_01"), 1.f } }, { TEXT("tableRound"), { TEXT("round_wooden_table_01"), 1.f } },
 		{ TEXT("trashcan"), { TEXT("metal_trash_can"), 0.6f } }, { TEXT("chairDesk"), { TEXT("painted_wooden_chair_01"), 1.f } },
-		{ TEXT("laptop"), { TEXT("classic_laptop"), 1.f, 180.f } }, { TEXT("radio"), { TEXT("vintage_radio_transceiver"), 1.f } },
+		{ TEXT("laptop"), { TEXT("classic_laptop"), 1.f, -90.f } }, { TEXT("radio"), { TEXT("vintage_radio_transceiver"), 1.f } },
 		{ TEXT("cardboardBoxOpen"), { TEXT("cardboard_box_01"), 1.f } }, { TEXT("cardboardBoxClosed"), { TEXT("cardboard_box_01"), 1.f } },
 		{ TEXT("lampRoundTable"), { TEXT("desk_lamp_arm_01"), 1.f } }, { TEXT("lampSquareTable"), { TEXT("desk_lamp_arm_01"), 1.f } },
 		{ TEXT("lampSquareCeiling"), { TEXT("modern_ceiling_lamp_01"), 1.f } },

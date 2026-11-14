@@ -1379,42 +1379,94 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 	return SNew(SOverlay)
 		.Visibility(EVisibility::HitTestInvisible)
 		+ SOverlay::Slot()[SNew(SISScanOverlay, WW, PC)]
+		// ---- workshop-game HUD: the world is the interface. Small mode tag, a dot, the object's name, a key hint.
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[Txt(TEXT("+"), 18, FLinearColor(1, 1, 1, 0.8f), true)]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 40, 0, 0)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(SBox).WidthOverride(5).HeightOverride(5)[SNew(SImage).Image(FCoreStyle::Get().GetBrush("WhiteBrush")).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f))]]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)
 			[
-				SNew(STextBlock).Font(ISFont("Bold", 16)).ColorAndOpacity(CGold).ShadowOffset(FVector2D(1, 1))
-				.Text_Lambda([this]() { return FText::FromString(IPC() ? IPC()->Prompt() : FString()); })
+				SNew(STextBlock).Font(ISFont("SemiBold", 15)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.95f)).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8f))
+				.Text_Lambda([this]()
+				{
+					// "E  Take: ESP32 microcontroller" -> the object's name next to the dot
+					FString P = IPC() ? IPC()->Prompt() : FString();
+					FString L, R;
+					if (P.Split(TEXT(": "), &L, &R)) return FText::FromString(R);
+					return FText();
+				})
 			]
 		]
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(16)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 70)
 		[
-			SNew(SBox).WidthOverride(430)
+			SNew(SHorizontalBox)
+			.Visibility_Lambda([this]() { return IPC() && !IPC()->Prompt().IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 10, 0)
 			[
-				Panel(SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("OBJECTIVE"), 12, CAccent, true)]
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Regular", 14)).ColorAndOpacity(CText).AutoWrapText(true)
-						.Text_Lambda([WW]() { return FText::FromString(WW.IsValid() ? WW->Objective() : FString()); })], 10.f)
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.94f, 0.93f, 0.9f)).Padding(FMargin(9, 2))
+				.Visibility_Lambda([this]() { return IPC() && IPC()->Prompt().StartsWith(TEXT("E  ")) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+				[SNew(STextBlock).Font(ISFont("Bold", 15)).ColorAndOpacity(FLinearColor(0.05f, 0.05f, 0.05f)).Text(FText::FromString(TEXT("E")))]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Font(ISFont("SemiBold", 16)).ColorAndOpacity(FLinearColor(1, 1, 1)).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.85f))
+				.Text_Lambda([this]()
+				{
+					FString P = IPC() ? IPC()->Prompt() : FString();
+					P.RemoveFromStart(TEXT("E  "));
+					FString L, R;
+					if (P.Split(TEXT(": "), &L, &R)) P = L;
+					return FText::FromString(TEXT("to ") + P.Left(1).ToLower() + P.Mid(1));
+				})
 			]
 		]
-		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(16)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(22, 20)
 		[
-			Panel(Txt(TEXT("WASD move   Mouse look   SHIFT float fast   SPACE hover up\nE interact   Q scan for parts   F chase camera, comma / period slow / fast time (in flight)   ESC menu"), 12, CDim), 8.f)
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(1.f, 0.56f, 0.12f)).Padding(FMargin(10, 3))
+				[SNew(STextBlock).Font(ISFont("Bold", 13)).ColorAndOpacity(FLinearColor(0.06f, 0.05f, 0.04f)).Text_Lambda([WW]() { return FText::FromString(WW.IsValid() ? WW->ModeTag() : FString()); })]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
+			[
+				SNew(SBox).WidthOverride(440)
+				[
+					SNew(STextBlock).Font(ISFont("Regular", 14)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.92f)).AutoWrapText(true).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8f))
+					.Text_Lambda([WW]() { return FText::FromString(WW.IsValid() ? WW->Objective() : FString()); })
+				]
+			]
 		]
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(16)
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(22, 20)
+		[
+			// small stats, top right
+			SNew(STextBlock).Font(ISFont("Bold", 15)).ColorAndOpacity(CGold).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8f))
+			.Text_Lambda([WW]()
+			{
+				if (!WW.IsValid() || WW->Stage == EISStage::NoOrder) return FText();
+				const FISMission& M = ISData::Missions()[FMath::Clamp(WW->MissionIdx, 0, ISData::Missions().Num() - 1)];
+				return FText::FromString(FString::Printf(TEXT("PARTS %d/%d     %s / %s"), WW->FoundCount(true), WW->RequiredCount(), *ISSim::FmtMoney(WW->Eval.TotalCostM), *ISSim::FmtMoney(M.BudgetM)));
+			})
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(22, 18)
+		[
+			// controls fade out after the first half minute
+			SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity_Lambda([this]() { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(1.f - (float)(UITime - 30.0) / 5.f, 0.f, 0.75f))); })
+			.ShadowOffset(FVector2D(1, 1)).Justification(ETextJustify::Right)
+			.Text(FText::FromString(TEXT("WASD move   SHIFT faster   SPACE hover   E use   Q scan for parts   F chase camera   , / . time   ESC menu")))
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(22, 18)
 		[
 			SNew(SBox).WidthOverride(560)
 			[
-				SNew(SBorder).BorderImage(&PanelBrush).BorderBackgroundColor(CPanel2).Padding(10)
+				SNew(SBox)
 				.Visibility_Lambda([this]() { return (ToastLog.Num() && UITime - ToastLog.Last().Value < 14.0) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 10, 0)[SNew(SBox).WidthOverride(70).HeightOverride(44)[SNew(SImage).Image(&BitBrush)]]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 10, 0)[SNew(SBox).WidthOverride(48).HeightOverride(30)[SNew(SImage).Image(&BitBrush)]]
 					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 					[
-						SNew(STextBlock).Font(ISFont("Regular", 13)).ColorAndOpacity(CText).AutoWrapText(true)
+						SNew(STextBlock).Font(ISFont("Regular", 14)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.95f)).AutoWrapText(true).ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.85f))
 						.Text_Lambda([this]()
 						{
 							FString S;

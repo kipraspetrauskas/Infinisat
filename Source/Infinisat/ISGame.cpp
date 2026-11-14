@@ -328,11 +328,13 @@ void AISPlayerController::TickWalk(float Dt)
 	// what are we looking at?
 	LookAction = NAME_None;
 	CurrentPrompt.Reset();
-	if (UPrimitiveComponent* C = Bit->TraceView(320.f))
+	UPrimitiveComponent* LookComp = Bit->TraceView(320.f);
+	if (LookComp)
 	{
-		LookAction = World->ActionFor(C);
+		LookAction = World->ActionFor(LookComp);
 		CurrentPrompt = World->PromptFor(LookAction);
 	}
+	World->SetHighlight(LookAction, LookAction.IsNone() ? nullptr : LookComp);   // yellow outline on the real object
 	if (WasInputKeyJustPressed(EKeys::Q)) World->Scan();
 	if (WasInputKeyJustPressed(EKeys::E) && !LookAction.IsNone())
 	{

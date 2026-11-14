@@ -82,6 +82,11 @@ public:
 	FString PromptFor(FName Action) const;
 	void Interact(FName Action, AISBitCharacter* Bit);
 	FString Objective() const;
+	FString ModeTag() const;            // short orange tag for the HUD ("FIND PARTS 3/7", "WORKBENCH", "FLIGHT")
+	// outline the real object behind an interaction volume (CMS-style highlight)
+	void SetHighlight(FName Action, UPrimitiveComponent* Hit);
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> Highlighted;
+	FName HighlightAction;
 	TArray<FString> Toasts;   // messages for the HUD (BIT says...)
 
 	// --- scavenger hunt

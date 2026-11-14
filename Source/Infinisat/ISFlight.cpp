@@ -74,7 +74,21 @@ void AISSpaceScene::RetryFlight()
 		Pad(MCyl, FVector(0, 0, -6.0f), FVector(8000.f, 8000.f, 12.f), FLinearColor(0.16f, 0.22f, 0.1f));              // ground (4 km)
 		Pad(MCyl, FVector(0, 0, -0.5f), FVector(90.f, 90.f, 1.f), FLinearColor(0.55f, 0.55f, 0.53f));                  // concrete pad
 		Pad(MCube, FVector(0, 0, -0.9f), FVector(D * 2.2f, 30.f, 0.4f), FLinearColor(0.08f, 0.08f, 0.08f));            // flame trench
-		Pad(MCube, FVector(-D * 2.6f, 0, Len * 0.55f), FVector(5.f, 5.f, Len * 1.1f), FLinearColor(0.45f, 0.18f, 0.1f)); // launch tower
+		// launch tower: an open steel lattice (4 legs + cross beams every 4 m), not a solid block
+		{
+			const FVector TC(-D * 2.6f - 2.5f, 0, 0);
+			const float TH = Len * 1.1f, Leg = 0.35f, W = 4.f;
+			const FLinearColor Steel(0.5f, 0.17f, 0.1f);
+			for (int32 k = 0; k < 4; ++k)
+				Pad(MCube, TC + FVector((k < 2 ? -1.f : 1.f) * W * 0.5f, (k % 2 ? -1.f : 1.f) * W * 0.5f, TH * 0.5f), FVector(Leg, Leg, TH), Steel);
+			for (float Z = 2.f; Z < TH; Z += 4.f)
+			{
+				Pad(MCube, TC + FVector(0, -W * 0.5f, Z), FVector(W, 0.2f, 0.2f), Steel);
+				Pad(MCube, TC + FVector(0, W * 0.5f, Z), FVector(W, 0.2f, 0.2f), Steel);
+				Pad(MCube, TC + FVector(-W * 0.5f, 0, Z), FVector(0.2f, W, 0.2f), Steel);
+				Pad(MCube, TC + FVector(W * 0.5f, 0, Z), FVector(0.2f, W, 0.2f), Steel);
+			}
+		}
 		Pad(MCube, FVector(-D * 1.6f, 0, Len * 0.8f), FVector(D * 1.8f, 1.5f, 1.2f), FLinearColor(0.4f, 0.4f, 0.42f));   // crew/umbilical arm
 		for (int32 k = 0; k < 4; ++k) Pad(MCyl, FVector((k < 2 ? -1.f : 1.f) * 30.f, (k % 2 ? -1.f : 1.f) * 30.f, 25.f), FVector(1.2f, 1.2f, 50.f), FLinearColor(0.6f, 0.6f, 0.62f)); // lightning masts
 	}
@@ -83,7 +97,8 @@ void AISSpaceScene::RetryFlight()
 	bFollow = true;
 	CamMin = RocketLenCm * 0.4f;
 	CamDistGoal = RocketLenCm * 3.6f; CamDist = CamDistGoal;
-	FollowYaw = 35.f; FollowPitch = -6.f;
+	FollowYaw = 150.f; FollowPitch = -4.f;   // down-range side: the tower stands behind the rocket, not in front of the lens
+	bFlightCamUser = false;
 	TickFlight(0.f);
 }
 
@@ -165,6 +180,13 @@ void AISSpaceScene::TickFlight(float Dt)
 	int32 Guard = 0;
 	while (Left > 1e-6 && Guard++ < 6000) { const double H = FMath::Min(Left, 0.02); Sim.Step(H); Left -= H; }
 
+	// launch camera: watch lift-off from the open side, then swing in behind the climbing rocket (unless the player
+	// turned the view themselves)
+	if (!bFlightCamUser && Sim.AltM > 400.0)
+	{
+		FollowYaw = FMath::FInterpTo(FollowYaw, 65.f, Dt, 0.35f);   // side-behind: rocket and plume both in view
+		FollowPitch = FMath::FInterpTo(FollowPitch, -10.f, Dt, 0.35f);
+	}
 	// pose (metres in the launch plane -> world cm)
 	const FVector P = (FlightU * (float)Sim.R.Y + FlightDn * (float)Sim.R.X) * 100.f;
 	const FVector2D Nd = Sim.NoseDir();
@@ -209,8 +231,8 @@ void AISSpaceScene::TickFlight(float Dt)
 		C->SetVisibility(bCoreOn);
 		if (!bCoreOn) continue;
 		const float Thr = St.bSolid ? 1.f : (float)FMath::Clamp(Sim.Throttle, St.MinThrottle, 1.0);
-		const float Len = (float)St.DiameterM * (k == 0 ? 5.f : 2.f) * (0.55f + 0.45f * Thr) * (1.f + 1.2f * (float)(1.0 - Pr)) * Flick;
-		const float Wid = (float)St.DiameterM * (k == 0 ? 0.9f : 0.45f) * (1.f + 3.5f * (float)(1.0 - Pr));
+		const float Len = (float)St.DiameterM * (k == 0 ? 5.f : 2.f) * (0.55f + 0.45f * Thr) * (1.f + 0.35f * (float)(1.0 - Pr)) * Flick;
+		const float Wid = (float)St.DiameterM * (k == 0 ? 0.9f : 0.45f) * (1.f + 0.9f * (float)(1.0 - Pr));   // a vacuum plume spreads, but must not swallow the rocket
 		C->SetRelativeLocation(FVector(0, 0, (BaseZ - (float)St.DiameterM * 0.25f - Len * 0.5f) * 100.f));
 		C->SetRelativeScale3D(FVector(Wid, Wid, Len));
 	}
@@ -222,8 +244,8 @@ void AISSpaceScene::TickFlight(float Dt)
 		const bool bOn = Sim.bBoostersOn && Sim.BoosterProp > 0.0 && Sim.IsFlying();
 		C->SetVisibility(bOn);
 		if (!bOn) continue;
-		const float Len = (float)S0.BoosterDiameterM * ((k % 2) == 0 ? 5.f : 2.f) * (1.f + 1.2f * (float)(1.0 - Pr)) * Flick;
-		const float Wid = (float)S0.BoosterDiameterM * ((k % 2) == 0 ? 0.9f : 0.45f) * (1.f + 3.5f * (float)(1.0 - Pr));
+		const float Len = (float)S0.BoosterDiameterM * ((k % 2) == 0 ? 5.f : 2.f) * (1.f + 0.35f * (float)(1.0 - Pr)) * Flick;
+		const float Wid = (float)S0.BoosterDiameterM * ((k % 2) == 0 ? 0.9f : 0.45f) * (1.f + 0.9f * (float)(1.0 - Pr));
 		const FVector Base = C->GetRelativeLocation();
 		C->SetRelativeLocation(FVector(Base.X, Base.Y, (-(float)S0.BoosterDiameterM * 0.25f - Len * 0.5f) * 100.f));
 		C->SetRelativeScale3D(FVector(Wid, Wid, Len));

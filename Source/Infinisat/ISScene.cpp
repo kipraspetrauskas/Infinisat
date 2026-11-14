@@ -299,6 +299,7 @@ void AISSpaceScene::OrbitCamera(float DYaw, float DPitch)
 	if (View == EISView::Orbit && bTrueScale && bFollow)
 	{
 		FollowYaw += DYaw;
+		bFlightCamUser = true;
 		FollowPitch = FMath::Clamp(FollowPitch + DPitch, -80.f, 80.f);
 		return;
 	}

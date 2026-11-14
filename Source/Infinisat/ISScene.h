@@ -172,6 +172,7 @@ private:
 	FVector BitHome = FVector::ZeroVector;
 	double MissionDay = 0.0;
 	float FollowYaw = 25.f, FollowPitch = -18.f;
+	bool bFlightCamUser = false;   // the player turned the launch camera: stop steering it automatically
 
 	// ---- cosmos explorer
 	struct FCosmosBody

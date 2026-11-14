@@ -472,7 +472,8 @@ TSharedRef<SWidget> SISGameUI::BuildTopBar(const FString& Title)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Sat-o-pedia"), [this]() { Go(EScreen::Pedia); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? Btn(TEXT("Back to the world"), [this]() { if (IPC()) IPC()->ClosePanel(); }, 1) : SNullWidget::NullWidget]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Main menu"), [this]() { if (IPC() && InWorld()) IPC()->EnterMenu(); Go(EScreen::Title); })],
+		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? SNullWidget::NullWidget : Btn(TEXT("Home"), [this]() { bOpsInCosmos = false; if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight(); if (IPC()) IPC()->EnterWorld(); })]
+		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Menu"), [this]() { if (IPC() && InWorld()) IPC()->EnterMenu(); Go(EScreen::Title); })],
 		10.f);
 }
 
@@ -816,6 +817,7 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
 			[
 				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Home"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 0, 12)]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Briefing"), [this]() { Go(EScreen::Missions); }, 0, 12)]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Copy code"), [this]() { FPlatformApplicationMisc::ClipboardCopy(*DesignCode()); Notice = TEXT("Design code copied: paste it to a teammate or another team to compare."); bDirty = true; }, 0, 12)]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Paste code"), [this]() { FString C; FPlatformApplicationMisc::ClipboardPaste(C); Notice = ApplyDesignCode(C) ? TEXT("Design loaded from the clipboard.") : TEXT("The clipboard does not contain a design code for this mission."); Recompute(); }, 0, 12)]
@@ -1268,8 +1270,14 @@ TSharedRef<SWidget> SISGameUI::BuildDebrief()
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(LastReportPath.IsEmpty() ? TEXT("Save mission report") : TEXT("Report saved - open folder"), [this, Sc]() { if (LastReportPath.IsEmpty()) LastReportPath = WriteReport(Sc); FPlatformProcess::ExploreFolder(*FPaths::GetPath(LastReportPath)); bDirty = true; }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Improve the design"), [this]() { Go(EScreen::Design); }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Fly the same design again"), [this]() { StartOps(); }, 0, 13)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(bHasNext ? TEXT("Next chapter  >") : TEXT("Order board"), [this, bHasNext]()
-							{ if (bHasNext && (bJudgeMode || Ops.Stars >= 2)) StartMission(MissionIdx + 1); else Go(EScreen::Missions); }, 1, 14)])
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Back home  >  (new contracts wait on the laptop)"), [this, bHasNext]()
+							{
+								// one connected game: every mission starts and ends at the house; the next contract opens up there
+								if (bHasNext && (bJudgeMode || Ops.Stars >= 2)) MaxChapter = FMath::Max(MaxChapter, Mission().Chapter + 1);
+								if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight();
+								bOpsInCosmos = false;
+								if (IPC()) IPC()->EnterWorld();
+							}, 1, 14)])
 				]
 			]
 		];

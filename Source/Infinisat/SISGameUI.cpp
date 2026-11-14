@@ -37,15 +37,15 @@
 
 namespace
 {
-	const FLinearColor CText(0.93f, 0.96f, 1.f);
-	const FLinearColor CDim(0.6f, 0.69f, 0.8f);
-	const FLinearColor CAccent(0.36f, 0.86f, 1.f);
+	const FLinearColor CText(0.94f, 0.93f, 0.9f);           // workshop style: warm white on charcoal, orange accent
+	const FLinearColor CDim(0.6f, 0.6f, 0.58f);
+	const FLinearColor CAccent(1.f, 0.56f, 0.12f);
 	const FLinearColor COk(0.4f, 1.f, 0.55f);
 	const FLinearColor CWarn(1.f, 0.75f, 0.25f);
 	const FLinearColor CFail(1.f, 0.4f, 0.35f);
-	const FLinearColor CGold(1.f, 0.82f, 0.35f);
-	const FLinearColor CPanel(0.012f, 0.022f, 0.05f, 0.78f);
-	const FLinearColor CPanel2(0.025f, 0.06f, 0.13f, 0.86f);
+	const FLinearColor CGold(1.f, 0.78f, 0.25f);
+	const FLinearColor CPanel(0.018f, 0.018f, 0.02f, 0.88f);
+	const FLinearColor CPanel2(0.03f, 0.03f, 0.034f, 0.93f);
 
 
 	// Titillium Web (UI text), Rajdhani (headings), Share Tech Mono (readouts) - SIL Open Font License
@@ -65,11 +65,11 @@ namespace
 	FButtonStyle MakeStyle(const FLinearColor& N, const FLinearColor& H, const FLinearColor& P)
 	{
 		FButtonStyle S;
-		const FLinearColor Edge(0.4f, 0.8f, 1.f, 0.28f);
-		S.SetNormal(FSlateRoundedBoxBrush(N, 8.f, Edge, 1.f));
-		S.SetHovered(FSlateRoundedBoxBrush(H, 8.f, FLinearColor(0.55f, 0.9f, 1.f, 0.7f), 1.f));
-		S.SetPressed(FSlateRoundedBoxBrush(P, 8.f, Edge, 1.f));
-		S.SetDisabled(FSlateRoundedBoxBrush(FLinearColor(0.06f, 0.07f, 0.09f, 0.7f), 8.f));
+		const FLinearColor Edge(1.f, 1.f, 1.f, 0.08f);
+		S.SetNormal(FSlateRoundedBoxBrush(N, 2.f, Edge, 1.f));
+		S.SetHovered(FSlateRoundedBoxBrush(H, 2.f, FLinearColor(1.f, 0.56f, 0.12f, 0.95f), 2.f));
+		S.SetPressed(FSlateRoundedBoxBrush(P, 2.f, Edge, 1.f));
+		S.SetDisabled(FSlateRoundedBoxBrush(FLinearColor(0.05f, 0.05f, 0.05f, 0.7f), 2.f));
 		S.SetNormalPadding(FMargin(14, 8));
 		S.SetPressedPadding(FMargin(14, 9, 14, 7));
 		return S;
@@ -137,9 +137,9 @@ void SISGameUI::Construct(const FArguments& InArgs)
 {
 	Scene = InArgs._Scene;
 	PC = InArgs._PC;
-	StyleNormal = MakeStyle(FLinearColor(0.04f, 0.08f, 0.15f, 0.92f), FLinearColor(0.07f, 0.16f, 0.28f, 0.95f), FLinearColor(0.02f, 0.05f, 0.1f));
-	StylePrimary = MakeStyle(FLinearColor(0.0f, 0.42f, 0.66f), FLinearColor(0.02f, 0.58f, 0.86f), FLinearColor(0.0f, 0.3f, 0.48f));
-	StyleSelected = MakeStyle(FLinearColor(0.78f, 0.46f, 0.08f), FLinearColor(0.92f, 0.58f, 0.14f), FLinearColor(0.6f, 0.35f, 0.05f));
+	StyleNormal = MakeStyle(FLinearColor(0.07f, 0.07f, 0.075f, 0.94f), FLinearColor(0.12f, 0.115f, 0.11f, 0.97f), FLinearColor(0.05f, 0.05f, 0.05f));
+	StylePrimary = MakeStyle(FLinearColor(0.85f, 0.42f, 0.05f), FLinearColor(1.f, 0.55f, 0.12f), FLinearColor(0.65f, 0.3f, 0.03f));
+	StyleSelected = MakeStyle(FLinearColor(0.22f, 0.13f, 0.05f, 0.96f), FLinearColor(0.3f, 0.18f, 0.06f), FLinearColor(0.18f, 0.1f, 0.04f));
 	StyleDisabled = MakeStyle(FLinearColor(0.12f, 0.12f, 0.14f), FLinearColor(0.15f, 0.15f, 0.17f), FLinearColor(0.1f, 0.1f, 0.12f));
 	BarStyle = FCoreStyle::Get().GetWidgetStyle<FProgressBarStyle>("ProgressBar");
 
@@ -230,7 +230,7 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 TSharedRef<STextBlock> SISGameUI::Txt(const FString& S, int32 Size, const FLinearColor& C, bool bBold)
 {
 	return SNew(STextBlock)
-		.Text(FText::FromString(S))
+		.Text(FText::FromString(bBold ? S.ToUpper() : S))   // headings in capitals (workshop style)
 		.Font(ISFont(bBold ? "Bold" : "Regular", Size))
 		.ColorAndOpacity(C)
 		.AutoWrapText(true);
@@ -254,12 +254,18 @@ TSharedRef<SWidget> SISGameUI::Btn(const FString& Label, TFunction<void()> OnCli
 
 TSharedRef<SWidget> SISGameUI::Panel(TSharedRef<SWidget> Content, float Pad, int32 Kind)
 {
-	return SNew(SBorder)
-		.BorderImage(&PanelBrush)
-		.BorderBackgroundColor(Kind == 1 ? CPanel2 : CPanel)
-		.Padding(Pad)
+	// charcoal panel with a thin orange strip along the top edge
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(3.f)[SNew(SImage).Image(FCoreStyle::Get().GetBrush("WhiteBrush")).ColorAndOpacity(FLinearColor(1.f, 0.56f, 0.12f, 0.9f))]]
+		+ SVerticalBox::Slot().FillHeight(1.f)
 		[
-			Content
+			SNew(SBorder)
+			.BorderImage(&PanelBrush)
+			.BorderBackgroundColor(Kind == 1 ? CPanel2 : CPanel)
+			.Padding(Pad)
+			[
+				Content
+			]
 		];
 }
 

@@ -119,7 +119,7 @@ private:
 
 	// styles
 	FSlateColorBrush WhiteBrush = FSlateColorBrush(FLinearColor::White);
-	FSlateRoundedBoxBrush PanelBrush = FSlateRoundedBoxBrush(FLinearColor::White, 14.f, FLinearColor(0.45f, 0.82f, 1.f, 0.35f), 1.f);
+	FSlateRoundedBoxBrush PanelBrush = FSlateRoundedBoxBrush(FLinearColor::White, 3.f, FLinearColor(1.f, 1.f, 1.f, 0.07f), 1.f);
 	FButtonStyle StyleNormal, StylePrimary, StyleSelected, StyleDisabled;
 	FSlateBrush LogoBrush, BitBrush;
 	bool bCardDrag = false;      // a part card is being dragged into the 3D can (mouse captured by this widget)

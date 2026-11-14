@@ -20,3 +20,7 @@ Do, in order (commit + push after each step):
 7. Then continue backlog: parts stores (Car Mechanic Simulator style) in the hall, NanoAvionics-style configurator flow
    (Light/Mid/Max tiers, slot-zoom camera, parts inside aluminium skeleton), KSP-style map using ISOrbit, better car model
    (/Game/Infinisat/PH/covered_car), roof-light triangle bug.
+
+8. Fusion add-in source is in Tools/FusionAddin (copy to %APPDATA%/Autodesk/Autodesk Fusion 360/API/AddIns/InfinisatCAD).
+   Raw downloads (_downloads/, 2.2 GB) were NOT uploaded; all imported assets are already in Content/ (LFS). Re-fetch with Tools/*.py only if re-importing.
+   v0.2 playable zip: GitHub Release v0.2.

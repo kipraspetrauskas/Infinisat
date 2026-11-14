@@ -1,0 +1,11 @@
+{
+	"autodeskProduct": "Fusion360",
+	"type": "addin",
+	"id": "3f1c9a52-7c1e-4d55-9b61-infinisatcad1",
+	"author": "Infinisat",
+	"description": { "": "Batch converts STEP parts in C:/Dev/Infinisat/_downloads/cad/in to FBX/OBJ for the Infinisat game." },
+	"version": "1.0.0",
+	"runOnStartup": true,
+	"supportedOS": "windows",
+	"editEnabled": true
+}

@@ -7,7 +7,7 @@ ROOT = "/Game/Infinisat"
 PROJ = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
 MODELS = os.path.join(PROJ, "_downloads", "ph_clean")
 TEX = os.path.join(PROJ, "_downloads", "ph", "textures")
-FOLIAGE = {"fir_tree_01", "pine_tree_01", "tree_small_02", "shrub_01", "shrub_02", "shrub_04",
+FOLIAGE = {"fir_tree_01", "pine_tree_01", "tree_small_02", "shrub_01", "shrub_02", "shrub_03", "shrub_04", "island_tree_01", "jacaranda_tree", "potted_plant_01", "potted_plant_02", "potted_plant_04",
            "grass_medium_01", "grass_medium_02", "dandelion_01", "boulder_01", "rock_07"}
 
 at = unreal.AssetToolsHelpers.get_asset_tools()
@@ -133,6 +133,7 @@ def make_foliage_material():
 
 
 def import_textures():
+    if not os.path.isdir(TEX): log("no texture downloads, skipping"); return
     for aid in sorted(os.listdir(TEX)):
         f = os.path.join(TEX, aid, aid + "_diff.jpg")
         if os.path.exists(f):
@@ -181,9 +182,20 @@ def import_models():
         if aid in FOLIAGE and fol:
             # replace materials with an instancing-safe foliage material using the same colour texture
             mats = mesh.get_editor_property("static_materials")
+            # the imported textures sit next to the mesh; match each slot by name: "<slot>_diff..." (the glTF
+            # material may be a plain Material without texture parameters, so base_texture() can come back empty)
+            texs = {}
+            for p in eal.list_assets(folder, recursive=True, include_folder=False):
+                a = eal.load_asset(p)
+                if isinstance(a, unreal.Texture2D):
+                    texs[a.get_name().lower()] = a
             for i, sm_mat in enumerate(mats):
                 src = sm_mat.material_interface
-                tex = base_texture(src) if src else None
+                slot = str(sm_mat.material_slot_name).lower()
+                tex = next((t for n, t in sorted(texs.items(), key=lambda kv: len(kv[0])) if n.startswith(slot + "_diff")), None)
+                if tex is None:
+                    tex = base_texture(src) if src else None
+                log("foliage", aid, i, slot, tex.get_name() if tex else "NO TEXTURE")
                 mi_path = folder + "/MI_%s_%d" % (aid, i)
                 if eal.does_asset_exist(mi_path):
                     eal.delete_asset(mi_path)

@@ -160,6 +160,7 @@ private:
 	void AddDoor(const FVector& HingePos, float Yaw, float Width, const FLinearColor& Color, bool bStartOpen, bool bLocked = false, const FString& LockMsg = FString());
 	void Roof(const FVector& Center, float SizeX, float SizeY, float Pitch, float Overhang, const TCHAR* Tex, const FLinearColor& Tint, const TCHAR* GableTex, const FLinearColor& GableTint);
 	void HouseShell(const FVector& Origin, float SX, float SY, float Yaw, const FLinearColor& Wall, const FLinearColor& Door, const TCHAR* RoofTex, const FLinearColor& RoofTint);
+	void WoodFence(const FVector& A, const FVector& B, float GapFrom = 0.f, float GapTo = 0.f);
 	UStaticMeshComponent* Slab(const FVector& Center, const FVector& Size, const TCHAR* Tex, float Tile, const FLinearColor& Tint, bool bCollide = true, float Yaw = 0.f);
 	UStaticMeshComponent* Paint(const FVector& Center, const FVector& Size, const FLinearColor& C, float Rough = 0.6f, bool bCollide = true, float Yaw = 0.f, float Metal = 0.f);
 	void RoomLight(const FVector& Pos, float Lumens, bool bFixture = true);

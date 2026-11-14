@@ -50,3 +50,13 @@ E. World structure: main base = house, then random rocket sites, ESA etc. Missio
 F. UI redesign: Universe Sandbox for the main pages, KSP 2 for the builder.
 G. Data/map: real satellites from Content/Infinisat/Data/ucs_satellites.csv (UCS DB 5-1-2023, 7,560 sats)
    in the orbit map; proper map. Cosmos explorer (branch dev, ISCosmos.cpp) still needs its first compile.
+
+## Progress 2026-11-14 (main PC, branch dev -> merged to main)
+DONE: Cosmos explorer (ISCosmos.cpp) | smooth SM_SphereHi (fixes faceted Earth) | UCS satellite CSV + Docs/References.md |
+A: bench pickup (overlap volumes + smallest-volume trace), SettleProps (props/hunt parts rest on real surfaces),
+   ValidateLayout support/overhang check (0 issues), pad 18 m past gate, launch plume at nozzles |
+C: real rocket flight (ISRocket.*, ISFlight.cpp): physics, 7 real launchers, autopilot, manual controls, HUD, SkyAtmosphere.
+   Verify with: UnrealEditor ... -game -nullrhi -ISRocketTest  (logs [ROCKET] lines)
+NEXT: A lighting pass + roof-light triangle (not reproduced yet) | C: pass the achieved orbit into Ops, launch-site choice
+(real sites per vehicle), debris/explosion visuals | D builder (KSP2 VAB style) | E world structure (house -> rocket sites -> ESA,
+real-world contracts from UCS data, ms clock) | B realistic art | F UI redesign | G UCS satellites on the orbit map.

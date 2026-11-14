@@ -43,6 +43,7 @@ struct FISHuntItem
 	bool bFound = false;
 	bool bRequired = true;
 	FISModel Model;
+	USceneComponent* Root = nullptr;   // moved onto the real surface by SettleProps()
 	UPrimitiveComponent* Hit = nullptr;
 };
 
@@ -139,8 +140,12 @@ private:
 	TArray<FISPlaced> Furniture;
 	TArray<FBox> Openings;      // keep-clear volumes in front of doors and windows
 	void ValidateLayout();
+	void SettleProps();          // drop decor + hunt items onto real surfaces (needs physics to be up: runs after activation)
+	bool bSettled = false;
+	FBox GarageShelfBox = FBox(FVector(-760, 290, 0), FVector(-700, 370, 180)), DeskBox = FBox(FVector(170, 960, 0), FVector(330, 1045, 80));
+	FTimerHandle SettleTimer;
 	TArray<float> DoorYaw;
-	float MudShelfTop = 100.f, GarageShelfTop = 120.f, OfficeShelfTop = 100.f, MonitorTop = 120.f, JunkBoxTop = 40.f, DeskTopZ = 90.f, DeskTopY = 1005.f, OfficeShelfX = 460.f, MudShelfX = 1290.f, GarageShelfX = -730.f;
+	float MudShelfTop = 100.f, GarageShelfTop = 120.f, OfficeShelfTop = 100.f, MonitorTop = 120.f, JunkBoxTop = 40.f, DeskTopZ = 90.f, DeskTopY = 1005.f, OfficeShelfX = 460.f, MudShelfX = 1290.f, MudShelfY = 905.f, BedTopZ = 60.f, BedX = 720.f, BedY = 930.f, GarageShelfX = -730.f;
 	void BuildGround2();
 	bool IsFound(FName Part) const;
 	void BuildField();
@@ -174,7 +179,7 @@ private:
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FName> Actions;
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FName> TrayHits;
 	TMap<FName, FISModel> TrayModels;
-	FISModel CanModel, RocketModel, ChuteModel, BenchHandModel, PadModel;
+	FISModel CanModel, RocketModel, RocketFlame, ChuteModel, BenchHandModel, PadModel;
 	UPROPERTY() UBoxComponent* CanHit = nullptr;
 	UPROPERTY() UBoxComponent* LandedHit = nullptr;
 

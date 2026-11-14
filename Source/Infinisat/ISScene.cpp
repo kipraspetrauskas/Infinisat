@@ -9,6 +9,7 @@
 #include "Engine/PostProcessVolume.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture.h"
+#include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/LineBatchComponent.h"
@@ -735,9 +736,39 @@ void AISSpaceScene::StartLaunch(bool bHeavy)
 	RocketRoot->SetVisibility(true, true);
 	const float Size = LastSatSize * 1.6f;
 	UStaticMesh* RM = LoadObject<UStaticMesh>(nullptr, *ModelPath(bHeavy ? TEXT("SaturnV") : TEXT("AresI")));
-	if (RM) AddMesh(RocketRoot, RM, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(Size / 100.f)), KeepMat, false, 0.f, nullptr);
-	else AddMesh(RocketRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(Size / 900.f, Size / 900.f, Size / 100.f)), FLinearColor(0.95f, 0.95f, 0.95f), false, 0.f, nullptr);
-	AddMesh(RocketRoot, MCone, FTransform(FRotator(180, 0, 0), FVector(0, 0, -Size * 0.62f), FVector(Size / 500.f, Size / 500.f, Size / 220.f)), FLinearColor(1.f, 0.55f, 0.15f), true, 9.f, nullptr);
+	UStaticMeshComponent* Body = RM ? AddMesh(RocketRoot, RM, FTransform::Identity, KeepMat, false, 0.f, nullptr)
+		: AddMesh(RocketRoot, MCyl, FTransform::Identity, FLinearColor(0.95f, 0.95f, 0.95f), false, 0.f, nullptr);
+	// imported models have arbitrary axes/origins: stand the long axis up (+Z = flight direction), base at the origin
+	float BaseR = Size * 0.06f;
+	if (Body && Body->GetStaticMesh())
+	{
+		const FBox LB = Body->GetStaticMesh()->GetBoundingBox();
+		const FVector Ext = LB.GetSize();
+		const FRotator Rot = (Ext.X >= Ext.Y && Ext.X >= Ext.Z) ? FRotator(90.f, 0.f, 0.f) : (Ext.Y >= Ext.Z ? FRotator(0.f, 0.f, -90.f) : FRotator::ZeroRotator);
+		const float K = Size / FMath::Max(1.f, (float)Ext.GetMax());
+		const FVector Sc = RM ? FVector(K) : FVector(Size / 900.f, Size / 900.f, Size / 100.f);
+		const FBox B = LB.TransformBy(FTransform(Rot, FVector::ZeroVector, Sc));
+		Body->SetRelativeTransform(FTransform(Rot, FVector(-B.GetCenter().X, -B.GetCenter().Y, -B.Min.Z), Sc));
+		BaseR = FMath::Max(Size * 0.03f, (float)FMath::Min(B.GetSize().X, B.GetSize().Y) * 0.3f);
+	}
+	// exhaust plume at the nozzles: white-hot core inside a longer orange glow (additive, blooms)
+	if (!MatGlow) MatGlow = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Glow.M_IS_Glow"));
+	UTexture2D* White = CosmosTex(TEXT("white"), 4, 4, [](float, float) { return FLinearColor::White; });
+	auto Plume = [&](float Len, float R, const FLinearColor& C, float I)
+	{
+		UStaticMeshComponent* P = AddMesh(RocketRoot, MCone, FTransform(FRotator(180, 0, 0), FVector(0, 0, -Len * 0.5f), FVector(R / 50.f, R / 50.f, Len / 100.f)), FLinearColor(0, 0, 0, 0), true, 0.f, nullptr);
+		if (P && MatGlow)
+		{
+			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(MatGlow, P);
+			M->SetTextureParameterValue(TEXT("Tex"), White);
+			M->SetVectorParameterValue(TEXT("Color"), C);
+			M->SetScalarParameterValue(TEXT("Intensity"), I);
+			P->SetMaterial(0, M);
+			P->CastShadow = false;
+		}
+	};
+	Plume(Size * 0.55f, BaseR * 1.5f, FLinearColor(1.f, 0.45f, 0.1f), 2.5f);
+	Plume(Size * 0.22f, BaseR * 0.8f, FLinearColor(1.f, 0.9f, 0.7f), 6.f);
 	const FVector Sat = SatRoot->GetRelativeLocation();
 	// launch from the sunlit side of Earth
 	const FVector ToSun = -SunLight->GetForwardVector();

@@ -72,16 +72,25 @@ void AISBitCharacter::Hover() { Jump(); }
 
 UPrimitiveComponent* AISBitCharacter::TraceView(float Range, FVector* OutHit) const
 {
-	FHitResult H;
+	// Interaction volumes only overlap the Visibility channel, so one ray collects every volume up to the first
+	// solid surface. The smallest volume wins: a part lying on the workbench beats the workbench's own volume.
+	TArray<FHitResult> Hits;
 	const FVector S = Cam->GetComponentLocation();
 	const FVector E = S + Cam->GetForwardVector() * Range;
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(ISInteract), true, this);
-	if (GetWorld()->LineTraceSingleByChannel(H, S, E, ECC_Visibility, Q))
+	GetWorld()->LineTraceMultiByChannel(Hits, S, E, ECC_Visibility, Q);
+	const FHitResult* Best = nullptr;
+	double BestVol = TNumericLimits<double>::Max();
+	for (const FHitResult& H : Hits)
 	{
-		if (OutHit) *OutHit = H.ImpactPoint;
-		return H.GetComponent();
+		if (H.bBlockingHit || !H.GetComponent()) continue;
+		const double Vol = H.GetComponent()->Bounds.GetBox().GetVolume();
+		if (Vol < BestVol) { BestVol = Vol; Best = &H; }
 	}
-	return nullptr;
+	if (!Best && Hits.Num() && Hits.Last().bBlockingHit) Best = &Hits.Last();
+	if (!Best) return nullptr;
+	if (OutHit) *OutHit = Best->ImpactPoint;
+	return Best->GetComponent();
 }
 
 void AISBitCharacter::Tick(float Dt)

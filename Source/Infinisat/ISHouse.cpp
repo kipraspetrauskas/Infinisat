@@ -411,17 +411,19 @@ void AISHomeWorld::BuildHome()
 
 	// ---- office (BIT's room): desk under the window with the order laptop, shelf on the side wall, charging dock
 	UStaticMeshComponent* Desk = KW(TEXT("desk"), true, 1050, -1, 250);
+	if (Desk) DeskBox = Desk->Bounds.GetBox();
+	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] desk %s"), *DeskBox.ToString());
 	const float DeskTop = TopOf(Desk, FZ + 80.f);
 	DeskTopZ = DeskTop;
 	const float DeskY = CenterOf(Desk, FVector(250, 1005, 0)).Y;
 	DeskTopY = DeskY;
 	K(TEXT("chairDesk"), FVector(250, DeskY - 75.f, FZ), 90.f);
-	MonitorTop = TopOf(K(TEXT("computerScreen"), FVector(200, DeskY + 15.f, DeskTop), -90.f, KF, false), DeskTop + 40.f);
+	MonitorTop = TopOf(K(TEXT("computerScreen"), FVector(237, DeskY + 15.f, DeskTop), -90.f, KF, false), DeskTop + 40.f);
 	if (Furniture.Num()) Furniture.Last().bOnTop = true;
-	K(TEXT("computerKeyboard"), FVector(200, DeskY - 10.f, DeskTop), -90.f, KF, false);
-	K(TEXT("laptop"), FVector(320, DeskY - 5.f, DeskTop), -90.f, KF, false);
-	AddInteract(FVector(320, DeskY - 5.f, DeskTop + 15.f), FVector(28, 25, 20), "laptop");
-	K(TEXT("plantSmall2"), FVector(120, DeskY + 10.f, DeskTop), 0.f, KF, false);
+	K(TEXT("computerKeyboard"), FVector(237, DeskY - 12.f, DeskTop), -90.f, KF, false);
+	K(TEXT("laptop"), FVector(297, DeskY - 17.f, DeskTop), -90.f, KF, false);
+	AddInteract(FVector(297, DeskY - 17.f, DeskTop + 15.f), FVector(28, 25, 20), "laptop");
+	K(TEXT("plantSmall2"), FVector(DeskBox.Min.X + 14.f, DeskY + 14.f, DeskTop), 0.f, KF, false);   // on the desk, at its real left end
 	UStaticMeshComponent* OShelf = KW(TEXT("bookcaseClosedWide"), false, 500, -1, 915);
 	OfficeShelfTop = TopOf(OShelf, FZ + 100.f);
 	OfficeShelfX = CenterOf(OShelf, FVector(460, 915, 0)).X;
@@ -433,6 +435,7 @@ void AISHomeWorld::BuildHome()
 	K(TEXT("rugRound"), FVector(720, 850, FZ), 0.f, KF, false);
 	UStaticMeshComponent* Bed = KW(TEXT("bedDouble"), true, 1050, -1, 720);
 	const FBox BedB = Bed ? Bed->Bounds.GetBox() : FBox(FVector(620, 810, FZ), FVector(820, 1043, FZ + 80));
+	BedTopZ = BedB.Max.Z - 6.f; BedX = BedB.GetCenter().X; BedY = BedB.Min.Y + BedB.GetSize().Y * 0.35f;   // near the foot of the bed
 	UStaticMeshComponent* NS1 = KW(TEXT("cabinetBedDrawerTable"), true, 1050, -1, BedB.Min.X - 35.f);
 	KW(TEXT("cabinetBedDrawerTable"), true, 1050, -1, BedB.Max.X + 35.f);
 	K(TEXT("lampRoundTable"), FVector(BedB.Min.X - 35.f, CenterOf(NS1, FVector(0, 1015, 0)).Y, TopOf(NS1, FZ + 50.f)), -90.f, KF, false);
@@ -448,6 +451,7 @@ void AISHomeWorld::BuildHome()
 	UStaticMeshComponent* Mud = KW(TEXT("bookcaseOpenLow"), false, 1250, 1, 905);
 	MudShelfTop = TopOf(Mud, FZ + 90.f);
 	MudShelfX = CenterOf(Mud, FVector(1290, 880, 0)).X;
+	MudShelfY = CenterOf(Mud, FVector(1290, 905, 0)).Y;
 
 	// ---- garage: workbench on the back wall, shelf on the side wall, junk box by the door
 	UStaticMeshComponent* Bench = KW(TEXT("desk"), true, 700, -1, -380, 2.f, KF * 1.2f);
@@ -458,12 +462,14 @@ void AISHomeWorld::BuildHome()
 	}
 	else BenchTop = FVector(-380, 655, 90);
 	AddInteract(BenchTop + FVector(0, 0, 10), FVector(70, 30, 20), "bench");
-	K(TEXT("radio"), BenchTop + FVector(75, 10, 0), -90.f, KF, false);
+	K(TEXT("radio"), BenchTop + FVector(52, 10, 0), -90.f, KF, false);
 	if (Furniture.Num()) Furniture.Last().bOnTop = true;
-	AddInteract(BenchTop + FVector(75, 10, 15), FVector(25, 15, 18), "radio");
+	AddInteract(BenchTop + FVector(52, 10, 15), FVector(25, 15, 18), "radio");
 	K(TEXT("lampSquareTable"), BenchTop + FVector(-80, 15, 0), -90.f, KF, false);
 	if (Furniture.Num()) Furniture.Last().bOnTop = true;
 	UStaticMeshComponent* GShelf = KW(TEXT("bookcaseOpen"), false, -760, 1, 330, 2.f);
+	if (GShelf) GarageShelfBox = GShelf->Bounds.GetBox();
+	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] garage shelf %s"), *GarageShelfBox.ToString());
 	GarageShelfTop = TopOf(GShelf, 180.f) - 40.f;
 	GarageShelfX = CenterOf(GShelf, FVector(-730, 330, 0)).X;
 	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-690, 130, 2.f), 0.f), 40.f);
@@ -616,47 +622,61 @@ void AISHomeWorld::SpawnHunt()
 {
 	for (FISHuntItem& H : Hunt) { H.Model.Destroy(); if (H.Hit) { Actions.Remove(H.Hit); H.Hit->DestroyComponent(); } }
 	Hunt.Reset();
-	auto Add = [this](FName Part, const TCHAR* Name, const TCHAR* Where, const FVector& Pos, bool bReq, const TCHAR* Cad, float CadScale)
+	auto Add = [this](FName Part, const TCHAR* Name, const TCHAR* Where, const FVector& InPos, bool bReq, const TCHAR* Cad, float CadScale)
 	{
+		const FVector Pos = InPos;   // SettleProps() later drops it onto the real surface (physics is not queryable yet in BeginPlay)
 		FISHuntItem I;
 		I.Part = Part; I.Name = Name; I.Where = Where; I.Pos = Pos; I.bRequired = bReq;
 		USceneComponent* S = NewObject<USceneComponent>(this);
 		S->SetupAttachment(Root);
 		S->SetRelativeLocation(Pos);
 		S->RegisterComponent();
-		// shown 3x real size so parts are visible in a room; tiny glow so they read as collectables
+		// shown 1.6x real size: big enough to spot, small enough to sit on a shelf without hanging over the edge
 		USceneComponent* Scaled = NewObject<USceneComponent>(this);
 		Scaled->SetupAttachment(S);
-		Scaled->SetRelativeScale3D(FVector(3.f));
+		Scaled->SetRelativeScale3D(FVector(1.f));   // rescaled below once the model size is known
 		Scaled->RegisterComponent();
 		const FString CadP = Cad ? CadPath(Cad) : FString();
 		if (Cad && ISMat::Mesh(CadP)) ISBuild::Asset(this, Scaled, CadP, FVector::ZeroVector, CadScale, &I.Model);
 		else ISBuild::CanSatPart(this, Scaled, Part, FVector::ZeroVector, &I.Model);
 		if (Part == "bus_can") ISBuild::CanShell(this, Scaled, FVector::ZeroVector, false, &I.Model);
-		ISBuild::Unlit(this, S, ISMat::Cyl(), FVector(0, 0, 0.5f), FVector(26, 26, 0.4f), FLinearColor(0.2f, 0.9f, 1.f), 1.6f, &I.Model);
+		// visible size: the longest side at least ~12 cm (tiny modules like a pin header would be specks), max 3x real size
+		{
+			FBox Bx(ForceInit);
+			for (UStaticMeshComponent* Pc : I.Model.Parts) if (Pc) { Pc->UpdateBounds(); Bx += Pc->Bounds.GetBox(); }
+			const float Big = Bx.IsValid ? (float)Bx.GetSize().GetMax() : 10.f;
+			Scaled->SetRelativeScale3D(FVector(FMath::Clamp(12.f / FMath::Max(0.5f, Big), 1.2f, 3.f)));
+		}
+		// rest the part ON the surface: lift/lower so the lowest point of the model touches Pos.Z (CAD origins vary)
+		{
+			FBox Bx(ForceInit);
+			for (UStaticMeshComponent* Pc : I.Model.Parts) if (Pc) { Pc->UpdateBounds(); Bx += Pc->Bounds.GetBox(); }
+			if (Bx.IsValid) Scaled->AddWorldOffset(FVector(0, 0, S->GetComponentLocation().Z - Bx.Min.Z + 0.1f));
+		}
 		UBoxComponent* B = NewObject<UBoxComponent>(this);
 		B->SetupAttachment(S);
-		B->SetBoxExtent(FVector(18, 18, 14));
+		B->SetBoxExtent(FVector(14, 14, 10));
 		B->SetRelativeLocation(FVector(0, 0, 10));
 		B->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		B->SetCollisionResponseToAllChannels(ECR_Ignore);
-		B->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		B->SetCollisionResponseToChannel(ECC_Visibility, ECR_Overlap);
 		B->RegisterComponent();
 		I.Hit = B;
+		I.Root = S;
 		Actions.Add(B, FName(*(TEXT("item:") + Part.ToString())));
 		Hunt.Add(MoveTemp(I));
 	};
 	const float Counter = FZ + 95.f;
 	Add("bus_can", TEXT("Empty soda can"), TEXT("Kitchen counter"), FVector(1150, 555, Counter), true, nullptr, 1.f);
-	Add("cpu_ard", TEXT("ESP32 microcontroller"), TEXT("Office desk"), FVector(140, DeskTopY - 15.f, DeskTopZ), true, TEXT("esp32_wroom32"), 1.f);
-	Add("com_433", TEXT("LoRa radio module"), TEXT("Garage shelf"), FVector(GarageShelfX, 330, GarageShelfTop), true, TEXT("radio_zeta433"), 1.f);
+	Add("cpu_ard", TEXT("ESP32 microcontroller"), TEXT("Office desk"), FVector(262, DeskTopY - 30.f, DeskTopZ), true, TEXT("esp32_wroom32"), 1.f);
+	Add("com_433", TEXT("LoRa radio module"), TEXT("Garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y - GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), true, TEXT("radio_zeta433"), 1.f);
 	Add("pl_temp", TEXT("DHT11 temperature sensor"), TEXT("Electronics kit on the office shelf"), FVector(OfficeShelfX, 915, OfficeShelfTop), true, TEXT("dht11"), 1.f);
-	Add("bat_aa", TEXT("18650 battery + holder"), TEXT("Mudroom shelf (old flashlight)"), FVector(MudShelfX, 925, MudShelfTop), true, TEXT("battery_18650"), 1.f);
-	Add("ex_chute_l", TEXT("Parachute (ripstop nylon)"), TEXT("Bedroom wardrobe"), FVector(560, 880, FZ + 2.f), true, nullptr, 1.f);
+	Add("bat_aa", TEXT("18650 battery + holder"), TEXT("Mudroom shelf (old flashlight)"), FVector(MudShelfX, MudShelfY, MudShelfTop), true, TEXT("battery_18650"), 1.f);
+	Add("ex_chute_l", TEXT("Parachute (ripstop nylon)"), TEXT("Folded on the bed"), FVector(BedX, BedY, BedTopZ), true, nullptr, 1.f);
 	Add("ex_wires", TEXT("Jumper wires + pin headers"), TEXT("Garage workbench"), BenchTop + FVector(-30, 10, 0), true, TEXT("header_1x15"), 1.f);
 	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-690, 130, JunkBoxTop), false, TEXT("buzzer"), 1.f);
-	Add("pl_gnss", TEXT("GNSS module"), TEXT("Car in the driveway"), FVector(-380, -520, 95.f), false, nullptr, 1.f);
-	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("On top of the office monitor"), FVector(200, DeskTopY + 15.f, MonitorTop), false, nullptr, 1.f);
+	Add("pl_gnss", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
+	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("Office desk, behind the laptop"), FVector(DeskBox.Max.X - 12.f, DeskTopY + 22.f, DeskTopZ), false, nullptr, 1.f);
 }
 
 int32 AISHomeWorld::FoundCount(bool bRequiredOnly) const
@@ -743,5 +763,71 @@ void AISHomeWorld::ValidateLayout()
 				Log(FString::Printf(TEXT("%s (%.0f,%.0f) crosses the wall at x=%.0f"), *A.Name, Ca.X, Ca.Y, Wx));
 		}
 	}
+	// support: things standing on other things must rest on them: something directly under the centre (else it floats),
+	// and the footprint must stay inside the supporting surface (else it hangs over the edge). Hunt items too.
+	auto Check = [this, &Log](const FString& What, const FBox& Bx, const TArray<const UPrimitiveComponent*>& Ignore)
+	{
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(ISSupport), true);
+		for (const UPrimitiveComponent* Ig : Ignore) Q.AddIgnoredComponent(Ig);
+		FHitResult H;
+		const FVector C = Bx.GetCenter();
+		if (!GetWorld()->LineTraceSingleByChannel(H, FVector(C.X, C.Y, Bx.Min.Z + 2.f), FVector(C.X, C.Y, Bx.Min.Z - 4.f), ECC_Visibility, Q) || !H.GetComponent())
+		{
+			Log(FString::Printf(TEXT("%s (%.0f,%.0f,%.0f) floats"), *What, C.X, C.Y, Bx.Min.Z));
+			return;
+		}
+		const FBox S = H.GetComponent()->Bounds.GetBox();
+		const float Over = FMath::Max(FMath::Max(S.Min.X - Bx.Min.X, Bx.Max.X - S.Max.X), FMath::Max(S.Min.Y - Bx.Min.Y, Bx.Max.Y - S.Max.Y));
+		if (Over > 3.f) Log(FString::Printf(TEXT("%s (%.0f,%.0f) hangs %.0f cm over the edge of %s"), *What, C.X, C.Y, Over, *H.GetComponent()->GetName()));
+	};
+	for (const FISPlaced& A : Furniture)
+		if (A.C && A.bOnTop && !A.Name.Contains(TEXT("Upper"))) Check(A.Name, A.C->Bounds.GetBox(), { A.C });
+	for (const FISHuntItem& H : Hunt)
+	{
+		FBox Bx(ForceInit);
+		TArray<const UPrimitiveComponent*> Ig;
+		for (UStaticMeshComponent* Pc : H.Model.Parts) if (Pc) { Bx += Pc->Bounds.GetBox(); Ig.Add(Pc); }
+		if (H.Hit) Ig.Add(H.Hit);
+		if (Bx.IsValid) Check(TEXT("hunt item ") + H.Name, Bx, Ig);
+		if (Bx.IsValid && Bx.Min.Z < 10.f && H.Where.Contains(TEXT("shelf")) ) Log(FString::Printf(TEXT("hunt item %s fell to the floor (meant for: %s)"), *H.Name, *H.Where));
+	}
 	UE_LOG(LogTemp, Warning, TEXT("[LAYOUT] done: %d issues, %d pieces checked"), Issues, Furniture.Num());
+}
+
+// Drop every decoration standing on furniture and every hunt part straight down onto the surface below it,
+// so nothing floats above or sinks into a table, shelf or bed. Runs once, after the world is activated
+// (Chaos only answers traces for bodies after a physics update).
+void AISHomeWorld::SettleProps()
+{
+	bSettled = true;
+	auto DropTo = [this](USceneComponent* Mover, const FBox& Bx, const TArray<const UPrimitiveComponent*>& Ignore, float MaxDrop) -> bool
+	{
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(ISSettle), true);
+		for (const UPrimitiveComponent* Ig : Ignore) Q.AddIgnoredComponent(Ig);
+		FHitResult H;
+		const FVector Start(Bx.GetCenter().X, Bx.GetCenter().Y, Bx.Min.Z + 3.f);
+		if (!GetWorld()->LineTraceSingleByChannel(H, Start, Start - FVector(0, 0, MaxDrop), ECC_Visibility, Q)) return false;
+		Mover->AddWorldOffset(FVector(0, 0, H.ImpactPoint.Z - Bx.Min.Z + 0.05f));
+		return true;
+	};
+	int32 Moved = 0;
+	for (FISPlaced& A : Furniture)
+	{
+		if (!A.C || !A.bOnTop || A.Name.Contains(TEXT("Upper"))) continue;   // wall cabinets hang on the wall on purpose
+		if (DropTo(A.C, A.C->Bounds.GetBox(), { A.C }, 120.f)) ++Moved;
+	}
+	for (FISHuntItem& H : Hunt)
+	{
+		if (!H.Root) continue;
+		FBox Bx(ForceInit);
+		TArray<const UPrimitiveComponent*> Ig;
+		for (UStaticMeshComponent* Pc : H.Model.Parts) if (Pc) { Bx += Pc->Bounds.GetBox(); Ig.Add(Pc); }
+		if (H.Hit) Ig.Add(H.Hit);
+		if (Bx.IsValid && DropTo(H.Root, Bx, Ig, 150.f))
+		{
+			H.Pos = Root->GetComponentTransform().InverseTransformPosition(H.Root->GetComponentLocation());
+			++Moved;
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] settled %d props onto their surfaces"), Moved);
 }

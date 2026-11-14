@@ -1,6 +1,8 @@
 #include "ISWorld.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "TimerManager.h"
+#include "GameFramework/PlayerController.h"
 #include "ISBit.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -21,7 +23,7 @@
 namespace
 {
 	const FVector GarageMin(-420, -320, 0), GarageMax(420, 320, 320);
-	const FVector PadLocation(800.f, 9500.f, 0.f);
+	const FVector PadLocation(800.f, 5200.f, 0.f);   // ~18 m past the garden gate (was 61 m: too long a walk)
 	const float Rho = 1.2f, G = 9.81f;
 	FString TexPath(const TCHAR* T) { return FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T); }
 	const TArray<FName>& CanSatTray()
@@ -120,8 +122,8 @@ UBoxComponent* AISHomeWorld::AddInteract(const FVector& Center, const FVector& E
 	B->SetRelativeLocation(Center);
 	B->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	B->SetCollisionResponseToAllChannels(ECR_Ignore);
-	B->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	B->SetHiddenInGame(true);
+	B->SetCollisionResponseToChannel(ECC_Visibility, ECR_Overlap);
+	B->SetHiddenInGame(true);   // overlap: the view trace picks the most specific volume (a part on the bench beats the bench)
 	B->RegisterComponent();
 	Actions.Add(B, Action);
 	return B;
@@ -325,6 +327,11 @@ void AISHomeWorld::BuildField()
 	RocketModel.Destroy();
 	ISBuild::HobbyRocket(this, RocketRoot, &RocketModel);
 	RocketModel.SetVisible(true);
+	// motor flame under the nozzle, shown only while the motor burns
+	RocketFlame.Destroy();
+	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -14.f), FVector(4.5f, 4.5f, 26.f), FLinearColor(1.f, 0.5f, 0.12f), 12.f, &RocketFlame, FRotator(180, 0, 0));
+	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -6.f), FVector(2.4f, 2.4f, 11.f), FLinearColor(1.f, 0.92f, 0.7f), 25.f, &RocketFlame, FRotator(180, 0, 0));
+	RocketFlame.SetVisible(false);
 }
 
 void AISHomeWorld::BuildNature()
@@ -382,7 +389,6 @@ void AISHomeWorld::BeginPlay()
 	BuildField();
 	BuildBackyard();
 	SpawnHunt();
-	if (FParse::Param(FCommandLine::Get(), TEXT("ISValidate"))) ValidateLayout();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -400,6 +406,17 @@ void AISHomeWorld::BeginPlay()
 
 void AISHomeWorld::SetActive(bool bOn)
 {
+	// first activation: once physics has the bodies, drop props onto real surfaces (and validate in dev runs)
+	if (bOn && !bSettled)
+		GetWorldTimerManager().SetTimer(SettleTimer, [this]()
+		{
+			SettleProps();
+			if (FParse::Param(FCommandLine::Get(), TEXT("ISValidate")))
+			{
+				ValidateLayout();
+				if (APlayerController* P = GetWorld()->GetFirstPlayerController()) P->ConsoleCommand(TEXT("quit"));
+			}
+		}, 0.4f, false);
 	SetActorHiddenInGame(!bOn);
 	SetActorEnableCollision(bOn);
 	Sun->SetVisibility(bOn);
@@ -766,6 +783,7 @@ void AISHomeWorld::StepFlight(float Dt)
 		Report.MaxSpeed = FMath::Max(Report.MaxSpeed, (float)RocketVelM.Size());
 		RocketRoot->SetRelativeLocation(MToWorld(RocketPosM) + FVector(0, 0, 40));
 		if (RocketVelM.Size() > 3.f) RocketRoot->SetRelativeRotation(FRotationMatrix::MakeFromZ(RocketVelM.GetSafeNormal()).Rotator());
+		RocketFlame.SetVisible(Stage == EISStage::Boost);
 		if (Stage == EISStage::Boost && FlightT >= Burn) { Stage = EISStage::Coast; Toast(TEXT("Motor burnout. Coasting up...")); }
 		CanPosM = RocketPosM + FVector(0, 0, 0.9f);
 		CanVelMs = RocketVelM;

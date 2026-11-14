@@ -144,11 +144,13 @@ void SISGameUI::Construct(const FArguments& InArgs)
 
 	if (UTexture2D* L = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Infinisat/Textures/T_UI_Logo.T_UI_Logo")))
 	{
+		L->AddToRoot();   // Slate brushes hold raw pointers: keep the texture alive (GC freed it -> crash while painting)
 		LogoBrush.SetResourceObject(L);
 		LogoBrush.ImageSize = FVector2D(L->GetSizeX(), L->GetSizeY()) * (200.f / FMath::Max(1, L->GetSizeY()));
 	}
 	if (UTexture2D* B = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Infinisat/Textures/T_UI_Bit.T_UI_Bit")))
 	{
+		B->AddToRoot();
 		BitBrush.SetResourceObject(B);
 		BitBrush.ImageSize = FVector2D(B->GetSizeX(), B->GetSizeY()) * (90.f / FMath::Max(1, B->GetSizeY()));
 	}

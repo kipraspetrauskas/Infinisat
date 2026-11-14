@@ -36,6 +36,7 @@ public:
 	void EnterWorld();         // first-person BIT, fade in
 	void EnterBench();
 	void LeaveBench();
+	float DragT = 0.f;   // how long the current bench drag has lasted (short = a click)
 	void OpenPanel();          // world stays, cursor for a UI panel (orders, debrief)
 	void ClosePanel();         // back to walking
 	EISMode GetMode() const { return Mode; }

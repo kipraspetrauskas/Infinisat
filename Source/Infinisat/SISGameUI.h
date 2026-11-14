@@ -28,6 +28,8 @@ public:
 	void ShowCanSatDebrief();
 	void ShowPause();
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	virtual FReply OnMouseMove(const FGeometry& G, const FPointerEvent& E) override;
+	virtual FReply OnMouseButtonUp(const FGeometry& G, const FPointerEvent& E) override;
 
 private:
 	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos };
@@ -120,6 +122,12 @@ private:
 	FSlateRoundedBoxBrush PanelBrush = FSlateRoundedBoxBrush(FLinearColor::White, 14.f, FLinearColor(0.45f, 0.82f, 1.f, 0.35f), 1.f);
 	FButtonStyle StyleNormal, StylePrimary, StyleSelected, StyleDisabled;
 	FSlateBrush LogoBrush, BitBrush;
+	bool bCardDrag = false;      // a part card is being dragged into the 3D can (mouse captured by this widget)
+	double CardDragStart = 0.0;
+	FGeometry RootGeo;
+	void CardDragRay(const FPointerEvent& E);
+	TMap<FName, TSharedPtr<FSlateBrush>> ThumbBrushes;   // part pictures (render targets owned by the world)
+	const FSlateBrush* ThumbBrush(FName PartId);
 	FProgressBarStyle BarStyle;
 	FString DevShot;
 	TArray<TPair<FString, double>> ToastLog;

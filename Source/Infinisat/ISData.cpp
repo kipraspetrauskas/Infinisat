@@ -166,6 +166,8 @@ namespace
 			.Edu(TEXT("A tiny camera module: images use far more data than sensor readings.")));
 		Add(FP("pl_gnss", C::Payload, TEXT("Space-grade GNSS receiver (uses GPS/Galileo)"), 0.05f, 0.005f).Pw(0.8f).Data(0.0001f).Tag(ISTag::GNSSRx)
 			.Edu(TEXT("Uses EXISTING satellites: by timing signals from 4+ GNSS satellites the receiver solves for x, y, z and its clock error. Helps you find your CanSat, and gives satellites their precise orbit.")));
+		Add(FP("pl_bme280", C::Payload, TEXT("BME280 pressure + temperature sensor"), 0.002f, 0.0000059f).Pw(0.004f).Data(0.0001f).Tag(ISTag::TempSensor)
+			.Edu(TEXT("Air pressure falls about 12 Pa for every metre you climb near the ground, so a pressure sensor is also an altimeter: it tells you how high the CanSat is.")));
 		Add(FP("pl_gnss_mini", C::Payload, TEXT("GNSS module u-blox MAX-M10S (CanSat)"), 0.008f, 0.0000091f).Pw(0.03f).Data(0.0001f).Tag(ISTag::GNSSRx)
 			.Edu(TEXT("A thumbnail-sized receiver that listens to GPS, Galileo, GLONASS and BeiDou at once. It needs signals from 4 satellites to solve x, y, z and its own clock error: your CanSat radios its position so you can find it.")));
 		Add(FP("pl_clock", C::Payload, TEXT("Atomic clocks (2x rubidium)"), 14.f, 3.f, 1).Pw(80.f).Tag(ISTag::Clock).Rel(0.985f)

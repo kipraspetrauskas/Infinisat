@@ -8,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Camera/CameraActor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Widgets/SWeakWidget.h"
 #include "InputCoreTypes.h"
@@ -363,13 +364,36 @@ void AISPlayerController::TickWalk(float Dt)
 void AISPlayerController::TickBench(float Dt)
 {
 	if (!World) return;
-	FHitResult H;
-	if (GetHitResultUnderCursor(ECC_Visibility, false, H))
+	if (World->bUIDrag) { if (WasInputKeyJustPressed(EKeys::Escape)) { World->bUIDrag = false; World->EndDrag(false); } return; }   // the UI drives drags started from a part card
+	const bool bLmb = IsInputKeyDown(EKeys::LeftMouseButton);
+	if (World->DragPart.IsNone())
 	{
-		const FName Part = World->PartUnderCursor(H.GetComponent());
-		if (!Part.IsNone()) World->BenchInfoPart = Part;
-		if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && !Part.IsNone()) World->BenchToggle(Part);
+		FHitResult H;
+		if (GetHitResultUnderCursor(ECC_Visibility, false, H))
+		{
+			const FName Part = World->PartUnderCursor(H.GetComponent());
+			if (!Part.IsNone()) World->BenchInfoPart = Part;
+			// press on a part on the bench (or in the can) picks it up
+			if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && !Part.IsNone()) { World->BeginDrag(Part); DragT = 0.f; }
+		}
 	}
+	else
+	{
+		DragT += Dt;
+		FVector S, D;
+		if (DeprojectMousePositionToWorld(S, D)) World->UpdateDrag(S, D);
+		if (!bLmb)
+		{
+			// a quick click (no drag) on a bench part = put it where it usually goes
+			const FName Id = World->DragPart;
+			const bool bClick = DragT < 0.25f && World->HoverSlot < 0 && !World->Placed.Contains(Id);
+			if (bClick) { World->EndDrag(false); World->BenchPlace(Id, AISHomeWorld::IdealSlot(Id)); }
+			else World->EndDrag(true);
+		}
+		if (WasInputKeyJustPressed(EKeys::Escape) || WasInputKeyJustPressed(EKeys::RightMouseButton)) World->EndDrag(false);
+		return;
+	}
+	if (WasInputKeyJustPressed(EKeys::G)) World->bGuide = !World->bGuide;
 	if (WasInputKeyJustPressed(EKeys::E) || WasInputKeyJustPressed(EKeys::Escape)) LeaveBench();
 }
 
@@ -389,6 +413,7 @@ void AISPlayerController::TickCanTest(float Dt)
 		Log(FString::Printf(TEXT("order taken, parts found %d/%d"), World->FoundCount(true), World->RequiredCount()));
 		CanTestStep = 1; return;
 	case 1:
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISBenchEmpty"))) { EnterBench(); CanTestStep = 99; return; }   // dev: all parts found, empty can, play the bench by hand
 		for (const char* Id : { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l" }) World->BenchToggle(FName(Id));
 		Log(FString::Printf(TEXT("built: %.0f g, stack %.1f cm"), World->Eval.TotalKg * 1000.f, World->StackHeightCm));
 		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestBench"))) { EnterBench(); CanTestStep = 99; return; }   // stay at the bench for a screenshot

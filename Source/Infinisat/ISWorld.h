@@ -104,6 +104,30 @@ public:
 	FName BenchInfoPart;
 	TArray<FName> TrayParts;
 
+	// --- assembly: the can has real mounting decks; parts are dragged into them (KSP-style), anywhere is allowed,
+	// but a part in the wrong place changes what happens in flight (chute buried, sensor sealed in, GNSS without sky...)
+	struct FCanSlot { FString Name, Why; float Z0, Z1; FLinearColor Color; };
+	static const TArray<FCanSlot>& CanSlots();
+	static int32 IdealSlot(FName PartId);
+	TMap<FName, int32> Placed;                 // part -> slot index
+	bool BenchPlace(FName PartId, int32 Slot);  // false (with a toast) if the deck is full
+	void BenchRemove(FName PartId);
+	TArray<FString> PlacementIssues() const;    // what will go wrong in flight because of where parts sit
+	bool bChuteBuried = false, bSensorSealed = false, bGnssBlind = false, bCamBlind = false, bRadioShielded = false;
+	// dragging (driven by the player controller)
+	FName DragPart;
+	bool bUIDrag = false;      // the drag is driven by the UI (a part card has the mouse captured)
+	int32 HoverSlot = -1;
+	bool bGuide = true;
+	void BeginDrag(FName PartId);
+	void UpdateDrag(const FVector& RayStart, const FVector& RayDir);
+	void EndDrag(bool bDrop);
+	// picture of each part (rendered once from the 3D model) for the part cards
+	class UTextureRenderTarget2D* PartThumb(FName PartId);
+	FVector CanRootLocation() const;
+	float BenchFocusT = 0.f;                    // > 0: camera zoomed onto FocusSlot
+	int32 FocusSlot = -1;
+
 	// --- flight / tracking
 	bool bChaseCam = false;
 	ACameraActor* ChaseCamera() const { return ChaseCam; }
@@ -186,6 +210,16 @@ private:
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FName> TrayHits;
 	TMap<FName, FISModel> TrayModels;
 	FISModel CanModel, RocketModel, RocketFlame, ChuteModel, BenchHandModel, PadModel;
+	UPROPERTY() TArray<USceneComponent*> CanPartRoots;
+	UPROPERTY() USceneComponent* DragRoot = nullptr;
+	FISModel DragModel, GuideModel;
+	UPROPERTY() TMap<FName, class UTextureRenderTarget2D*> Thumbs;
+	UPROPERTY() class USceneCaptureComponent2D* ThumbCam = nullptr;
+	UPROPERTY() USceneComponent* ThumbStage = nullptr;
+	void UpdatePlacementFlags();
+	void UpdateBenchCamera(float Dt);
+	FVector BenchCamHome = FVector::ZeroVector;
+	FRotator BenchCamHomeRot = FRotator::ZeroRotator;
 	UPROPERTY() UBoxComponent* CanHit = nullptr;
 	UPROPERTY() UBoxComponent* LandedHit = nullptr;
 

@@ -28,7 +28,7 @@ namespace
 	FString TexPath(const TCHAR* T) { return FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T); }
 	const TArray<FName>& CanSatTray()
 	{
-		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss_mini", "pl_cam_mini", "bat_cube", "ex_chute_s", "adcs_mag", "pwr_body" };
+		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss_mini", "pl_cam_mini", "pl_bme280", "ex_chute_s" };   // hobby parts only: real CanSats cost tens of dollars
 		return T;
 	}
 	int32 StackOrder(EISCat C)
@@ -444,6 +444,7 @@ void AISHomeWorld::StartCanSatOrder(int32 Index)
 	for (const char* Id : { "bus_can", "pwr_none", "adcs_none", "prop_none", "thm_none", "gnd_yard" }) Design.Parts.Add(FName(Id));
 	Design.Vehicle = "lv_hobby";
 	Design.Dest = EISDest::Backyard;
+	Placed.Reset(); DragPart = NAME_None; UpdatePlacementFlags();
 	Eval = ISSim::Evaluate(Design, ISData::Missions()[Index]);
 	Stage = EISStage::Build;
 	Telemetry.Reset(); Report = FISFlightReport(); bDebriefReady = false;
@@ -459,43 +460,11 @@ void AISHomeWorld::StartCanSatOrder(int32 Index)
 	SaveProgress();
 }
 
-void AISHomeWorld::RebuildCan()
-{
-	CanModel.Destroy();
-	if (Stage == EISStage::NoOrder) return;
-	const bool bOpen = Stage == EISStage::Build;
-	ISBuild::CanShell(this, CanRoot, FVector::ZeroVector, bOpen, &CanModel);
-	TArray<const FISPart*> Inside;
-	for (const FName& Id : Design.Parts)
-		if (const FISPart* P = ISData::FindPart(Id))
-			if (CanSatTray().Contains(Id)) Inside.Add(P);
-	Inside.Sort([](const FISPart& A, const FISPart& B) { return StackOrder(A.Cat) < StackOrder(B.Cat); });
-	float Z = 0.4f;
-	for (const FISPart* P : Inside)
-	{
-		const float H = ISBuild::CanSatPart(this, CanRoot, P->Id, FVector(0, 0, Z), &CanModel);
-		Z += H + (H > 0 ? 0.25f : 0.f);
-	}
-	StackHeightCm = Z;
-	if (Z > 11.5f) Toast(FString::Printf(TEXT("Warning: the stack is %.1f cm tall but the can is only 11.5 cm! Real CanSats must fit the can volume."), Z));
-	if (!bOpen)
-	{
-		// sealed can: lid, beacon LED and antenna stub visible outside
-		ISBuild::Unlit(this, CanRoot, ISMat::Sphere(), FVector(0, 2.2f, 11.8f), FVector(0.6f), FLinearColor(1.f, 0.1f, 0.05f), 10.f, &CanModel);
-	}
-	if (IsValid(CanHit)) { Actions.Remove(CanHit); CanHit->DestroyComponent(); CanHit = nullptr; }
-	if (Stage == EISStage::Sealed)
-	{
-		CanHit = AddInteract(CanRoot->GetComponentLocation() + FVector(0, 0, 6), FVector(8, 8, 9), "cansat");
-	}
-}
-
 void AISHomeWorld::RebuildTray()
 {
 	for (auto& KV : TrayModels) KV.Value.Destroy();
 	TrayModels.Reset();
-	for (auto& KV : TrayHits) if (KV.Key.IsValid()) KV.Key->DestroyComponent();
-	TrayHits.Reset();
+	for (auto It = TrayHits.CreateIterator(); It; ++It) if (!It.Key().IsValid() || !It.Key()->ComponentHasTag("placed")) { if (It.Key().IsValid()) It.Key()->DestroyComponent(); It.RemoveCurrent(); }
 	TrayParts.Reset();
 	if (Stage != EISStage::Build) return;
 	int32 i = 0;
@@ -537,22 +506,9 @@ void AISHomeWorld::BenchToggle(FName Id)
 {
 	const FISPart* P = ISData::FindPart(Id);
 	if (!P || Stage != EISStage::Build) return;
-	BenchInfoPart = Id;
-	const bool bHad = Design.Has(Id);
-	if (P->Cat == EISCat::Payload || P->Cat == EISCat::Extra) Design.Toggle(Id);
-	else if (bHad)
-	{
-		const FName None = P->Cat == EISCat::Power ? FName("pwr_none") : P->Cat == EISCat::ADCS ? FName("adcs_none") : NAME_None;
-		Design.SetSingle(P->Cat, None);
-	}
-	else Design.SetSingle(P->Cat, Id);
-	Eval = ISSim::Evaluate(Design, ISData::Missions()[MissionIdx]);
-	BenchHandGoal = bHad ? BenchTop + FVector(0, 25, 8) : CanRoot->GetComponentLocation() + FVector(0, 6, 9);
-	BenchHandT = 1.f;
-	RebuildCan();
-	RebuildTray();
-	++DesignVersion;
-	SaveProgress();
+	// quick path (part list buttons, tests): in -> its usual deck, out -> back to the bench
+	if (Placed.Contains(Id)) BenchRemove(Id);
+	else BenchPlace(Id, IdealSlot(Id));
 }
 
 void AISHomeWorld::BenchSeal()
@@ -728,6 +684,7 @@ void AISHomeWorld::Tick(float Dt)
 	}
 	ScanT = FMath::Max(0.f, ScanT - Dt);
 
+	UpdateBenchCamera(Dt);
 	// bench hands animation
 	const bool bBench = Stage == EISStage::Build;
 	BenchHandModel.SetVisible(false);
@@ -751,8 +708,11 @@ void AISHomeWorld::Tick(float Dt)
 			TelemetryTotal = TelemetryGot = 0;
 			Telemetry.Reset();
 			Report = FISFlightReport();
-			Report.bChute = Design.HasTag(ISTag::Parachute);
-			bHasGnss = Design.HasTag(ISTag::GNSSRx);
+			// where the parts sit matters (see ISBench.cpp)
+			UpdatePlacementFlags();
+			Report.bChute = Design.HasTag(ISTag::Parachute) && !bChuteBuried;
+			bHasGnss = Design.HasTag(ISTag::GNSSRx) && !bGnssBlind;
+			if (bChuteBuried && Design.HasTag(ISTag::Parachute)) Toast(TEXT("Lift-off! (The parachute is packed under the electronics... it will not come out.)"));
 		}
 	}
 	if (Stage >= EISStage::Boost && Stage <= EISStage::Descent)
@@ -870,7 +830,8 @@ void AISHomeWorld::StepFlight(float Dt)
 			FRandomStream R(TelemetryTotal * 7919);
 			FISTelemetry S;
 			S.T = FlightT; S.AltM = Alt;
-			S.TempC = 15.f - 6.5f * Alt / 1000.f + R.FRandRange(-0.3f, 0.3f);
+			// a sensor sealed inside the can reads the electronics' warm air, not the sky
+			S.TempC = bSensorSealed ? 27.f + FMath::Min(FlightT, 120.f) * 0.02f + R.FRandRange(-0.1f, 0.1f) : 15.f - 6.5f * Alt / 1000.f + R.FRandRange(-0.3f, 0.3f);
 			S.PressHPa = 1013.25f * FMath::Exp(-Alt / 8400.f);
 			Telemetry.Add(S);
 		}
@@ -887,7 +848,7 @@ void AISHomeWorld::UpdateTracker(float Dt)
 	TrackDistM = FVector::Dist(Me, CanW) / 100.f;
 	TrackDirWorld = (CanW - Me).GetSafeNormal();
 	const FISPart* Radio = ISData::FindPart(Design.GetSingle(EISCat::Comms));
-	const float RangeKm = Radio ? FMath::Max(0.1f, Radio->RadioRangeKm) : 0.f;
+	const float RangeKm = Radio ? FMath::Max(0.1f, Radio->RadioRangeKm * (bRadioShielded ? 0.33f : 1.f)) : 0.f;
 	const bool bAlive = Stage != EISStage::Landed || (BeaconLeftS > 0.f && !Report.bBroken);
 	Report.bBeaconAlive = bAlive;
 	// free-space path loss at 433 MHz; receiver sensitivity set so that the radio's rated range is the limit
@@ -915,6 +876,9 @@ void AISHomeWorld::SaveProgress() const
 	const int32 St = Stage == EISStage::NoOrder ? 0 : (Stage == EISStage::Build ? 1 : 2);
 	GConfig->SetString(Sec, TEXT("Found"), *Found, GGameUserSettingsIni);
 	GConfig->SetString(Sec, TEXT("Parts"), *Parts, GGameUserSettingsIni);
+	FString SlotStr;
+	for (const auto& KV : Placed) SlotStr += FString::Printf(TEXT("%s=%d,"), *KV.Key.ToString(), KV.Value);
+	GConfig->SetString(Sec, TEXT("Slots"), *SlotStr, GGameUserSettingsIni);
 	GConfig->SetInt(Sec, TEXT("Stage"), St, GGameUserSettingsIni);
 	GConfig->SetInt(Sec, TEXT("Mission"), MissionIdx, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
@@ -954,6 +918,18 @@ void AISHomeWorld::LoadProgress()
 			for (const FString& S : P) Design.Parts.Add(FName(*S));
 			Eval = ISSim::Evaluate(Design, ISData::Missions()[MissionIdx]);
 		}
+		FString SlotStr;
+		GConfig->GetString(Sec, TEXT("Slots"), SlotStr, GGameUserSettingsIni);
+		TArray<FString> SP; SlotStr.ParseIntoArray(SP, TEXT(","));
+		TMap<FString, int32> Saved;
+		for (const FString& S : SP) { FString K, V; if (S.Split(TEXT("="), &K, &V)) Saved.Add(K, FCString::Atoi(*V)); }
+		for (const FName& Id : Design.Parts)
+			if (CanSatTray().Contains(Id))
+			{
+				const int32* S = Saved.Find(Id.ToString());
+				Placed.Add(Id, S && CanSlots().IsValidIndex(*S) ? *S : IdealSlot(Id));
+			}
+		UpdatePlacementFlags();
 		if (St >= 2) Stage = EISStage::Sealed;
 		RebuildCan();
 		RebuildTray();

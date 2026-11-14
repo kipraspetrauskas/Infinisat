@@ -367,7 +367,7 @@ namespace ISSim
 			E.DescentMs = Chute > 0 ? FMath::Sqrt(2.0 * Mass * ISData::G0 / (Rho * Cd * Chute)) : 50.f;
 			const double FlightH = E.FlightAltKm > 5 ? 2.5 : (E.FlightAltKm * 1000.0 / E.DescentMs) / 3600.0;
 			const double NeedH = FlightH + 2.0;
-			E.RuntimeH = Load > 0 ? Bat * 0.9 / Load : 999.0;
+			E.RuntimeH = Bat <= 0 ? 0.0 : (Load > 0 ? Bat * 0.9 / Load : 999.0);   // no battery = no runtime
 			AddLine(E, TEXT("Battery runtime"), Fmt(E.RuntimeH, 1) + TEXT(" h"), Fmt(NeedH, 1) + TEXT(" h"), E.RuntimeH >= NeedH ? EISStatus::Ok : EISStatus::Fail,
 				FString::Printf(TEXT("Runtime = battery energy x 90%% usable / load\n= %s Wh x 0.9 / %s W = %s hours.\nNeeded: flight (%s h) + 2 h on the ground so you can find it = %s h.\nEnergy (Wh) = Power (W) x Time (h)."),
 					*Fmt(Bat, 1), *Fmt(Load, 2), *Fmt(E.RuntimeH, 1), *Fmt(FlightH, 2), *Fmt(NeedH, 1)));

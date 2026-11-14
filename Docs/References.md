@@ -16,3 +16,12 @@
 | Basilisk (AVS Lab) - https://hanspeterschaub.info/basilisk/ | Reference for attitude/orbit simulation structure (logic only, no code copied) |
 | NASA software GSC-19640-1 | Reference |
 | ECSS standards - https://ecss.nl/ | Mission phases and reviews (PDR/CDR/FRR) for the ESA career stage |
+
+## Principia (mockingbirdnest/Principia, MIT) - ideas ported, no code copied
+From the user's "Cosmos_Logic" PDFs (part.hpp/.cpp, pile_up.hpp/.cpp, vessel.hpp, interface_part.cpp):
+- Part -> PileUp: each attached piece contributes mass, centre of mass and inertia; thrust off the centre line is a torque
+  (`ApplyIntrinsicForceWithLeverArm`). Ported as `FISRocketSim::UpdateMassProperties` + `StepAttitude` (engine gimbal,
+  aerodynamic instability of a finless rocket, RCS when coasting).
+- Mass loss keeps the angular velocity (lost propellant carries its own angular momentum, as Principia does for solid motors).
+- History / prediction: an authoritative past trajectory and a forward-integrated prediction. Ported as `History` and
+  `Predict()` (velocity-Verlet, symplectic), drawn as orange / cyan lines in the flight view.

@@ -188,6 +188,8 @@ private:
 	UPROPERTY() TMap<FString, UTexture2D*> CosmosTexCache;
 	UPROPERTY() USceneComponent* CosmosBackdrop = nullptr;
 	UPROPERTY() ULineBatchComponent* CosmosLines = nullptr;
+	UPROPERTY() ULineBatchComponent* FlightLines = nullptr;   // flown path (orange) + predicted path (cyan)
+	TArray<FVector2D> FlightPred;
 	UPROPERTY() UMaterialInterface* MatGlow = nullptr;
 	UPROPERTY() UMaterialInterface* MatRing = nullptr;
 	int32 CosmosSel = 0;

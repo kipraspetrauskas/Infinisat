@@ -979,8 +979,8 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
 					[
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("THROTTLE / THRUST"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f%% / %.0f kN"), S.Throttle * 100.0, S.ThrustN / 1000.0); })]
-						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("PITCH FROM VERTICAL / AoA"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.1f / %.1f deg"), S.PitchDeg, S.AoADeg); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("THROTTLE / THRUST | GIMBAL"), [](const FISRocketSim& S) { return S.bRcs ? FString::Printf(TEXT("%.0f%% / %.0f kN | RCS"), S.Throttle * 100.0, S.ThrustN / 1000.0) : FString::Printf(TEXT("%.0f%% / %.0f kN | %+.1f"), S.Throttle * 100.0, S.ThrustN / 1000.0, S.GimbalDeg); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("PITCH set / actual  |  AoA"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f / %.1f  |  %.1f deg"), S.PitchDeg, S.AttDeg, S.AoADeg); })]
 						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("MASS / THRUST-TO-WEIGHT"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.1f t / %.2f"), S.MassKg / 1000.0, S.TWR); })]
 						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("DELTA-V LEFT (vacuum)"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f m/s"), S.DeltaVLeft()); })]
 					]

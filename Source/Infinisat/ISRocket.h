@@ -61,7 +61,7 @@ public:
 	int32 StageIdx = 0;
 	bool bBoostersOn = false, bFairingOn = true;
 	double StageProp = 0, BoosterProp = 0;
-	double MaxQSeen = 0;
+	double MaxQSeen = 0, MaxAoASeen = 0, MaxGimbalSeen = 0;   // max AoA counted only in the air (q > 2 kPa)
 	FString FailReason;
 	TArray<FISFlightEvent> Events;
 
@@ -71,7 +71,25 @@ public:
 	double TargetAltKm = 400, IncDeg = 51.6, PayloadKg = 100, LaunchAzDeg = 90, EarthBoostMs = 0, LiftoffDv = 0;
 	const FISLauncher* L = nullptr;
 	bool IsFlying() const { return Phase == EISFlightPhase::Ascent || Phase == EISFlightPhase::Coast; }
-	FVector2D ThrustDir() const;    // unit vector of the current thrust
+	FVector2D ThrustDir() const;    // unit vector of the current thrust (nose direction tilted by the engine gimbal)
+	FVector2D NoseDir() const;      // where the vehicle actually points
+
+	// --- rigid-body attitude (the idea of Principia's Part -> PileUp: every attached piece adds mass, a centre of mass and
+	// an inertia tensor; thrust that is off the centre line makes torque). PitchDeg above is only the COMMAND: the flight
+	// computer swings the engines (gimbal) to turn the vehicle there, fighting the air that tries to flip a finless rocket.
+	double AttDeg = 0;              // actual nose angle from local vertical toward downrange
+	double RateDps = 0;             // pitch rate, deg/s (inertial)
+	double GimbalDeg = 0;           // engine deflection in use (+ turns the nose downrange)
+	double GimbalMaxDeg = 5;
+	double InertiaKgm2 = 0, CoMHeightM = 0, StackLenM = 0, AeroTorqueNm = 0;
+	bool bRcs = false;              // attitude thrusters doing the turning (no main-engine thrust)
+
+	// --- trajectory, as Principia keeps it: an authoritative history (1 point per second of flight) and a prediction
+	// (where the vehicle goes if every engine stopped now: gravity + drag, symplectic integration, ends at the ground or
+	// after one revolution)
+	TArray<FVector2D> History;
+	void Predict(TArray<FVector2D>& Out, int32 MaxPoints = 400) const;
+
 	FVector2D Up() const { return R.GetSafeNormal(); }
 	FVector2D East() const { const FVector2D U = Up(); return FVector2D(U.Y, -U.X); }
 
@@ -85,6 +103,11 @@ private:
 	void UpdateDerived();
 	void Guidance(double Dt);
 	double StackMass() const;
+	void UpdateMassProperties();    // centre of mass, moment of inertia, length of what is still attached
+	void StepAttitude(double Dt);
+	double ThetaI = 0;              // inertial nose angle (rad, from +Y toward +X)
+	double OmegaI = 0;              // inertial pitch rate (rad/s)
+	double HistT = -1e9;
 public:
 	double TimeToApoapsis() const;
 private:

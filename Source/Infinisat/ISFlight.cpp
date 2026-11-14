@@ -8,6 +8,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Components/LineBatchComponent.h"
 
 namespace
 {
@@ -24,6 +25,12 @@ bool AISSpaceScene::StartFlight(FName VehicleId, double PayloadKg, double Target
 		RocketRoot = NewObject<USceneComponent>(this);
 		RocketRoot->SetupAttachment(SceneRoot);
 		RocketRoot->RegisterComponent();
+	}
+	if (!FlightLines)
+	{
+		FlightLines = NewObject<ULineBatchComponent>(this);
+		FlightLines->SetupAttachment(SceneRoot);
+		FlightLines->RegisterComponent();
 	}
 	// launch plane = the spacecraft's orbital plane; the pad sits ~25 deg "behind" the spacecraft so the ascent ends near it
 	const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
@@ -160,10 +167,29 @@ void AISSpaceScene::TickFlight(float Dt)
 
 	// pose (metres in the launch plane -> world cm)
 	const FVector P = (FlightU * (float)Sim.R.Y + FlightDn * (float)Sim.R.X) * 100.f;
-	const FVector2D Td = Sim.ThrustDir();
-	const FVector Dir = (FlightU * (float)Td.Y + FlightDn * (float)Td.X).GetSafeNormal();
+	const FVector2D Nd = Sim.NoseDir();
+	const FVector Dir = (FlightU * (float)Nd.Y + FlightDn * (float)Nd.X).GetSafeNormal();
 	RocketRoot->SetRelativeLocation(P);
 	RocketRoot->SetRelativeRotation(FRotationMatrix::MakeFromZX(Dir, FlightDn).Rotator());
+
+	// trajectory lines: where it has been (history) and where it goes if the engines stopped now (prediction)
+	if (FlightLines)
+	{
+		FlightLines->Flush();
+		const FTransform& Xf = SceneRoot->GetComponentTransform();
+		auto W = [&](const FVector2D& Q) { return Xf.TransformPosition((FlightU * (float)Q.Y + FlightDn * (float)Q.X) * 100.f); };
+		if (Sim.AltM > 2000.0)
+		{
+			const TArray<FVector2D>& H = Sim.History;
+			for (int32 i = 1; i < H.Num(); ++i) FlightLines->DrawLine(W(H[i - 1]), W(H[i]), FLinearColor(1.f, 0.55f, 0.15f), SDPG_World, 0.f, 0.f);
+			if (H.Num()) FlightLines->DrawLine(W(H.Last()), W(Sim.R), FLinearColor(1.f, 0.55f, 0.15f), SDPG_World, 0.f, 0.f);
+			if (Sim.IsFlying() || Sim.Phase == EISFlightPhase::Orbit)
+			{
+				Sim.Predict(FlightPred, 300);
+				for (int32 i = 1; i < FlightPred.Num(); ++i) FlightLines->DrawLine(W(FlightPred[i - 1]), W(FlightPred[i]), FLinearColor(0.3f, 0.85f, 1.f), SDPG_World, 0.f, 0.f);
+			}
+		}
+	}
 
 	// what is still attached
 	for (int32 i = 0; i < StageVis.Num(); ++i) for (UStaticMeshComponent* C : StageVis[i]) if (IsValid(C)) C->SetVisibility(i >= Sim.StageIdx && Sim.Phase != EISFlightPhase::Failed);
@@ -221,6 +247,7 @@ void AISSpaceScene::EndFlight()
 	UE_LOG(LogTemp, Log, TEXT("[FLIGHT] end phase %d  %.0f x %.0f km  %s"), (int32)Sim.Phase, Sim.ApoKm, Sim.PeriKm, *Sim.FailReason);
 	bFlight = false;
 	LaunchT = -1.f;
+	if (FlightLines) FlightLines->Flush();
 	if (RocketRoot) RocketRoot->SetVisibility(false, true);
 	SatRoot->SetVisibility(true, true);
 	Sky->SetVisibility(true);

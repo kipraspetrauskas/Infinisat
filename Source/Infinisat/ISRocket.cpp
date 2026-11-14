@@ -134,6 +134,9 @@ void FISRocketSim::Setup(const FISLauncher& InL, double InPayloadKg, double InTa
 	EarthBoostMs = OmegaE * Re * FMath::Cos(Lat) * SinAz;   // Earth's spin helps eastward launches, hurts retrograde (SSO)
 	R = FVector2D(0, Re);
 	V = FVector2D(EarthBoostMs, 0);
+	ThetaI = 0; OmegaI = 0; AttDeg = 0; RateDps = 0; GimbalDeg = 0;
+	History.Reset(); HistT = -1e9;
+	UpdateMassProperties();
 	UpdateDerived();
 	LiftoffDv = DeltaVLeft();
 }
@@ -175,10 +178,160 @@ double FISRocketSim::DeltaVLeft() const
 	return Dv;
 }
 
+FVector2D FISRocketSim::NoseDir() const
+{
+	return FVector2D(FMath::Sin(ThetaI), FMath::Cos(ThetaI));
+}
+
 FVector2D FISRocketSim::ThrustDir() const
 {
-	const double P = FMath::DegreesToRadians(PitchDeg);
-	return (Up() * FMath::Cos(P) + East() * FMath::Sin(P)).GetSafeNormal();
+	// a gimballed engine pushes the tail sideways: the thrust leans opposite to the turn it makes
+	const double A = ThetaI - FMath::DegreesToRadians(GimbalDeg);
+	return FVector2D(FMath::Sin(A), FMath::Cos(A));
+}
+
+// What is still attached, bottom to top: the current stage (+ its boosters beside it), the stages above, then the payload
+// under its fairing. Each piece is a uniform cylinder; the parallel-axis theorem adds them about the common centre of mass
+// (Principia's PileUp does the same with full inertia tensors via MechanicalSystem::AddRigidBody).
+void FISRocketSim::UpdateMassProperties()
+{
+	if (!L) return;
+	struct FSeg { double M, Z0, Len, Diam; };
+	TArray<FSeg, TInlineAllocator<10>> Segs;
+	double Z = 0;
+	for (int32 i = StageIdx; i < L->Stages.Num(); ++i)
+	{
+		const FISEngineStage& St = L->Stages[i];
+		Segs.Add({ St.DryKg + (i == StageIdx ? StageProp : St.PropKg), Z, St.LengthM, St.DiameterM });
+		if (i == StageIdx && bBoostersOn) Segs.Add({ St.Boosters * St.BoosterDryKg + BoosterProp, 0.0, St.BoosterLengthM, St.BoosterDiameterM });
+		Z += St.LengthM;
+	}
+	const double PayLen = bFairingOn ? FMath::Max(1.0, L->FairingLengthM) : 1.5;
+	Segs.Add({ PayloadKg + (bFairingOn ? L->FairingKg : 0.0), Z, PayLen, bFairingOn ? L->FairingDiameterM : 1.0 });
+	StackLenM = Z + PayLen;
+	double Mt = 0, Mz = 0;
+	for (const FSeg& S : Segs) { Mt += S.M; Mz += S.M * (S.Z0 + S.Len * 0.5); }
+	CoMHeightM = Mz / FMath::Max(1.0, Mt);
+	double I = 0;
+	for (const FSeg& S : Segs)
+	{
+		const double Rr = S.Diam * 0.5, D = S.Z0 + S.Len * 0.5 - CoMHeightM;
+		I += S.M * (3.0 * Rr * Rr + S.Len * S.Len) / 12.0 + S.M * D * D;
+	}
+	InertiaKgm2 = FMath::Max(1.0, I);
+}
+
+// Pitch dynamics: I * dOmega/dt = gimbal torque + aerodynamic torque + attitude thrusters.
+// Burnt propellant leaves with its own angular momentum, so losing mass does not spin the vehicle up
+// (the same assumption Principia makes for solid motors: the angular velocity is kept, not the angular momentum).
+void FISRocketSim::StepAttitude(double Dt)
+{
+	UpdateMassProperties();
+	const double Phi = FMath::Atan2(R.X, R.Y);            // inertial angle of the local vertical
+	const FVector2D U = Up(), E = East();
+	const double Rn = R.Size();
+	const double FrameRate = FVector2D::DotProduct(V, E) / Rn;   // the horizon turns as the vehicle flies downrange
+	const FVector2D Air = E * (OmegaE * Rn * FMath::Cos(FMath::DegreesToRadians(L->SiteLatDeg)) * FMath::Sin(FMath::DegreesToRadians(LaunchAzDeg)));
+	const FVector2D Vrel = V - Air;
+	const double Vr = Vrel.Size();
+	if (AltM < 1.0 && FVector2D::DotProduct(Vrel, U) < 0.5)
+	{
+		// still clamped to the pad: vertical, not turning
+		ThetaI = Phi; OmegaI = FrameRate; GimbalDeg = 0; AeroTorqueNm = 0; bRcs = false;
+		AttDeg = 0; RateDps = 0;
+		return;
+	}
+	// a finless rocket is aerodynamically unstable: the centre of pressure sits ahead of the centre of mass, so the air
+	// pushes the nose further away from the airflow. Normal-force slope ~2 per radian; pitch damping from the same lift.
+	const FISEngineStage& St = L->Stages[StageIdx];
+	double Diam = St.DiameterM;
+	if (bFairingOn) Diam = FMath::Max(Diam, L->FairingDiameterM);
+	const double Area = PI * Diam * Diam * 0.25;
+	const double Q = 0.5 * Density(AltM) * Vr * Vr;
+	const double Dcp = 0.12 * StackLenM;
+	AeroTorqueNm = 0;
+	double Damp = 0;
+	if (Vr > 20.0 && Q > 1.0)
+	{
+		const double Alpha = FMath::UnwindRadians(ThetaI - FMath::Atan2(Vrel.X, Vrel.Y));
+		AeroTorqueNm = Q * Area * 2.0 * FMath::Sin(Alpha) * Dcp;
+		Damp = -Q * Area * 2.0 * Dcp * Dcp * (OmegaI - FrameRate) / Vr;
+	}
+	// flight computer: a critically damped turn toward the commanded pitch (feed-forward cancels the known air torque)
+	const double Cmd = FMath::DegreesToRadians(PitchDeg) + Phi;
+	const double Err = FMath::UnwindRadians(Cmd - ThetaI);
+	const double Wn = 0.9, Zeta = 0.95;
+	const double AccWant = Wn * Wn * Err + 2.0 * Zeta * Wn * (FrameRate - OmegaI);
+	const double TauWant = AccWant * InertiaKgm2 - AeroTorqueNm - Damp;
+	const double Arm = FMath::Max(1.0, CoMHeightM);       // engines sit at the bottom of the current stage
+	GimbalMaxDeg = St.bSolid ? 6.0 : 5.0;
+	double Tau = 0;
+	if (ThrustN > 1.0)
+	{
+		const double SinG = FMath::Clamp(TauWant / (ThrustN * Arm), -FMath::Sin(FMath::DegreesToRadians(GimbalMaxDeg)), FMath::Sin(FMath::DegreesToRadians(GimbalMaxDeg)));
+		GimbalDeg = FMath::RadiansToDegrees(FMath::Asin(SinG));
+		Tau = ThrustN * Arm * SinG;
+	}
+	else GimbalDeg = 0;
+	// cold-gas attitude thrusters: weak, but they turn a coasting stage (and help the gimbal above the thick air)
+	bRcs = false;
+	if (ThrustN <= 1.0 || AltM > 60000.0)
+	{
+		const double RcsMax = InertiaKgm2 * 0.03;
+		const double Extra = FMath::Clamp(TauWant - Tau, -RcsMax, RcsMax);
+		Tau += Extra;
+		bRcs = ThrustN <= 1.0 && FMath::Abs(Extra) > 0.02 * RcsMax;
+	}
+	OmegaI += (Tau + AeroTorqueNm + Damp) / InertiaKgm2 * Dt;
+	ThetaI = FMath::UnwindRadians(ThetaI + OmegaI * Dt);
+	AttDeg = FMath::RadiansToDegrees(FMath::UnwindRadians(ThetaI - Phi));
+	RateDps = FMath::RadiansToDegrees(OmegaI);
+}
+
+// The prediction: no thrust from now on, gravity + drag, velocity-Verlet (symplectic, so an orbit closes on itself
+// instead of spiralling out like with plain Euler steps). Stops at the ground or after one revolution.
+void FISRocketSim::Predict(TArray<FVector2D>& Out, int32 MaxPoints) const
+{
+	Out.Reset();
+	if (!L) return;
+	FVector2D Rp = R, Vp = V;
+	const double M = FMath::Max(1.0, MassKg);
+	const double En = Vp.SizeSquared() * 0.5 - Mu / Rp.Size();
+	double Horizon = 3600.0;
+	if (En < 0) { const double A = -Mu / (2.0 * En); Horizon = FMath::Min(2.0 * PI * FMath::Sqrt(A * A * A / Mu), 30000.0); }
+	const int32 Sub = 6;
+	const double H = Horizon / (MaxPoints * Sub);
+	const FISEngineStage& St = L->Stages[StageIdx];
+	const double Diam = bFairingOn ? FMath::Max(St.DiameterM, L->FairingDiameterM) : St.DiameterM;
+	const double CdA = 0.3 * PI * Diam * Diam * 0.25;
+	const double Spin = OmegaE * FMath::Cos(FMath::DegreesToRadians(L->SiteLatDeg)) * FMath::Sin(FMath::DegreesToRadians(LaunchAzDeg));
+	auto Accel = [&](const FVector2D& Rr, const FVector2D& Vv)
+	{
+		const double Rn = Rr.Size();
+		FVector2D A = -Rr * (Mu / (Rn * Rn * Rn));
+		const double Alt = Rn - Re;
+		if (Alt < 120000.0)
+		{
+			const FVector2D U = Rr / Rn, E(U.Y, -U.X);
+			const FVector2D Vrel = Vv - E * (Spin * Rn);
+			A -= Vrel * (0.5 * Density(Alt) * Vrel.Size() * CdA / M);
+		}
+		return A;
+	};
+	Out.Add(Rp);
+	FVector2D Acc = Accel(Rp, Vp);
+	for (int32 i = 0; i < MaxPoints; ++i)
+	{
+		for (int32 s = 0; s < Sub; ++s)
+		{
+			Vp += Acc * (H * 0.5);
+			Rp += Vp * H;
+			Acc = Accel(Rp, Vp);
+			Vp += Acc * (H * 0.5);
+		}
+		if (Rp.Size() < Re) { Out.Add(Rp.GetSafeNormal() * Re); break; }
+		Out.Add(Rp);
+	}
 }
 
 void FISRocketSim::Stage()
@@ -254,6 +407,9 @@ void FISRocketSim::Guidance(double Dt)
 				const double Tapo = Vz < 0.0 ? -60.0 : FMath::Min(TimeToApoapsis(), 400.0);
 				PitchDeg = FMath::Clamp(75.0 + (Tapo - 50.0) * 0.6, 35.0, 92.0);
 			}
+			// never lean across the airflow while the air still pushes: q x angle-of-attack stays under ~15 kPa*deg (break-up is ~150-300)
+			const double AllowA = FMath::Clamp(15000.0 / FMath::Max(1.0, QPa), 1.5, 180.0);
+			PitchDeg = FMath::Clamp(PitchDeg, GammaAir - AllowA, GammaAir + AllowA);
 		}
 		if (ApoKm >= Target) { Throttle = 0.0; bCircBurn = true; Event(FString::Printf(TEXT("Apoapsis %.0f km reached: engine cut-off, coasting to apoapsis (%.0f s)."), ApoKm, TimeToApoapsis())); }
 	}
@@ -299,8 +455,8 @@ void FISRocketSim::UpdateDerived()
 	Mach = SurfSpeed / SoundSpeed(AltM);
 	QPa = 0.5 * Density(AltM) * SurfSpeed * SurfSpeed;
 	MassKg = StackMass();
-	const FVector2D Td = ThrustDir();
-	AoADeg = SurfSpeed > 20 ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector2D::DotProduct(Td, Vrel.GetSafeNormal()), -1.0, 1.0))) : 0.0;
+	const FVector2D Nd = NoseDir();
+	AoADeg = SurfSpeed > 20 ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector2D::DotProduct(Nd, Vrel.GetSafeNormal()), -1.0, 1.0))) : 0.0;
 	// orbit from the state vector
 	const double Rn = R.Size();
 	const double H = R.X * V.Y - R.Y * V.X;
@@ -355,6 +511,9 @@ void FISRocketSim::Step(double Dt)
 	if (bCoreFuel && StageProp <= 0.0) Event(FString::Printf(TEXT("%s burn-out (%s) at %.1f km, %.0f m/s."), *St.Name, StageIdx == 0 ? TEXT("MECO") : TEXT("SECO"), AltM / 1000.0, Speed));
 	if (bFairingOn && AltM > 110000.0) { bFairingOn = false; Event(FString::Printf(TEXT("Fairing jettisoned at %.0f km: %.0f kg less to carry."), AltM / 1000.0, L->FairingKg)); }
 
+	// attitude first: the thrust then points where the vehicle really points (not where it was told to point)
+	StepAttitude(Dt);
+
 	// forces
 	const double M = StackMass();
 	const FVector2D U = Up(), E = East();
@@ -382,12 +541,19 @@ void FISRocketSim::Step(double Dt)
 	if (bOnGround && T < 20.0 && !Events.ContainsByPredicate([](const FISFlightEvent& Ev) { return Ev.Text.StartsWith(TEXT("Lift-off")); }))
 		Event(FString::Printf(TEXT("Lift-off! Thrust-to-weight %.2f."), Thrust / (M * G0)));
 
-	V += F / M * Dt;
+	// velocity Verlet (kick-drift-kick): gravity is re-evaluated at the new position, so energy does not drift when coasting
+	const FVector2D NonGrav = (Drag + ThrustDir() * Thrust) / M;
+	V += (NonGrav + Grav / M) * (Dt * 0.5);
 	R += V * Dt;
+	const double Rn1 = R.Size();
+	V += (NonGrav - R * (Mu / (Rn1 * Rn1 * Rn1))) * (Dt * 0.5);
 	UpdateDerived();
+	if (T - HistT >= 1.0 && History.Num() < 20000) { History.Add(R); HistT = T; }
 
 	// structural limits and ground
 	MaxQSeen = FMath::Max(MaxQSeen, QPa);
+	if (QPa > 2000.0) MaxAoASeen = FMath::Max(MaxAoASeen, AoADeg);
+	MaxGimbalSeen = FMath::Max(MaxGimbalSeen, FMath::Abs(GimbalDeg));
 	if (!bMaxQPassed && QPa < MaxQSeen * 0.97 && MaxQSeen > 5000.0)
 	{
 		bMaxQPassed = true;
@@ -429,11 +595,14 @@ void ISRocketSelfTest()
 		FISRocketSim S;
 		S.Setup(*L, C.Kg, C.Alt, C.Inc);
 		S.StartCountdown(1.0);
+		double WorstQA = 0, WAlt = 0, WQ = 0, WA = 0, WCmd = 0, WAtt = 0, WT = 0;
 		for (int32 i = 0; i < 200000 && (S.Phase == EISFlightPhase::Countdown || S.IsFlying()); ++i)
 		{
 			S.Step(0.02);
+			if (S.QPa * S.AoADeg > WorstQA) { WorstQA = S.QPa * S.AoADeg; WAlt = S.AltM; WQ = S.QPa; WA = S.AoADeg; WCmd = S.PitchDeg; WAtt = S.AttDeg; WT = S.T; }
 		}
-		UE_LOG(LogTemp, Warning, TEXT("[ROCKET] %-14s %6.0f kg -> %s  t=%.0fs apo %.0f peri %.0f km  maxQ %.1f kPa  dv left %.0f  %s"),
-			ANSI_TO_TCHAR(C.Id), C.Kg, S.Phase == EISFlightPhase::Orbit ? TEXT("ORBIT ") : TEXT("FAILED"), S.T, S.ApoKm, S.PeriKm, S.MaxQSeen / 1000.0, S.DeltaVLeft(), *S.FailReason);
+		UE_LOG(LogTemp, Warning, TEXT("[ROCKET]   worst q*AoA %.0f kPa*deg at t=%.0f s, %.1f km, q %.1f kPa, AoA %.1f (cmd %.1f, actual %.1f)"), WorstQA / 1000.0, WT, WAlt / 1000.0, WQ / 1000.0, WA, WCmd, WAtt);
+		UE_LOG(LogTemp, Warning, TEXT("[ROCKET] %-14s %6.0f kg -> %s  t=%.0fs apo %.0f peri %.0f km  maxQ %.1f kPa  maxAoA %.1f  maxGimbal %.1f  dv left %.0f  %s"),
+			ANSI_TO_TCHAR(C.Id), C.Kg, S.Phase == EISFlightPhase::Orbit ? TEXT("ORBIT ") : TEXT("FAILED"), S.T, S.ApoKm, S.PeriKm, S.MaxQSeen / 1000.0, S.MaxAoASeen, S.MaxGimbalSeen, S.DeltaVLeft(), *S.FailReason);
 	}
 }

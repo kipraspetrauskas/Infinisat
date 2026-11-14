@@ -131,7 +131,23 @@ namespace ISBuild
 				if (bEsp || bRadio)   // modules sit on a small carrier board
 					Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.08f), FVector(bEsp ? 2.8f : 2.4f, bEsp ? 5.2f : 2.4f, 0.16f), bEsp ? PCBBlue : PCBGreen, M);
 				Asset(O, P, Path, B + FVector(0, 0, 0.16f), 1.f, M);
-				const float H = Mesh->GetBoundingBox().GetSize().Z + 0.2f;
+				float H = Mesh->GetBoundingBox().GetSize().Z + 0.2f;
+				// lay tall parts flat (an 18650 cell or a pin header stands 4-7 cm tall but is mounted lying down,
+				// otherwise the stack cannot fit the 11.5 cm can), then rest the part on the stack
+				if (M && M->Parts.Num())
+					if (UStaticMeshComponent* Pc = M->Parts.Last())
+					{
+						const FVector Sz = Mesh->GetBoundingBox().GetSize();
+						if (Sz.Z > FMath::Max(Sz.X, Sz.Y) && Sz.Z > 2.f)
+						{
+							Pc->SetRelativeRotation(Sz.X <= Sz.Y ? FRotator(90.f, 0.f, 0.f) : FRotator(0.f, 0.f, 90.f));
+							Pc->UpdateComponentToWorld();
+							const FBox Bx = Pc->Bounds.GetBox();
+							const float Base = P ? (float)P->GetComponentTransform().TransformPosition(B + FVector(0, 0, 0.16f)).Z : (float)Bx.Min.Z;
+							Pc->AddWorldOffset(FVector(0, 0, Base - Bx.Min.Z));
+							H = (float)Bx.GetSize().Z / FMath::Max(0.01f, P ? (float)P->GetComponentScale().Z : 1.f) + 0.2f;
+						}
+					}
 				if (bRadio)   // quarter-wave whip: 17.3 cm at 433 MHz
 					Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 8.65f), FVector(0.08f, 0.08f, 17.3f), Silver, M, FRotator::ZeroRotator, 1.f, 0.2f);
 				return H;

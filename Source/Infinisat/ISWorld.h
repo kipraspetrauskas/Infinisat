@@ -90,13 +90,17 @@ public:
 	int32 RequiredCount() const;
 	bool UsesHunt() const { return MissionIdx == 0; }
 	float ScanT = 0.f;          // > 0 while BIT's scanner shows nearby parts
-	void Scan() { ScanT = 5.f; }
+	void Scan();
 
 	// --- bench mode
 	ACameraActor* BenchCamera() const { return BenchCam; }
 	FName PartUnderCursor(UPrimitiveComponent* C) const;
 	void BenchToggle(FName PartId);
 	void BenchSeal();
+	// progress survives restarts (parts found, order, can contents): Saved/Config/.../GameUserSettings.ini [InfinisatProgress]
+	void SaveProgress() const;
+	void LoadProgress();
+	float StackHeightCm = 0.f;
 	FName BenchInfoPart;
 	TArray<FName> TrayParts;
 

@@ -135,6 +135,7 @@ void FISRocketSim::Setup(const FISLauncher& InL, double InPayloadKg, double InTa
 	R = FVector2D(0, Re);
 	V = FVector2D(EarthBoostMs, 0);
 	UpdateDerived();
+	LiftoffDv = DeltaVLeft();
 }
 
 void FISRocketSim::StartCountdown(double Seconds)
@@ -405,7 +406,13 @@ void FISRocketSim::Step(double Dt)
 		Event(FString::Printf(TEXT("ORBIT! %.0f x %.0f km, %.0f m/s. Delta-v left in the upper stage: %.0f m/s."), ApoKm, PeriKm, Speed, DeltaVLeft()));
 	}
 	if (IsFlying() && ThrustN <= 0.0 && StageProp <= 0.0 && StageIdx + 1 >= L->Stages.Num() && PeriKm < 140.0 && FVector2D::DotProduct(V, U) < 0.0 && AltM < 120000.0)
-		Abort(FString::Printf(TEXT("Out of propellant before orbit (periapsis %.0f km). The rocket is too heavy for this orbit, or it flew a wasteful path."), PeriKm));
+		{
+		// low orbit needs ~7.8 km/s plus ~1.5 km/s of gravity and drag losses, minus what Earth's spin gives
+		const double Need = 9400.0 - EarthBoostMs;
+		Abort(LiftoffDv < Need
+			? FString::Printf(TEXT("Out of propellant before orbit: this rocket had %.0f m/s of delta-v with your %.0f kg payload, but low orbit needs about %.0f m/s. The payload is too heavy for this rocket: lighten the satellite or pick a bigger rocket."), LiftoffDv, PayloadKg, Need)
+			: FString::Printf(TEXT("Out of propellant before orbit (periapsis %.0f km), although the rocket had enough delta-v (%.0f m/s, need about %.0f). The path wasted it: climb steeply first, lean over gradually, then burn sideways near the top. Try the autopilot (T)."), PeriKm, LiftoffDv, Need));
+	}
 }
 
 // Dev check: fly every launcher with the autopilot and log the result (-ISRocketTest).

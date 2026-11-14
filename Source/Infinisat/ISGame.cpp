@@ -1,4 +1,5 @@
 #include "ISGame.h"
+#include "Kismet/GameplayStatics.h"
 #include "Infinisat.h"
 #include "ISScene.h"
 #include "ISWorld.h"
@@ -310,6 +311,7 @@ void AISPlayerController::PlayerTick(float DeltaTime)
 void AISPlayerController::TickWalk(float Dt)
 {
 	if (!Bit || !World) return;
+	if (CanTestStep >= 0 || (CanTestStep == -1 && FParse::Param(FCommandLine::Get(), TEXT("ISCanTest")))) { TickCanTest(Dt); }
 	const float F = (IsInputKeyDown(EKeys::W) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::S) ? 1.f : 0.f);
 	const float R = (IsInputKeyDown(EKeys::D) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::A) ? 1.f : 0.f);
 	Bit->MoveInput(F, R, IsInputKeyDown(EKeys::LeftShift));
@@ -338,6 +340,15 @@ void AISPlayerController::TickWalk(float Dt)
 		else World->Interact(LookAction, Bit);
 	}
 
+	// time control while the CanSat flies: comma slower (down to 1/8), period faster (up to 8x); normal again after landing
+	if (World->IsTracking() || World->Stage == EISStage::Countdown)
+	{
+		const float Cur = UGameplayStatics::GetGlobalTimeDilation(this);
+		if (WasInputKeyJustPressed(EKeys::Period)) UGameplayStatics::SetGlobalTimeDilation(this, FMath::Min(8.f, Cur * 2.f));
+		if (WasInputKeyJustPressed(EKeys::Comma)) UGameplayStatics::SetGlobalTimeDilation(this, FMath::Max(0.125f, Cur * 0.5f));
+	}
+	else if (!FMath::IsNearlyEqual(UGameplayStatics::GetGlobalTimeDilation(this), 1.f) && !FParse::Param(FCommandLine::Get(), TEXT("ISCanTest"))) UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+
 	// chase camera while the CanSat flies
 	if (WasInputKeyJustPressed(EKeys::F) && World->IsTracking())
 	{
@@ -360,4 +371,52 @@ void AISPlayerController::TickBench(float Dt)
 		if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && !Part.IsNone()) World->BenchToggle(Part);
 	}
 	if (WasInputKeyJustPressed(EKeys::E) || WasInputKeyJustPressed(EKeys::Escape)) LeaveBench();
+}
+
+// Dev check of the full CanSat chain: order -> find parts -> build -> seal -> carry -> load -> launch -> land -> recover.
+void AISPlayerController::TickCanTest(float Dt)
+{
+	if (CanTestStep == -1) CanTestStep = 0;
+	if (CanTestStep < 0 || !World || !Bit) return;
+	CanTestT += Dt;
+	auto Log = [this](const FString& S) { UE_LOG(LogTemp, Warning, TEXT("[CANTEST] t=%.1f stage=%d  %s"), CanTestT, (int32)World->Stage, *S); };
+	switch (CanTestStep)
+	{
+	case 0:
+		if (CanTestT < 2.f) return;
+		World->StartCanSatOrder(0);
+		for (const FISHuntItem& H : TArray<FISHuntItem>(World->Hunt)) World->Interact(FName(*(TEXT("item:") + H.Part.ToString())), Bit);
+		Log(FString::Printf(TEXT("order taken, parts found %d/%d"), World->FoundCount(true), World->RequiredCount()));
+		CanTestStep = 1; return;
+	case 1:
+		for (const char* Id : { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l" }) World->BenchToggle(FName(Id));
+		Log(FString::Printf(TEXT("built: %.0f g, stack %.1f cm"), World->Eval.TotalKg * 1000.f, World->StackHeightCm));
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestBench"))) { EnterBench(); CanTestStep = 99; return; }   // stay at the bench for a screenshot
+		World->BenchSeal();
+		Log(World->Stage == EISStage::Sealed ? TEXT("sealed OK") : TEXT("SEAL FAILED"));
+		CanTestStep = 2; return;
+	case 2:
+		World->Interact("cansat", Bit);
+		Log(World->Stage == EISStage::Carry ? TEXT("picked up OK") : TEXT("PICK-UP FAILED"));
+		Bit->SetActorLocation(World->PadWorld() + FVector(-250, 0, 120), false, nullptr, ETeleportType::TeleportPhysics);
+		World->Interact("pad", Bit);
+		Log(World->Stage == EISStage::OnPad ? TEXT("loaded into the rocket OK") : TEXT("LOADING FAILED"));
+		World->Interact("pad", Bit);
+		Log(World->Stage == EISStage::Countdown ? TEXT("countdown OK") : TEXT("COUNTDOWN FAILED"));
+		CanTestStep = 3; return;
+	case 3:
+		if (World->Stage == EISStage::Landed)
+		{
+			Log(FString::Printf(TEXT("landed: apogee %.0f m, landing %.1f m/s, drift %.0f m, broken %d"), World->Report.ApogeeM, World->Report.LandingSpeed, World->Report.DriftM, (int32)World->Report.bBroken));
+			World->Interact("landed", Bit);
+			Log(World->Stage == EISStage::Recovered ? TEXT("PASS: recovered") : TEXT("RECOVERY FAILED"));
+			CanTestStep = 4;
+		}
+		else if (CanTestT > 900.f) { Log(TEXT("FAIL: never landed")); CanTestStep = 4; }
+		return;
+	case 4:
+		ConsoleCommand(TEXT("quit"));
+		CanTestStep = 5; return;
+	default: return;
+	}
 }

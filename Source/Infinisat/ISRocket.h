@@ -68,7 +68,7 @@ public:
 	// --- derived (updated every step)
 	double AltM = 0, Speed = 0, SurfSpeed = 0, Mach = 0, QPa = 0, ApoKm = 0, PeriKm = 0, MassKg = 0, ThrustN = 0, TWR = 0, AoADeg = 0, DownrangeKm = 0;
 	double DeltaVLeft() const;      // ideal vacuum delta-v of everything still attached
-	double TargetAltKm = 400, IncDeg = 51.6, PayloadKg = 100, LaunchAzDeg = 90, EarthBoostMs = 0;
+	double TargetAltKm = 400, IncDeg = 51.6, PayloadKg = 100, LaunchAzDeg = 90, EarthBoostMs = 0, LiftoffDv = 0;
 	const FISLauncher* L = nullptr;
 	bool IsFlying() const { return Phase == EISFlightPhase::Ascent || Phase == EISFlightPhase::Coast; }
 	FVector2D ThrustDir() const;    // unit vector of the current thrust

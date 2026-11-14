@@ -1209,11 +1209,72 @@ TSharedRef<SWidget> SISGameUI::BuildHelp()
 }
 
 // ----------------------------------------------------------------------------------------------- IN-WORLD HUD
+namespace
+{
+	// BIT's part scanner (Q): markers on missing CanSat parts within 30 m; arrows at the screen edge for those behind you.
+	class SISScanOverlay : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SISScanOverlay) {}
+		SLATE_END_ARGS()
+		TWeakObjectPtr<AISHomeWorld> World;
+		TWeakObjectPtr<APlayerController> PC;
+		void Construct(const FArguments&, TWeakObjectPtr<AISHomeWorld> InW, TWeakObjectPtr<APlayerController> InPC) { World = InW; PC = InPC; }
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(100, 100); }
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+		{
+			AISHomeWorld* W = World.Get();
+			APlayerController* P = PC.Get();
+			if (!W || !P || W->ScanT <= 0.f || !GEngine || !GEngine->GameViewport) return Layer;
+			FVector2D VP; GEngine->GameViewport->GetViewportSize(VP);
+			if (VP.X < 1) return Layer;
+			const FVector2f Size = FVector2f(G.GetLocalSize()), K = Size / FVector2f(VP), Mid = Size * 0.5f;
+			FVector CamLoc; FRotator CamRot;
+			P->GetPlayerViewPoint(CamLoc, CamRot);
+			const float Pulse = 0.6f + 0.4f * FMath::Sin(W->ScanT * 6.f);
+			const FLinearColor C(0.25f, 0.95f, 1.f, FMath::Min(1.f, W->ScanT) * Pulse);
+			const FSlateFontInfo Font = ISFont("Bold", 12);
+			for (const FISHuntItem& H : W->Hunt)
+			{
+				if (H.bFound || !H.Root) continue;
+				const FVector Pos = H.Root->GetComponentLocation() + FVector(0, 0, 8);
+				const float Dm = FVector::Dist(CamLoc, Pos) / 100.f;
+				if (Dm > 30.f) continue;
+				const FString Label = FString::Printf(TEXT("%s  %.1f m"), *H.Name, Dm);
+				FVector2D Px;
+				const bool bFront = FVector::DotProduct(CamRot.Vector(), (Pos - CamLoc).GetSafeNormal()) > 0.f;
+				FVector2f At;
+				if (bFront && P->ProjectWorldLocationToScreen(Pos, Px, true) && Px.X > 0 && Px.Y > 0 && Px.X < VP.X && Px.Y < VP.Y)
+				{
+					At = FVector2f(Px) * K;
+					TArray<FVector2f> D = { At + FVector2f(0, -12), At + FVector2f(12, 0), At + FVector2f(0, 12), At + FVector2f(-12, 0), At + FVector2f(0, -12) };
+					FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), D, ESlateDrawEffect::None, C, true, 2.f);
+					FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(300, 20), FSlateLayoutTransform(At + FVector2f(16, -10))), Label, Font, ESlateDrawEffect::None, C);
+				}
+				else
+				{
+					// off screen: arrow on a ring around the crosshair, pointing the way to turn
+					const FVector L = CamRot.UnrotateVector(Pos - CamLoc);
+					const FVector2f Dir = FVector2f((float)L.Y, (float)-L.Z).GetSafeNormal();
+					const FVector2f Dir2 = Dir.IsNearlyZero() ? FVector2f(0, 1) : Dir;
+					At = Mid + Dir2 * (Size.Y * 0.38f);
+					const FVector2f Nrm(-Dir2.Y, Dir2.X);
+					TArray<FVector2f> A = { At - Dir2 * 10.f + Nrm * 8.f, At + Dir2 * 10.f, At - Dir2 * 10.f - Nrm * 8.f };
+					FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), A, ESlateDrawEffect::None, C, true, 2.5f);
+					FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(300, 20), FSlateLayoutTransform(At + FVector2f(14, -8))), Label, Font, ESlateDrawEffect::None, C);
+				}
+			}
+			return Layer + 2;
+		}
+	};
+}
+
 TSharedRef<SWidget> SISGameUI::BuildPlay()
 {
 	TWeakObjectPtr<AISHomeWorld> WW = HW();
 	return SNew(SOverlay)
 		.Visibility(EVisibility::HitTestInvisible)
+		+ SOverlay::Slot()[SNew(SISScanOverlay, WW, PC)]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox)
@@ -1236,7 +1297,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(16)
 		[
-			Panel(Txt(TEXT("WASD move   Mouse look   SHIFT float fast   SPACE hover up\nE interact   F chase camera (in flight)   ESC menu"), 12, CDim), 8.f)
+			Panel(Txt(TEXT("WASD move   Mouse look   SHIFT float fast   SPACE hover up\nE interact   Q scan for parts   F chase camera, comma / period slow / fast time (in flight)   ESC menu"), 12, CDim), 8.f)
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(16)
 		[
@@ -1327,6 +1388,31 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 		if (!P || P->Cat == EISCat::Bus || P->Cat == EISCat::Ground || Id.ToString().EndsWith(TEXT("_none")) || Id == "thm_passive") continue;
 		Installed->AddSlot().AutoHeight().Padding(0, 2)[Btn(FString::Printf(TEXT("x  %s   (%s, %s W)"), *P->Name, *ISSim::FmtMass(P->MassKg), *ISSim::Fmt(P->PowerW, 2)), [WW, Id]() { if (WW.IsValid()) WW->BenchToggle(Id); }, 0, 11)];
 	}
+	// LAUNCH CHECKLIST: exactly what is still missing before the can may be sealed and flown
+	TSharedRef<SVerticalBox> Check = SNew(SVerticalBox);
+	TArray<FString> Missing;
+	auto Line = [&](bool bOk, bool bMust, const FString& Text)
+	{
+		Check->AddSlot().AutoHeight().Padding(0, 1)[Txt(FString::Printf(TEXT("%s  %s"), bOk ? TEXT("OK") : (bMust ? TEXT("X ") : TEXT("! ")), *Text), 12,
+			bOk ? FLinearColor(0.45f, 1.f, 0.6f) : (bMust ? FLinearColor(1.f, 0.42f, 0.35f) : CGold))];
+		if (!bOk && bMust) Missing.Add(Text);
+	};
+	{
+		const FISDesign& D = W->Design;
+		const bool bBat = !D.GetSingle(EISCat::Battery).IsNone(), bCpu = !D.GetSingle(EISCat::Computer).IsNone(), bRadio = !D.GetSingle(EISCat::Comms).IsNone();
+		Line(bBat, true, TEXT("Battery (18650 cell)"));
+		Line(bCpu, true, TEXT("Computer (ESP32)"));
+		Line(bRadio, true, TEXT("Radio (LoRa 433 MHz)"));
+		Line(D.HasTag(ISTag::Wiring), true, TEXT("Wires (connect everything)"));
+		Line(D.HasTag(ISTag::Parachute), false, TEXT("Parachute (recommended: without it the can lands at ~40 m/s and breaks)"));
+		const float Grams = W->Eval.TotalKg * 1000.f;
+		Line(Grams <= 350.f, true, FString::Printf(TEXT("Mass %.0f g of max 350 g"), Grams));
+		Line(W->StackHeightCm <= 11.5f, true, FString::Printf(TEXT("Stack height %.1f cm of max 11.5 cm"), W->StackHeightCm));
+		TArray<FString> ToFind;
+		for (const FISHuntItem& H : W->Hunt) if (H.bRequired && !H.bFound) ToFind.Add(H.Name);
+		if (ToFind.Num()) Check->AddSlot().AutoHeight().Padding(0, 4, 0, 0)[Txt(TEXT("Still to find in the house: ") + FString::Join(ToFind, TEXT(", ")) + TEXT(" (press Q while walking to scan)"), 11, CDim)];
+	}
+	const FString SealLabel = Missing.Num() ? FString::Printf(TEXT("Seal: %d missing"), Missing.Num()) : FString(TEXT("Seal the can - READY"));
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("WORKBENCH  -  build your CanSat (see-through can)"))]
 		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 0)
@@ -1338,6 +1424,8 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 				[
 					Panel(SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("CLICK a part on the bench to put it into the can. Click it in this list to take it out again. Parts stack inside: watch the height!"), 12, CText)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 2)[Txt(TEXT("LAUNCH CHECKLIST"), 12, CAccent, true)]
+						+ SVerticalBox::Slot().AutoHeight()[Check]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 2)[Txt(TEXT("INSIDE THE CAN"), 12, CAccent, true)]
 						+ SVerticalBox::Slot().AutoHeight()[Installed]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 2)[Txt(TEXT("PART INFO (hover a part)"), 12, CAccent, true)]
@@ -1382,7 +1470,7 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 				SNew(SBox).WidthOverride(240)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Seal the can (finished)"), [this, WW]() { if (WW.IsValid()) { WW->BenchSeal(); if (WW->Stage == EISStage::Sealed && IPC()) IPC()->LeaveBench(); } }, 1, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(SealLabel, [this, WW]() { if (WW.IsValid()) { WW->BenchSeal(); if (WW->Stage == EISStage::Sealed && IPC()) IPC()->LeaveBench(); } }, 1, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Leave the bench (E)"), [this]() { if (IPC()) IPC()->LeaveBench(); })]
 				]
 			]

@@ -389,12 +389,14 @@ void AISHomeWorld::BeginPlay()
 	BuildField();
 	BuildBackyard();
 	SpawnHunt();
+	LoadProgress();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	BenchCam = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), FTransform::Identity, SP);
-	BenchCam->SetActorLocation(BenchTop + FVector(0, 62, 48));
-	BenchCam->SetActorRotation(FRotator(-38.f, -90.f, 0.f));
+	// the bench stands against the garage back wall (+Y): look at it from the room side, not from inside the wall
+	BenchCam->SetActorLocation(BenchTop + FVector(0, -58, 52));
+	BenchCam->SetActorRotation(FRotator(-42.f, 90.f, 0.f));
 	BenchCam->GetCameraComponent()->SetFieldOfView(60.f);
 	BenchCam->GetCameraComponent()->bConstrainAspectRatio = false;
 	ChaseCam = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), FTransform::Identity, SP);
@@ -454,6 +456,7 @@ void AISHomeWorld::StartCanSatOrder(int32 Index)
 	RebuildTray();
 	++DesignVersion;
 	Toast(TEXT("New order: build a CanSat! Go to the WORKBENCH and press E."));
+	SaveProgress();
 }
 
 void AISHomeWorld::RebuildCan()
@@ -473,6 +476,7 @@ void AISHomeWorld::RebuildCan()
 		const float H = ISBuild::CanSatPart(this, CanRoot, P->Id, FVector(0, 0, Z), &CanModel);
 		Z += H + (H > 0 ? 0.25f : 0.f);
 	}
+	StackHeightCm = Z;
 	if (Z > 11.5f) Toast(FString::Printf(TEXT("Warning: the stack is %.1f cm tall but the can is only 11.5 cm! Real CanSats must fit the can volume."), Z));
 	if (!bOpen)
 	{
@@ -548,16 +552,20 @@ void AISHomeWorld::BenchToggle(FName Id)
 	RebuildCan();
 	RebuildTray();
 	++DesignVersion;
+	SaveProgress();
 }
 
 void AISHomeWorld::BenchSeal()
 {
+	if (Eval.TotalKg > 0.35f) { Toast(FString::Printf(TEXT("Too heavy to seal: %.0f g, but a CanSat may weigh at most 350 g. Take something out."), Eval.TotalKg * 1000.f)); return; }
+	if (StackHeightCm > 11.5f) { Toast(FString::Printf(TEXT("The stack is %.1f cm tall: the lid will not close (max 11.5 cm). Take something out."), StackHeightCm)); return; }
 	if (!Design.GetSingle(EISCat::Battery).IsNone() && !Design.GetSingle(EISCat::Computer).IsNone() && !Design.GetSingle(EISCat::Comms).IsNone() && (!UsesHunt() || Design.HasTag(ISTag::Wiring)))
 	{
 		Stage = EISStage::Sealed;
 		++DesignVersion;
 		RebuildCan();
 		RebuildTray();
+		SaveProgress();
 		Toast(TEXT("Can sealed! Pick it up (E) and carry it out to the LAUNCH PAD in the field (follow the dirt path)."));
 	}
 	else Toast(TEXT("A CanSat needs at least a battery, a computer (ESP32), a radio and wires to connect them before you can seal it."));
@@ -627,10 +635,13 @@ void AISHomeWorld::Interact(FName A, AISBitCharacter* Bit)
 				FString Edu = Pt ? Pt->Edu : FString();
 				int32 Dot;
 				if (Edu.FindChar(TEXT('.'), Dot) && Dot < 220) Edu = Edu.Left(Dot + 1);
-				Toast(FString::Printf(TEXT("Found: %s! %s  (%d/%d required parts)"), *H.Name, *Edu, FoundCount(true), RequiredCount()));
+				Toast(H.bRequired
+					? FString::Printf(TEXT("Found: %s! %s  (%d of %d needed parts found)"), *H.Name, *Edu, FoundCount(true), RequiredCount())
+					: FString::Printf(TEXT("Found a bonus part: %s! %s  (optional; %d of %d needed parts found)"), *H.Name, *Edu, FoundCount(true), RequiredCount()));
 				if (FoundCount(true) == RequiredCount()) Toast(TEXT("All required parts found! Take them to the WORKBENCH in the garage (E) and build your CanSat."));
 				RebuildTray();
 				++DesignVersion;
+				SaveProgress();
 			}
 		return;
 	}
@@ -888,4 +899,76 @@ void AISHomeWorld::UpdateTracker(float Dt)
 	const float Gain = -1.5f + 8.5f * Cos;
 	TrackRssi = 10.f - FSPL(TrackDistM / 1000.f) + Gain + FMath::FRandRange(-1.5f, 1.5f);
 	bTrackSignal = Radio && bAlive && TrackRssi > TrackSens;
+}
+
+// =====================================================================================================
+//  progress (parts found, current CanSat order and can contents) - survives restarts
+// =====================================================================================================
+void AISHomeWorld::SaveProgress() const
+{
+	if (!GConfig || FParse::Param(FCommandLine::Get(), TEXT("ISFresh"))) return;   // dev/test runs never overwrite the player's progress
+	const TCHAR* Sec = TEXT("InfinisatProgress");
+	FString Found, Parts;
+	for (const FISHuntItem& H : Hunt) if (H.bFound) Found += H.Part.ToString() + TEXT(",");
+	for (const FName& Id : Design.Parts) Parts += Id.ToString() + TEXT(",");
+	// carrying / launching / landed states restart from the sealed can on the bench
+	const int32 St = Stage == EISStage::NoOrder ? 0 : (Stage == EISStage::Build ? 1 : 2);
+	GConfig->SetString(Sec, TEXT("Found"), *Found, GGameUserSettingsIni);
+	GConfig->SetString(Sec, TEXT("Parts"), *Parts, GGameUserSettingsIni);
+	GConfig->SetInt(Sec, TEXT("Stage"), St, GGameUserSettingsIni);
+	GConfig->SetInt(Sec, TEXT("Mission"), MissionIdx, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+void AISHomeWorld::LoadProgress()
+{
+	if (!GConfig || FParse::Param(FCommandLine::Get(), TEXT("ISFresh"))) return;
+	const TCHAR* Sec = TEXT("InfinisatProgress");
+	FString Found, Parts;
+	int32 St = 0, Mi = 0;
+	GConfig->GetString(Sec, TEXT("Found"), Found, GGameUserSettingsIni);
+	GConfig->GetString(Sec, TEXT("Parts"), Parts, GGameUserSettingsIni);
+	GConfig->GetInt(Sec, TEXT("Stage"), St, GGameUserSettingsIni);
+	GConfig->GetInt(Sec, TEXT("Mission"), Mi, GGameUserSettingsIni);
+	TArray<FString> F; Found.ParseIntoArray(F, TEXT(","));
+	for (FISHuntItem& H : Hunt)
+		if (F.Contains(H.Part.ToString()))
+		{
+			H.bFound = true;
+			H.Model.SetVisible(false);
+			if (H.Hit) H.Hit->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	if (St >= 1 && ISData::Missions().IsValidIndex(Mi))
+	{
+		StartCanSatOrder(Mi);
+		TArray<FString> P; Parts.ParseIntoArray(P, TEXT(","));
+		if (P.Num())
+		{
+			Design.Parts.Reset();
+			for (const FString& S : P) Design.Parts.Add(FName(*S));
+			Eval = ISSim::Evaluate(Design, ISData::Missions()[MissionIdx]);
+		}
+		if (St >= 2) Stage = EISStage::Sealed;
+		RebuildCan();
+		RebuildTray();
+		++DesignVersion;
+		Toasts.Reset();
+		Toast(FString::Printf(TEXT("Welcome back! Progress loaded: %d/%d required parts found%s."), FoundCount(true), RequiredCount(), St >= 2 ? TEXT(", sealed CanSat waiting on the bench") : TEXT("")));
+	}
+}
+
+void AISHomeWorld::Scan()
+{
+	ScanT = 8.f;
+	int32 Near = 0, Left = 0;
+	const APlayerController* P = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	const FVector Me = P && P->GetPawn() ? P->GetPawn()->GetActorLocation() : FVector::ZeroVector;
+	for (const FISHuntItem& H : Hunt)
+	{
+		if (H.bFound) continue;
+		++Left;
+		if (H.Root && FVector::Dist(Me, H.Root->GetComponentLocation()) < 2500.f) ++Near;
+	}
+	Toast(Left == 0 ? FString(TEXT("Scanner: nothing left to find. Go to the WORKBENCH in the garage."))
+		: FString::Printf(TEXT("Scanner: %d of %d missing parts within 25 m (markers on screen for 8 s)."), Near, Left));
 }

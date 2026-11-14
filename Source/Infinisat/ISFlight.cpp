@@ -46,6 +46,7 @@ void AISSpaceScene::RetryFlight()
 	if (!L) return;
 	Sim = FISRocketSim();
 	Sim.Setup(*L, FlightPayload, FlightAlt, FlightInc);
+	UE_LOG(LogTemp, Log, TEXT("[FLIGHT] start %s payload %.1f kg target %.0f km inc %.1f (ascent target %.0f km)"), *L->Name, FlightPayload, FlightAlt, FlightInc, Sim.TargetAltKm);
 	bFlight = true;
 	FlightWarp = 1.f;
 	FlightEndT = 0.f;
@@ -217,6 +218,7 @@ void AISSpaceScene::TickFlight(float Dt)
 void AISSpaceScene::EndFlight()
 {
 	if (!bFlight) return;
+	UE_LOG(LogTemp, Log, TEXT("[FLIGHT] end phase %d  %.0f x %.0f km  %s"), (int32)Sim.Phase, Sim.ApoKm, Sim.PeriKm, *Sim.FailReason);
 	bFlight = false;
 	LaunchT = -1.f;
 	if (RocketRoot) RocketRoot->SetVisibility(false, true);

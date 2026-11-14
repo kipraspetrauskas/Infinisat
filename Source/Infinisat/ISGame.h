@@ -60,6 +60,9 @@ public:
 private:
 	void SetCursorMode(bool bCursor);
 	void TickWalk(float Dt);
+	void TickCanTest(float Dt);   // dev: -ISCanTest plays the whole CanSat chain and logs [CANTEST]
+	int32 CanTestStep = -1;
+	float CanTestT = 0.f;
 	void TickBench(float Dt);
 	TSharedPtr<class SWidget> UIContainer;
 	FVector2D LastMouse = FVector2D::ZeroVector;

@@ -385,7 +385,19 @@ void SISGameUI::StartOps()
 	Warp = 1.f;
 	QuizAnswers.Init(-1, Mission().Quiz.Num());
 	Go(EScreen::Ops);
-	if (Scene.IsValid()) { const FISVehicle* V = ISData::FindVehicle(Design.Vehicle); Scene->StartLaunch(V && V->CostM >= 100.f); }
+	if (Scene.IsValid())
+	{
+		// orbital launchers fly for real (ISRocket physics); the hobby rocket and balloon keep the short scripted launch
+		const float Inc = Mission().Id == "sandbox" ? 51.6f : Mission().IncDeg;
+		const bool bFlying = Scene->StartFlight(Design.Vehicle, Eval.TotalKg, Eval.AltKm, Inc);
+		float AutoT = -1.f;
+		if (bFlying && FParse::Value(FCommandLine::Get(), TEXT("ISAutoLaunch="), AutoT) && Scene->Flight()) Scene->Flight()->StartCountdown(AutoT);   // dev: screenshots mid-flight
+		if (!bFlying)
+		{
+			const FISVehicle* V = ISData::FindVehicle(Design.Vehicle);
+			Scene->StartLaunch(V && V->CostM >= 100.f);
+		}
+	}
 }
 
 // =====================================================================================================
@@ -902,17 +914,101 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 			]
 		];
 
-	// launch commentary (top centre)
+	// launch commentary (top centre) - only for the old scripted launch (non-orbital vehicles)
 	O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 90, 0, 0)
 	[
 		SNew(SBorder).BorderImage(&PanelBrush).BorderBackgroundColor(CPanel2).Padding(14)
-		.Visibility_Lambda([this]() { return Scene.IsValid() && Scene->IsLaunching() ? EVisibility::Visible : EVisibility::Collapsed; })
+		.Visibility_Lambda([this]() { return Scene.IsValid() && Scene->IsLaunching() && !Scene->IsFlightActive() ? EVisibility::Visible : EVisibility::Collapsed; })
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->LaunchCaption() : FString()); })]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[Btn(TEXT("Skip launch"), [this]() { if (Scene.IsValid()) Scene->SkipLaunch(); }, 0, 12)]
 		]
 	];
+	// FLIGHT HUD: you fly the real launch (ISRocket physics). Keys: SPACE launch/stage, T autopilot, SHIFT/CTRL throttle,
+	// A/D pitch, X cut engines, comma/period time warp (slow motion down to 0.05x)
+	{
+		TWeakObjectPtr<AISSpaceScene> WS = Scene;
+		auto Val = [WS](TFunction<FString(const FISRocketSim&)> F)
+		{
+			return TAttribute<FText>::CreateLambda([WS, F]() { const FISRocketSim* S = WS.IsValid() ? WS->Flight() : nullptr; return FText::FromString(S ? F(*S) : FString()); });
+		};
+		auto Cell = [this, Val](const TCHAR* Label, TFunction<FString(const FISRocketSim&)> F) -> TSharedRef<SWidget>
+		{
+			return SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()[Txt(Label, 10, CDim)]
+				+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 17)).ColorAndOpacity(CText).Text(Val(F))];
+		};
+		auto Clock = [](double T)
+		{
+			const double A = FMath::Abs(T);
+			const int32 H = (int32)(A / 3600.0), M = (int32)(FMath::Fmod(A, 3600.0) / 60.0);
+			return FString::Printf(TEXT("T%s%02d:%02d:%06.3f"), T < 0 ? TEXT("-") : TEXT("+"), H, M, FMath::Fmod(A, 60.0));
+		};
+		TSharedRef<SHorizontalBox> Warps = SNew(SHorizontalBox);
+		for (float W : { 0.05f, 0.25f, 1.f, 2.f, 10.f, 50.f })
+			Warps->AddSlot().AutoWidth().Padding(0, 0, 4, 0)[Btn(W < 1.f ? FString::Printf(TEXT("%.2gx"), W) : FString::Printf(TEXT("%.0fx"), W), [this, W]() { if (Scene.IsValid()) Scene->SetFlightWarp(W); }, 0, 11)];
+		O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 14)
+		[
+			SNew(SBox).WidthOverride(980)
+			.Visibility_Lambda([this]() { return Scene.IsValid() && Scene->IsFlightActive() ? EVisibility::Visible : EVisibility::Collapsed; })
+			[
+				Panel(SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Font(ISFont("Bold", 22)).ColorAndOpacity(CGold).Text(Val([Clock](const FISRocketSim& S) { return Clock(S.T); }))]
+						+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(16, 0)[SNew(STextBlock).Font(ISFont("Bold", 13)).ColorAndOpacity(CAccent).Text(Val([](const FISRocketSim& S)
+						{
+							const TCHAR* Ph = S.Phase == EISFlightPhase::OnPad ? TEXT("ON THE PAD") : S.Phase == EISFlightPhase::Countdown ? TEXT("COUNTDOWN") : S.Phase == EISFlightPhase::Ascent ? TEXT("POWERED ASCENT")
+								: S.Phase == EISFlightPhase::Coast ? TEXT("COASTING") : S.Phase == EISFlightPhase::Orbit ? TEXT("IN ORBIT") : TEXT("FAILED");
+							return FString::Printf(TEXT("%s  |  %s  |  %s"), *S.L->Name.ToUpper(), *S.L->Stages[FMath::Clamp(S.StageIdx, 0, S.L->Stages.Num() - 1)].Name, Ph);
+						}))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Font(ISFont("Bold", 13)).ColorAndOpacity(CGold).Text(Val([](const FISRocketSim& S) { return S.bAutopilot ? FString(TEXT("AUTOPILOT")) : FString(TEXT("MANUAL CONTROL")); }))]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 6)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("ALTITUDE"), [](const FISRocketSim& S) { return S.AltM < 10000 ? FString::Printf(TEXT("%.0f m"), S.AltM) : FString::Printf(TEXT("%.1f km"), S.AltM / 1000.0); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("SPEED  orbital / air"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f / %.0f m/s"), S.Speed, S.SurfSpeed); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("APOAPSIS x PERIAPSIS"), [](const FISRocketSim& S) { return S.ApoKm > 1e8 ? FString(TEXT("escape!")) : FString::Printf(TEXT("%.0f x %.0f km"), FMath::Max(S.ApoKm, 0.0), S.PeriKm); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("AIR LOAD q / MACH"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.1f kPa / %.1f"), S.QPa / 1000.0, S.Mach); })]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("THROTTLE / THRUST"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f%% / %.0f kN"), S.Throttle * 100.0, S.ThrustN / 1000.0); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("PITCH FROM VERTICAL / AoA"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.1f / %.1f deg"), S.PitchDeg, S.AoADeg); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("MASS / THRUST-TO-WEIGHT"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.1f t / %.2f"), S.MassKg / 1000.0, S.TWR); })]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[Cell(TEXT("DELTA-V LEFT (vacuum)"), [](const FISRocketSim& S) { return FString::Printf(TEXT("%.0f m/s"), S.DeltaVLeft()); })]
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("LAUNCH / STAGE  (Space)"), [this]() { if (Scene.IsValid() && Scene->Flight()) Scene->Flight()->Stage(); }, 1, 12)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Autopilot (T)"), [this]() { if (Scene.IsValid() && Scene->Flight()) Scene->Flight()->bAutopilot = !Scene->Flight()->bAutopilot; }, 0, 12)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 14, 0)[Btn(TEXT("Skip to orbit"), [this]() { if (Scene.IsValid()) Scene->SkipLaunch(); }, 0, 12)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 6, 0)[Txt(TEXT("Time:"), 11, CDim)]
+						+ SHorizontalBox::Slot().AutoWidth()[Warps]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true).Text(Val([Clock](const FISRocketSim& S)
+					{
+						FString Out;
+						for (int32 i = FMath::Max(0, S.Events.Num() - 3); i < S.Events.Num(); ++i) Out += Clock(S.Events[i].T) + TEXT("  ") + S.Events[i].Text + TEXT("\n");
+						if (S.Phase == EISFlightPhase::OnPad)
+							Out += TEXT("Press SPACE (or LAUNCH) to start the 10 s countdown. The autopilot flies a real ascent; press T to fly it yourself:\nSHIFT / CTRL throttle, A / D pitch (lean east to build sideways speed), X cut engines, SPACE stage, comma / period time warp.");
+						return Out;
+					}))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
+					[
+						SNew(SHorizontalBox)
+						.Visibility_Lambda([this]() { const FISRocketSim* S = Scene.IsValid() ? Scene->Flight() : nullptr; return S && S->Phase == EISFlightPhase::Failed ? EVisibility::Visible : EVisibility::Collapsed; })
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)[Btn(TEXT("Retry launch"), [this]() { if (Scene.IsValid()) Scene->RetryFlight(); }, 1, 13)]
+						+ SHorizontalBox::Slot().AutoWidth()[Btn(TEXT("Back to the design"), [this]() { if (Scene.IsValid()) Scene->EndFlight(); Go(EScreen::Design); }, 0, 13)]
+					], 14.f)
+			]
+		];
+	}
 	// big, unmissable end-of-mission panel (friend feedback: failures were easy to miss)
 	if (Ops.IsFinished() && !bAckFinish)
 	{

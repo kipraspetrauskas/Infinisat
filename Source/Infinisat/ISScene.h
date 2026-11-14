@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ISData.h"
+#include "ISRocket.h"
 #include "ISScene.generated.h"
 
 struct FISDesign;
@@ -33,7 +34,15 @@ public:
 	void SetActive(bool bOn);
 	// launch animation + follow camera
 	void StartLaunch(bool bHeavy);
-	void SkipLaunch() { if (LaunchT >= 0.f) LaunchT = 0.999f; }
+	// real rocket flight (ISRocket.h): physics ascent the player can fly; replaces the scripted launch for orbital vehicles
+	bool StartFlight(FName VehicleId, double PayloadKg, double TargetAltKm, double IncDeg);
+	bool IsFlightActive() const { return bFlight; }
+	FISRocketSim* Flight() { return bFlight ? &Sim : nullptr; }
+	void SetFlightWarp(float W) { FlightWarp = W; }
+	float GetFlightWarp() const { return FlightWarp; }
+	void RetryFlight();
+	void EndFlight();
+	void SkipLaunch();
 	bool IsLaunching() const { return LaunchT >= 0.f; }
 	FString LaunchCaption() const;
 	void ToggleMap();
@@ -202,6 +211,21 @@ private:
 	void BuildExoSystem(int32 Seed, const FString& StarName, const FVector& Center, const FLinearColor& StarC, float StarR, const FString& StarFacts);
 	void BuildBlackHole(const FVector& Center);
 	void BuildCosmosBackdrop();
+
+	// ---- rocket flight
+	FISRocketSim Sim;
+	bool bFlight = false;
+	float FlightWarp = 1.f, FlightEndT = 0.f;
+	FName FlightVehicle;
+	double FlightPayload = 0, FlightAlt = 0, FlightInc = 0;
+	FVector FlightU = FVector::UpVector, FlightDn = FVector::ForwardVector;
+	TArray<TArray<UStaticMeshComponent*>> StageVis;
+	TArray<UStaticMeshComponent*> BoosterVis, FairingVis, PlumeCore, PlumeBoost, PadVis;
+	TArray<float> StageBaseZ;
+	float RocketLenCm = 7000.f;
+	UPROPERTY() class USkyAtmosphereComponent* SkyAtmo = nullptr;
+	void BuildFlightRocket();
+	void TickFlight(float Dt);
 
 	// camera state
 	FVector CamFocus = FVector::ZeroVector, CamFocusGoal = FVector::ZeroVector;

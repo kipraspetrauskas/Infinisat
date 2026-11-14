@@ -270,6 +270,22 @@ void AISPlayerController::PlayerTick(float DeltaTime)
 		else bDragging = false;
 		if (WasInputKeyJustPressed(EKeys::MouseScrollUp)) Scene->ZoomCamera(1.f);
 		if (WasInputKeyJustPressed(EKeys::MouseScrollDown)) Scene->ZoomCamera(-1.f);
+		// flying the launch: SPACE launch/stage, T autopilot, SHIFT/CTRL throttle, A/D pitch, X cut, comma/period warp
+		if (FISRocketSim* F = Scene->Flight())
+		{
+			if (WasInputKeyJustPressed(EKeys::SpaceBar)) F->Stage();
+			if (WasInputKeyJustPressed(EKeys::T)) F->bAutopilot = !F->bAutopilot;
+			const float Dt = DeltaTime;
+			const bool bThrUp = IsInputKeyDown(EKeys::LeftShift), bThrDn = IsInputKeyDown(EKeys::LeftControl), bCut = WasInputKeyJustPressed(EKeys::X);
+			const float Pitch = (IsInputKeyDown(EKeys::D) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::A) ? 1.f : 0.f);
+			if (bThrUp || bThrDn || bCut || Pitch != 0.f) F->bAutopilot = false;   // touching the controls takes over from the autopilot
+			if (bThrUp) F->Throttle = FMath::Min(1.0, F->Throttle + Dt * 0.6);
+			if (bThrDn) F->Throttle = FMath::Max(0.0, F->Throttle - Dt * 0.6);
+			if (bCut) F->Throttle = 0.0;
+			if (Pitch != 0.f) F->PitchDeg = FMath::Clamp(F->PitchDeg + Pitch * Dt * 6.0, -10.0, 120.0);
+			if (WasInputKeyJustPressed(EKeys::Period)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 2.f);
+			if (WasInputKeyJustPressed(EKeys::Comma)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 0.5f);
+		}
 		break;
 	}
 	default: break;

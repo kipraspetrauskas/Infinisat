@@ -1,5 +1,7 @@
 #include "ISScene.h"
 #include "ISSim.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -13,6 +15,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/LineBatchComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
 
 namespace
 {
@@ -61,6 +64,7 @@ AISSpaceScene::AISSpaceScene()
 void AISSpaceScene::BeginPlay()
 {
 	Super::BeginPlay();
+	if (FParse::Param(FCommandLine::Get(), TEXT("ISRocketTest"))) { extern void ISRocketSelfTest(); ISRocketSelfTest(); }
 	MatColor = Load<UMaterialInterface>(TEXT("/Game/Infinisat/Materials/M_IS_Color.M_IS_Color"));
 	MatUnlit = Load<UMaterialInterface>(TEXT("/Game/Infinisat/Materials/M_IS_Unlit.M_IS_Unlit"));
 	MatPlanet = Load<UMaterialInterface>(TEXT("/Game/Infinisat/Materials/M_IS_Planet.M_IS_Planet"));
@@ -118,6 +122,16 @@ void AISSpaceScene::BeginPlay()
 		S.bOverride_VignetteIntensity = true; S.VignetteIntensity = 0.45f;
 		S.bOverride_MotionBlurAmount = true; S.MotionBlurAmount = 0.f;
 	}
+
+	// physical sky (Rayleigh + Mie) around the true-scale Earth: blue at the pad, black in orbit, glowing limb from space
+	SkyAtmo = NewObject<USkyAtmosphereComponent>(this);
+	SkyAtmo->TransformMode = ESkyAtmosphereTransformMode::PlanetCenterAtComponentTransform;
+	SkyAtmo->BottomRadius = 6371.f;
+	SkyAtmo->AtmosphereHeight = 100.f;
+	SkyAtmo->SetupAttachment(SceneRoot);
+	SkyAtmo->RegisterComponent();
+	SkyAtmo->SetVisibility(false);
+	SunLight->SetAtmosphereSunLight(true);
 
 	Lines = NewObject<ULineBatchComponent>(this);
 	Lines->SetupAttachment(SceneRoot);
@@ -249,6 +263,9 @@ void AISSpaceScene::SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVec
 void AISSpaceScene::ClearView()
 {
 	ClearCosmos();
+	bFlight = false;
+	if (RocketRoot) RocketRoot->SetVisibility(false, true);
+	StageVis.Reset(); BoosterVis.Reset(); FairingVis.Reset(); PlumeCore.Reset(); PlumeBoost.Reset();
 	bTrueScale = false;
 	TruePts.Reset();
 	if (Lines) Lines->Flush();
@@ -715,6 +732,7 @@ void AISSpaceScene::ToggleMap()
 
 FString AISSpaceScene::LaunchCaption() const
 {
+	if (bFlight) return FString();   // the flight HUD shows the real numbers
 	if (LaunchT < 0.f) return FString();
 	if (LaunchT < 0.12f) return TEXT("LIFT-OFF!  The engines push about 1.3x the rocket's own weight.");
 	if (LaunchT < 0.30f) return TEXT("GRAVITY TURN  -  tilting east to build sideways speed: low orbit needs about 7.8 km/s.");
@@ -839,7 +857,8 @@ void AISSpaceScene::Tick(float Dt)
 	CamDist = FMath::FInterpTo(CamDist, CamDistGoal, Dt, 6.f);
 	CamFocus = FMath::VInterpTo(CamFocus, CamFocusGoal, Dt, 4.f);
 	// launch sequence: the rocket climbs from the pad to the spacecraft's orbit
-	if (LaunchT >= 0.f && RocketRoot)
+	if (bFlight && RocketRoot) { TickFlight(Dt); CamFocusGoal = RocketRoot->GetComponentLocation(); }
+	else if (LaunchT >= 0.f && RocketRoot)
 	{
 		LaunchT = FMath::Min(1.f, LaunchT + Dt / 11.f);
 		const FVector Target = SatRoot->GetRelativeLocation();
@@ -870,7 +889,7 @@ void AISSpaceScene::Tick(float Dt)
 	if (View == EISView::Orbit && bTrueScale && bFollow)
 	{
 		// follow camera in the satellite's local frame: behind it along its path, Earth's horizon below
-		const FVector SatPos = LaunchT >= 0.f && RocketRoot ? RocketRoot->GetComponentLocation() : SatRoot->GetComponentLocation();
+		const FVector SatPos = LaunchT >= 0.f && RocketRoot ? RocketRoot->GetComponentLocation() + (bFlight ? RocketRoot->GetUpVector() * RocketLenCm * 0.45f : FVector::ZeroVector) : SatRoot->GetComponentLocation();
 		const FVector Up = SatPos.GetSafeNormal();
 		const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
 		const FVector N = Q.RotateVector(FVector::UpVector);
@@ -883,6 +902,11 @@ void AISSpaceScene::Tick(float Dt)
 	}
 	if (Camera) Camera->SetActorLocationAndRotation(CamLoc, CR);
 
+	if (SkyAtmo)
+	{
+		const bool bAir = bTrueScale && View == EISView::Orbit && ViewDest != EISDest::Moon;
+		if (SkyAtmo->IsVisible() != bAir) { SkyAtmo->SetVisibility(bAir); PlanetAtmo->SetVisibility(!bAir && PlanetAtmo->IsVisible()); }
+	}
 	if (bTrueScale) TickTrueScale(Dt);
 	if (bTrueScale) Sky->SetWorldLocation(CamLoc);
 	if (View == EISView::Cosmos) TickCosmos(Dt, CamLoc);

@@ -40,6 +40,17 @@ public:
 	void ClosePanel();         // back to walking
 	EISMode GetMode() const { return Mode; }
 	const FString& Prompt() const { return CurrentPrompt; }
+	void OpenPause();
+	void SaveSettings();
+	void ApplySettings();
+
+	// player settings (saved in GameUserSettings.ini)
+	float MouseSens = 1.3f;
+	bool bInvertY = false;
+	float Fov = 90.f;
+	int32 Graphics = -1;      // 0 Low (low-poly, no GPU needed), 1 Medium, 2 High, 3 Epic
+	void ApplyGraphics();
+	static FString GraphicsName(int32 L);
 
 	UPROPERTY() AISSpaceScene* Scene = nullptr;
 	UPROPERTY() AISHomeWorld* World = nullptr;

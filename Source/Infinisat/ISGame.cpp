@@ -12,6 +12,12 @@
 #include "InputCoreTypes.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Misc/ConfigCacheIni.h"
+#include "GameFramework/GameUserSettings.h"
+#include "HAL/IConsoleManager.h"
+#include "ISParts3D.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Camera/CameraComponent.h"
 
 AISGameMode::AISGameMode()
 {
@@ -42,6 +48,26 @@ void AISPlayerController::BeginPlay()
 		UIContainer = SNew(SWeakWidget).PossiblyNullContent(UI.ToSharedRef());
 		GEngine->GameViewport->AddViewportWidgetContent(UIContainer.ToSharedRef(), 10);
 	}
+	if (GConfig)
+	{
+		GConfig->GetFloat(TEXT("Infinisat"), TEXT("MouseSens"), MouseSens, GGameUserSettingsIni);
+		GConfig->GetBool(TEXT("Infinisat"), TEXT("InvertY"), bInvertY, GGameUserSettingsIni);
+		GConfig->GetFloat(TEXT("Infinisat"), TEXT("Fov"), Fov, GGameUserSettingsIni);
+		GConfig->GetInt(TEXT("Infinisat"), TEXT("Graphics"), Graphics, GGameUserSettingsIni);
+	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("ISGraphics="), Graphics)) {}
+	if (Graphics < 0)
+	{
+		// first launch: measure this PC and choose a preset (integrated GPUs land on Low)
+		if (UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr)
+		{
+			GS->RunHardwareBenchmark();
+			Graphics = FMath::Clamp(GS->GetRecommendedResolutionScale() < 60.f ? 0 : (int32)GS->ScalabilityQuality.GetSingleQualityLevel(), 0, 3);
+		}
+		else Graphics = 2;
+	}
+	ISQuality::Level = Graphics;
+	ApplyGraphics();
 	EnterMenu();
 	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld"));
 	UE_LOG(LogInfinisat, Log, TEXT("PC BeginPlay: world=%d scene=%d ui=%d arg=%d"), World != nullptr, Scene != nullptr, UI.IsValid(), bWorldArg);
@@ -94,8 +120,42 @@ void AISPlayerController::EnterWorld()
 		Bit = GetWorld()->SpawnActor<AISBitCharacter>(AISBitCharacter::StaticClass(), World->SpawnPoint(), SP);
 		Possess(Bit);
 		SetControlRotation(World->SpawnPoint().Rotator());
+		// dev: -ISPos=x,y,z -ISYaw=deg -ISPitch=deg for screenshots
+		FString PosS;
+		if (FParse::Value(FCommandLine::Get(), TEXT("ISPos="), PosS, false))
+		{
+			TArray<FString> P; PosS.ParseIntoArray(P, TEXT(","));
+			if (P.Num() == 3) Bit->SetActorLocation(FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])), false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		float Yaw = 0, Pitch = 0;
+		FRotator CR = GetControlRotation();
+		if (FParse::Value(FCommandLine::Get(), TEXT("ISYaw="), Yaw)) CR.Yaw = Yaw;
+		if (FParse::Value(FCommandLine::Get(), TEXT("ISPitch="), Pitch)) CR.Pitch = Pitch;
+		SetControlRotation(CR);
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISFly")))
+		{
+			Bit->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+			Bit->GetCharacterMovement()->GravityScale = 0.f;
+			Bit->SetActorEnableCollision(false);
+		}
 	}
 	if (Bit) { Bit->SetActorHiddenInGame(false); SetViewTarget(Bit); }
+	ApplySettings();
+	// dev: -ISTop=x,y,z looks straight down from that point (layout checks)
+	FString TopS;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ISTop="), TopS, false))
+	{
+		TArray<FString> P; TopS.ParseIntoArray(P, TEXT(","));
+		if (P.Num() == 3)
+		{
+			FActorSpawnParameters SP2;
+			ACameraActor* Top = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), FTransform(FRotator(-90, 90, 0), FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]))), SP2);
+			Top->GetCameraComponent()->SetFieldOfView(70.f);
+			Top->GetCameraComponent()->bConstrainAspectRatio = false;
+			SetViewTarget(Top);
+			Mode = EISMode::Panel;
+		}
+	}
 	UE_LOG(LogInfinisat, Log, TEXT("EnterWorld: bit=%d"), Bit != nullptr);
 	Mode = EISMode::Walk;
 	SetCursorMode(false);
@@ -121,6 +181,64 @@ void AISPlayerController::OpenPanel()
 {
 	Mode = EISMode::Panel;
 	SetCursorMode(true);
+}
+
+void AISPlayerController::OpenPause()
+{
+	OpenPanel();
+	if (UI) UI->ShowPause();
+}
+
+void AISPlayerController::ApplySettings()
+{
+	if (Bit && Bit->Cam) Bit->Cam->SetFieldOfView(Fov);
+}
+
+void AISPlayerController::SaveSettings()
+{
+	ApplySettings();
+	if (!GConfig) return;
+	GConfig->SetFloat(TEXT("Infinisat"), TEXT("MouseSens"), MouseSens, GGameUserSettingsIni);
+	GConfig->SetBool(TEXT("Infinisat"), TEXT("InvertY"), bInvertY, GGameUserSettingsIni);
+	GConfig->SetFloat(TEXT("Infinisat"), TEXT("Fov"), Fov, GGameUserSettingsIni);
+	GConfig->SetInt(TEXT("Infinisat"), TEXT("Graphics"), Graphics, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+FString AISPlayerController::GraphicsName(int32 L)
+{
+	switch (L)
+	{
+	case 0: return TEXT("Low (low-poly)");
+	case 1: return TEXT("Medium");
+	case 2: return TEXT("High");
+	default: return TEXT("Epic");
+	}
+}
+
+void AISPlayerController::ApplyGraphics()
+{
+	Graphics = FMath::Clamp(Graphics, 0, 3);
+	ISQuality::Level = Graphics;
+	if (UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr)
+	{
+		GS->SetOverallScalabilityLevel(Graphics);
+		GS->ApplySettings(false);
+	}
+	auto CV = [](const TCHAR* Name, float V)
+	{
+		if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(Name)) C->Set(V, ECVF_SetByGameSetting);
+	};
+	const bool bLow = Graphics == 0;
+	CV(TEXT("r.Nanite"), bLow ? 0.f : 1.f);                       // Nanite off = simplified fallback meshes (the low-poly look)
+	CV(TEXT("r.MipMapLODBias"), bLow ? 2.f : 0.f);                 // chunkier textures, far less memory
+	CV(TEXT("r.DynamicGlobalIlluminationMethod"), Graphics >= 2 ? 1.f : 0.f);
+	CV(TEXT("r.ReflectionMethod"), Graphics >= 2 ? 1.f : (Graphics == 1 ? 2.f : 0.f));
+	CV(TEXT("r.Shadow.Virtual.Enable"), Graphics >= 2 ? 1.f : 0.f);
+	CV(TEXT("r.ScreenPercentage"), bLow ? 70.f : 100.f);
+	CV(TEXT("r.ViewDistanceScale"), bLow ? 0.6f : 1.f);
+	CV(TEXT("r.VolumetricCloud"), bLow ? 0.f : 1.f);
+	CV(TEXT("r.Fog"), 1.f);
 }
 
 void AISPlayerController::ClosePanel()
@@ -166,9 +284,12 @@ void AISPlayerController::TickWalk(float Dt)
 	Bit->MoveInput(F, R, IsInputKeyDown(EKeys::LeftShift));
 	float MX = 0, MY = 0;
 	GetInputMouseDelta(MX, MY);
-	Bit->LookInput(MX * 0.6f, -MY * 0.6f);
+	Bit->LookInput(MX * MouseSens, MY * MouseSens * (bInvertY ? -1.f : 1.f));
 	if (WasInputKeyJustPressed(EKeys::SpaceBar)) Bit->Hover();
 	if (WasInputKeyJustReleased(EKeys::SpaceBar)) Bit->StopJumping();
+	const bool bLow = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::C);
+	if (bLow && !Bit->bIsCrouched) Bit->Crouch();
+	if (!bLow && Bit->bIsCrouched) Bit->UnCrouch();
 
 	// what are we looking at?
 	LookAction = NAME_None;
@@ -178,6 +299,7 @@ void AISPlayerController::TickWalk(float Dt)
 		LookAction = World->ActionFor(C);
 		CurrentPrompt = World->PromptFor(LookAction);
 	}
+	if (WasInputKeyJustPressed(EKeys::Q)) World->Scan();
 	if (WasInputKeyJustPressed(EKeys::E) && !LookAction.IsNone())
 	{
 		if (LookAction == "laptop") { OpenPanel(); if (UI) UI->ShowOrders(); }
@@ -192,7 +314,7 @@ void AISPlayerController::TickWalk(float Dt)
 		SetViewTargetWithBlend(World->bChaseCam ? (AActor*)World->ChaseCamera() : (AActor*)Bit, 0.4f);
 	}
 	if (World->bChaseCam && !World->IsTracking()) { World->bChaseCam = false; SetViewTarget(Bit); }
-	if (WasInputKeyJustPressed(EKeys::Escape)) { EnterMenu(); if (UI) UI->ShowTitle(); }
+	if (WasInputKeyJustPressed(EKeys::Escape) || WasInputKeyJustPressed(EKeys::P)) OpenPause();
 	if (World->bDebriefReady) { World->bDebriefReady = false; OpenPanel(); if (UI) UI->ShowCanSatDebrief(); }
 }
 

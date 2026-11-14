@@ -82,8 +82,8 @@ namespace
 			.Edu(TEXT("Voyager launched with three RTGs giving ~470 W in 1977. Almost 50 years later they still give ~220 W, which is why Voyager can still phone home.")));
 
 		// ------------------------------------------------------------ BATTERY
-		Add(FP("bat_aa", C::Battery, TEXT("AA battery pack (10 Wh)"), 0.1f, 0.00001f).Bat(10.f).Rel(0.99f).Col(0.2f, 0.6f, 0.2f)
-			.Edu(TEXT("4 AA cells hold ~10 Wh. A 2 W CanSat would run 5 hours on this.")));
+		Add(FP("bat_aa", C::Battery, TEXT("18650 Li-ion cell + holder (9 Wh)"), 0.055f, 0.00001f).Bat(9.25f).Rel(0.99f).Col(0.2f, 0.6f, 0.2f)
+			.Edu(TEXT("An 18650 cell (18 mm x 65 mm, the size laptops and flashlights use) stores 2500 mAh x 3.7 V = 9.25 Wh. Energy (Wh) = capacity (Ah) x voltage (V).")));
 		Add(FP("bat_cube", C::Battery, TEXT("CubeSat Li-ion (40 Wh)"), 0.3f, 0.01f).Bat(40.f).Rel(0.99f).Col(0.2f, 0.6f, 0.2f)
 			.Edu(TEXT("Keeps a CubeSat alive through the ~35 minute shadow (eclipse) on every low orbit.")));
 		Add(FP("bat_s", C::Battery, TEXT("Li-ion battery 600 Wh"), 5.f, 0.4f, 1).Bat(600.f).Rel(0.995f).Col(0.2f, 0.6f, 0.2f)
@@ -109,8 +109,8 @@ namespace
 			.Edu(TEXT("A spinning spacecraft is stable like a gyroscope. Juno spins at 2-5 rpm; Pioneer 10 spun too. Simple and very reliable.")));
 
 		// ------------------------------------------------------------ COMMS
-		Add(FP("com_433", C::Comms, TEXT("433 MHz hobby radio (10 km)"), 0.02f, 0.00005f).Pw(0.5f).Radio(0.01f, 10.f).Rel(0.995f)
-			.Edu(TEXT("CanSat teams use cheap 433 MHz modules. Range depends on power and antenna: radio signals weaken with distance squared.")));
+		Add(FP("com_433", C::Comms, TEXT("LoRa radio module (433 MHz, ~10 km)"), 0.005f, 0.00001f).Pw(0.4f).Radio(0.005f, 10.f).Rel(0.995f)
+			.Edu(TEXT("LoRa radios trade speed for range: a few kbit/s, but several km with a simple wire antenna. Signal strength falls with distance squared.")));
 		Add(FP("com_uhf", C::Comms, TEXT("UHF beacon radio (9.6 kbps)"), 0.1f, 0.01f).Pw(2.f).Radio(0.0096f, 3000.f).Rel(0.99f).Mesh(Kit(TEXT("Kit_radio2")))
 			.Edu(TEXT("Amateur-band radio used by most CubeSats. Radio amateurs worldwide can help receive your data for free.")));
 		Add(FP("com_s", C::Comms, TEXT("S-band transceiver (2 Mbps)"), 3.f, 0.4f).Pw(20.f).Radio(2.f, 500000.f, 0.f, 5.f).Rel(0.995f).Mesh(Kit(TEXT("Kit_radio1")))
@@ -144,8 +144,8 @@ namespace
 			.Edu(TEXT("Future sails of graphene/aluminium films only a few micrometres thick. Concept studies show they could leave the solar system faster than Voyager.")));
 
 		// ------------------------------------------------------------ COMPUTER
-		Add(FP("cpu_ard", C::Computer, TEXT("Hobby microcontroller"), 0.02f, 0.00002f).Pw(0.2f).Rad(1.f).Rel(0.99f)
-			.Edu(TEXT("Arduino-class boards are perfect for CanSats. In orbit, radiation can flip bits or destroy them.")));
+		Add(FP("cpu_ard", C::Computer, TEXT("ESP32 microcontroller (240 MHz, Wi-Fi/Bluetooth)"), 0.01f, 0.00001f).Pw(0.25f).Rad(1.f).Rel(0.99f)
+			.Edu(TEXT("The ESP32 is a tiny dual-core computer used in millions of gadgets: it reads the sensors and sends packets to the radio. In orbit, radiation can flip its bits.")));
 		Add(FP("cpu_cube", C::Computer, TEXT("CubeSat on-board computer"), 0.1f, 0.02f).Pw(1.f).Rad(15.f).Rel(0.985f)
 			.Edu(TEXT("Commercial parts with some protection. Tolerates ~15 krad total dose: fine in low orbit for a few years.")));
 		Add(FP("cpu_rh", C::Computer, TEXT("Radiation-hardened flight computer"), 5.f, 3.f, 1).Pw(15.f).Rad(1000.f).Rel(0.998f)
@@ -158,8 +158,8 @@ namespace
 			.Edu(TEXT("Far from the Sun or in long shadows, electronics freeze without heaters. Heaters cost power, so the power budget grows.")));
 
 		// ------------------------------------------------------------ PAYLOADS
-		Add(FP("pl_temp", C::Payload, TEXT("Temperature + pressure sensor"), 0.01f, 0.00001f).Pw(0.05f).Data(0.0001f).Tag(ISTag::TempSensor)
-			.Edu(TEXT("Measures how air temperature and pressure change with height: the same physics weather balloons measure every day.")));
+		Add(FP("pl_temp", C::Payload, TEXT("DHT11 temperature + humidity sensor"), 0.003f, 0.00001f).Pw(0.01f).Data(0.0001f).Tag(ISTag::TempSensor)
+			.Edu(TEXT("Measures air temperature and humidity. Going up, air cools by about 6.5 C per km: weather balloons measure exactly this every day.")));
 		Add(FP("pl_cam_mini", C::Payload, TEXT("Mini camera (CanSat)"), 0.03f, 0.00003f).Pw(0.8f).Data(0.001f).Tag(ISTag::Camera)
 			.Edu(TEXT("A tiny camera module: images use far more data than sensor readings.")));
 		Add(FP("pl_gnss", C::Payload, TEXT("GNSS receiver (uses GPS/Galileo)"), 0.05f, 0.005f).Pw(0.8f).Data(0.0001f).Tag(ISTag::GNSSRx)
@@ -198,6 +198,10 @@ namespace
 			.Edu(TEXT("Descent speed v = sqrt(2 m g / (air density x Cd x area)). Smaller chute = faster, harder landing.")));
 		Add(FP("ex_chute_l", C::Extra, TEXT("Parachute 0.2 m^2"), 0.025f, 0.00001f).Sail(0.2f).Tag(ISTag::Parachute)
 			.Edu(TEXT("Four times the area halves the descent speed (speed goes with 1/sqrt(area)).")));
+		Add(FP("ex_wires", C::Extra, TEXT("Jumper wires + pin headers"), 0.01f, 0.00001f).Tag(ISTag::Wiring)
+			.Edu(TEXT("Wires carry power and data between boards. Real CanSats are soldered and glued: launches shake everything loose!")));
+		Add(FP("ex_buzzer", C::Extra, TEXT("Buzzer (recovery beeper)"), 0.003f, 0.000005f).Pw(0.02f).Tag(ISTag::Buzzer)
+			.Edu(TEXT("A loud beeper helps you find your CanSat in tall grass. Real teams always add one.")));
 		Add(FP("ex_vault", C::Extra, TEXT("Titanium radiation vault"), 180.f, 15.f, 6).Tag(ISTag::Vault).Rel(1.f).Mesh(CUBE).Col(0.55f, 0.55f, 0.6f)
 			.Edu(TEXT("Juno's electronics sit in a 1 cm-thick titanium box (~180 kg) that cuts Jupiter's radiation ~800x. Without it the electronics would die within weeks.")));
 		Add(FP("ex_redund", C::Extra, TEXT("Redundant electronics (backups)"), 0.f, 0.f, 1).Tag(ISTag::Redundancy).Rel(1.f)
@@ -267,7 +271,7 @@ namespace
 			X.Client = TEXT("Your school science club");
 			X.Brief = TEXT("Build a CanSat (max 350 g) that measures air temperature on the way down from 1 km and radios it to your ground antenna. It must land gently (under 10 m/s) and keep transmitting for 2 hours so you can find it.");
 			X.Dest = EISDest::Backyard; X.AltKm = 1.f; X.BudgetM = 0.0015f; X.LifeYears = 2.f / 8760.f; X.MaxMassKg = 0.35f;
-			X.Required = { ISTag::TempSensor, ISTag::Parachute }; X.Bonus = { ISTag::GNSSRx, ISTag::Camera };
+			X.Required = { ISTag::TempSensor, ISTag::Parachute, ISTag::Wiring }; X.Bonus = { ISTag::GNSSRx, ISTag::Camera, ISTag::Buzzer };
 			X.Learn = { TEXT("Mass budget: every gram counts"), TEXT("Battery energy: Wh = W x hours"), TEXT("Radio range"), TEXT("Parachute physics: v = sqrt(2mg / (rho Cd A))") };
 			X.RealName = TEXT("ESA CanSat competition");
 			X.RealMesh = TEXT("");

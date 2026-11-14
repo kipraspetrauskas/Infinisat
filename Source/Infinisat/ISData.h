@@ -41,6 +41,8 @@ namespace ISTag
 	static const FName Heaters(TEXT("Heaters"));
 	static const FName RTG(TEXT("RTG"));
 	static const FName HGA(TEXT("HGA"));
+	static const FName Wiring(TEXT("Wiring"));
+	static const FName Buzzer(TEXT("Buzzer"));
 }
 
 struct FISPart

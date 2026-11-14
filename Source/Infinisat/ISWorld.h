@@ -25,6 +25,29 @@ enum class EISStage : uint8 { NoOrder, Build, Sealed, Carry, OnPad, Countdown, B
 
 struct FISTelemetry { float T, AltM, TempC, PressHPa; };
 
+struct FISDoor
+{
+	USceneComponent* Hinge = nullptr;
+	float Angle = 0.f, Target = 0.f, OpenAngle = 95.f;
+	bool bLocked = false;
+	FString LockMsg;
+};
+
+// A component BIT has to find around the house (chapter 0 scavenger hunt)
+struct FISHuntItem
+{
+	FName Part;
+	FString Name;
+	FString Where;      // hint
+	FVector Pos = FVector::ZeroVector;
+	bool bFound = false;
+	bool bRequired = true;
+	FISModel Model;
+	UPrimitiveComponent* Hit = nullptr;
+};
+
+struct FISOpening { float From, To, Bottom, Top; uint8 Kind; };   // Kind: 0 door, 1 window, 2 open arch
+
 struct FISFlightReport
 {
 	float ApogeeM = 0, MaxSpeed = 0, LandingSpeed = 0, DriftM = 0, FlightS = 0, SearchS = 0, TelemetryPct = 0;
@@ -59,6 +82,14 @@ public:
 	FString Objective() const;
 	TArray<FString> Toasts;   // messages for the HUD (BIT says...)
 
+	// --- scavenger hunt
+	TArray<FISHuntItem> Hunt;
+	int32 FoundCount(bool bRequiredOnly) const;
+	int32 RequiredCount() const;
+	bool UsesHunt() const { return MissionIdx == 0; }
+	float ScanT = 0.f;          // > 0 while BIT's scanner shows nearby parts
+	void Scan() { ScanT = 5.f; }
+
 	// --- bench mode
 	ACameraActor* BenchCamera() const { return BenchCam; }
 	FName PartUnderCursor(UPrimitiveComponent* C) const;
@@ -89,6 +120,24 @@ private:
 	void BuildGround();
 	void BuildGarage();
 	void BuildHouse();
+	// detailed home (ISHouse.cpp)
+	void BuildHome();
+	void BuildNeighbourhood();
+	void BuildBackyard();
+	void SpawnHunt();
+	void Wall(const FVector2D& A, const FVector2D& B, const TArray<FISOpening>& Ops, const TCHAR* InTex, const FLinearColor& InTint,
+		const TCHAR* OutTex = nullptr, const FLinearColor& OutTint = FLinearColor::White, float OutSide = 0.f, bool bBaseboard = true);
+	void AddDoor(const FVector& HingePos, float Yaw, float Width, const FLinearColor& Color, bool bStartOpen, bool bLocked = false, const FString& LockMsg = FString());
+	void Roof(const FVector& Center, float SizeX, float SizeY, float Pitch, float Overhang, const TCHAR* Tex, const FLinearColor& Tint, const TCHAR* GableTex, const FLinearColor& GableTint);
+	void HouseShell(const FVector& Origin, float SX, float SY, float Yaw, const FLinearColor& Wall, const FLinearColor& Door, const TCHAR* RoofTex, const FLinearColor& RoofTint);
+	UStaticMeshComponent* Slab(const FVector& Center, const FVector& Size, const TCHAR* Tex, float Tile, const FLinearColor& Tint, bool bCollide = true, float Yaw = 0.f);
+	UStaticMeshComponent* Paint(const FVector& Center, const FVector& Size, const FLinearColor& C, float Rough = 0.6f, bool bCollide = true, float Yaw = 0.f, float Metal = 0.f);
+	void RoomLight(const FVector& Pos, float Lumens, bool bFixture = true);
+	TArray<FISDoor> Doors;
+	TArray<float> DoorYaw;
+	float MudShelfTop = 100.f, GarageShelfTop = 120.f;
+	void BuildGround2();
+	bool IsFound(FName Part) const;
 	void BuildField();
 	void BuildNature();
 	void RebuildCan();

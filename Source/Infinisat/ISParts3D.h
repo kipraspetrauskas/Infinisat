@@ -10,6 +10,12 @@ class USceneComponent;
 class UMaterialInterface;
 class UObject;
 
+namespace ISQuality
+{
+	extern int32 Level;   // 0 Low (low-poly) .. 3 Epic; scales decoration density
+	inline float Density() { return Level <= 0 ? 0.25f : Level == 1 ? 0.6f : 1.f; }
+}
+
 namespace ISMat
 {
 	UMaterialInterface* Color();

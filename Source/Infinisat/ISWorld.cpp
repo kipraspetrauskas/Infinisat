@@ -19,12 +19,12 @@
 namespace
 {
 	const FVector GarageMin(-420, -320, 0), GarageMax(420, 320, 320);
-	const FVector PadLocation(15000.f, 2500.f, 0.f);
+	const FVector PadLocation(800.f, 9500.f, 0.f);
 	const float Rho = 1.2f, G = 9.81f;
 	FString TexPath(const TCHAR* T) { return FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T); }
 	const TArray<FName>& CanSatTray()
 	{
-		static TArray<FName> T = { "bat_aa", "bat_cube", "cpu_ard", "cpu_cube", "com_433", "com_uhf", "pl_temp", "pl_cam_mini", "pl_gnss", "ex_chute_s", "ex_chute_l", "adcs_mag", "pwr_body" };
+		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss", "pl_cam_mini", "bat_cube", "ex_chute_s", "adcs_mag", "pwr_body" };
 		return T;
 	}
 	int32 StackOrder(EISCat C)
@@ -135,7 +135,6 @@ UTextRenderComponent* AISHomeWorld::AddSign(const FString& Text, const FVector& 
 	L->SetWorldSize(Size);
 	L->SetRelativeLocation(Pos);
 	L->SetRelativeRotation(FRotator(0, Yaw, 0));
-	if (UMaterialInterface* TM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/MI_IS_Text.MI_IS_Text"))) L->SetTextMaterial(TM);
 	L->RegisterComponent();
 	AllComps.Add(L);
 	return L;
@@ -172,6 +171,13 @@ void AISHomeWorld::BuildSky()
 	S.bOverride_BloomIntensity = true; S.BloomIntensity = 0.4f;
 	S.bOverride_VignetteIntensity = true; S.VignetteIntensity = 0.3f;
 	S.bOverride_MotionBlurAmount = true; S.MotionBlurAmount = 0.f;
+	// colour grade: warm afternoon, richer colours, soft contrast (cozy, not grey)
+	S.bOverride_WhiteTemp = true; S.WhiteTemp = 6000.f;
+	S.bOverride_ColorSaturation = true; S.ColorSaturation = FVector4(1.18f, 1.18f, 1.18f, 1.f);
+	S.bOverride_ColorContrast = true; S.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.f);
+	S.bOverride_ColorGain = true; S.ColorGain = FVector4(1.03f, 1.01f, 0.97f, 1.f);
+	S.bOverride_SceneFringeIntensity = true; S.SceneFringeIntensity = 0.f;
+	S.bOverride_AmbientOcclusionIntensity = true; S.AmbientOcclusionIntensity = 0.6f;
 }
 
 void AISHomeWorld::BuildGround()
@@ -333,6 +339,7 @@ void AISHomeWorld::BuildNature()
 		H->SetCullDistances(0, (int32)Cull);
 		H->RegisterComponent();
 		const float Base = -Mesh->GetBoundingBox().Min.Z;
+		N = FMath::Max(1, FMath::RoundToInt(N * ISQuality::Density()));
 		int32 Added = 0, Tries = 0;
 		while (Added < N && Tries++ < N * 20)
 		{
@@ -367,11 +374,12 @@ void AISHomeWorld::BeginPlay()
 {
 	Super::BeginPlay();
 	BuildSky();
-	BuildGround();
-	BuildGarage();
-	BuildHouse();
+	BuildGround2();
+	BuildHome();
+	BuildNeighbourhood();
 	BuildField();
-	BuildNature();
+	BuildBackyard();
+	SpawnHunt();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -384,8 +392,6 @@ void AISHomeWorld::BeginPlay()
 	ChaseCam->GetCameraComponent()->SetFieldOfView(70.f);
 	ChaseCam->GetCameraComponent()->bConstrainAspectRatio = false;
 
-	ISBuild::Hand(this, BenchHands, 0.7f, &BenchHandModel);
-	BenchHandModel.SetVisible(false);
 	SetActive(false);
 }
 
@@ -403,7 +409,7 @@ void AISHomeWorld::SetActive(bool bOn)
 
 FTransform AISHomeWorld::SpawnPoint() const
 {
-	return FTransform(FRotator(0, -90.f, 0), FVector(BenchTop.X - 40.f, BenchTop.Y + 120.f, 95.f));
+	return FTransform(FRotator(0, 110.f, 0), FVector(400.f, 820.f, 100.f));
 }
 
 // =====================================================================================================
@@ -474,6 +480,7 @@ void AISHomeWorld::RebuildTray()
 		const int32 Row = i / 7, Col = i % 7;
 		++i;
 		if (Design.Has(Id)) continue;
+		if (UsesHunt() && !IsFound(Id)) continue;
 		TrayParts.Add(Id);
 		const FVector Pos = BenchTop + FVector(-48.f + Col * 16.f, 14.f + Row * 13.f, 0.2f);
 		USceneComponent* Slot = NewObject<USceneComponent>(this);
@@ -525,7 +532,7 @@ void AISHomeWorld::BenchToggle(FName Id)
 
 void AISHomeWorld::BenchSeal()
 {
-	if (!Design.GetSingle(EISCat::Battery).IsNone() && !Design.GetSingle(EISCat::Computer).IsNone() && !Design.GetSingle(EISCat::Comms).IsNone())
+	if (!Design.GetSingle(EISCat::Battery).IsNone() && !Design.GetSingle(EISCat::Computer).IsNone() && !Design.GetSingle(EISCat::Comms).IsNone() && (!UsesHunt() || Design.HasTag(ISTag::Wiring)))
 	{
 		Stage = EISStage::Sealed;
 		++DesignVersion;
@@ -533,7 +540,7 @@ void AISHomeWorld::BenchSeal()
 		RebuildTray();
 		Toast(TEXT("Can sealed! Pick it up (E) and carry it out to the LAUNCH PAD in the field (follow the dirt path)."));
 	}
-	else Toast(TEXT("A CanSat needs at least a battery, a computer and a radio before you can seal it."));
+	else Toast(TEXT("A CanSat needs at least a battery, a computer (ESP32), a radio and wires to connect them before you can seal it."));
 }
 
 // =====================================================================================================
@@ -548,6 +555,18 @@ FName AISHomeWorld::ActionFor(UPrimitiveComponent* C) const
 FString AISHomeWorld::PromptFor(FName A) const
 {
 	if (A == "laptop") return TEXT("E  Open order board");
+	const FString AS = A.ToString();
+	if (AS.StartsWith(TEXT("door:")))
+	{
+		const int32 I = FCString::Atoi(*AS.Mid(5));
+		return Doors.IsValidIndex(I) && Doors[I].Target > 1.f ? TEXT("E  Close door") : TEXT("E  Open door");
+	}
+	if (AS.StartsWith(TEXT("item:")))
+	{
+		const FName P(*AS.Mid(5));
+		for (const FISHuntItem& H : Hunt) if (H.Part == P && !H.bFound) return FString::Printf(TEXT("E  Take: %s"), *H.Name);
+		return FString();
+	}
 	if (A == "radio") return TEXT("E  Ground-station radio (what is it?)");
 	if (A == "bench") return Stage == EISStage::Build ? TEXT("E  Work at the bench (build the CanSat)") : Stage == EISStage::NoOrder ? TEXT("Workbench: take an order first (laptop)") : TEXT("Workbench");
 	if (A == "cansat") return TEXT("E  Pick up the CanSat");
@@ -564,6 +583,37 @@ FString AISHomeWorld::PromptFor(FName A) const
 void AISHomeWorld::Interact(FName A, AISBitCharacter* Bit)
 {
 	if (Bit) Bit->Reach();
+	const FString AS = A.ToString();
+	if (AS.StartsWith(TEXT("door:")))
+	{
+		const int32 I = FCString::Atoi(*AS.Mid(5));
+		if (Doors.IsValidIndex(I))
+		{
+			if (Doors[I].bLocked) Toast(Doors[I].LockMsg);
+			else Doors[I].Target = Doors[I].Target > 1.f ? 0.f : Doors[I].OpenAngle;
+		}
+		return;
+	}
+	if (AS.StartsWith(TEXT("item:")))
+	{
+		const FName P(*AS.Mid(5));
+		for (FISHuntItem& H : Hunt)
+			if (H.Part == P && !H.bFound)
+			{
+				H.bFound = true;
+				H.Model.SetVisible(false);
+				if (H.Hit) H.Hit->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				const FISPart* Pt = ISData::FindPart(P);
+				FString Edu = Pt ? Pt->Edu : FString();
+				int32 Dot;
+				if (Edu.FindChar(TEXT('.'), Dot) && Dot < 220) Edu = Edu.Left(Dot + 1);
+				Toast(FString::Printf(TEXT("Found: %s! %s  (%d/%d required parts)"), *H.Name, *Edu, FoundCount(true), RequiredCount()));
+				if (FoundCount(true) == RequiredCount()) Toast(TEXT("All required parts found! Take them to the WORKBENCH in the garage (E) and build your CanSat."));
+				RebuildTray();
+				++DesignVersion;
+			}
+		return;
+	}
 	if (A == "radio")
 		Toast(TEXT("This radio listens on 433 MHz, the same band as your CanSat. You also carry a handheld receiver with a directional (Yagi) antenna: point it at the signal to make it stronger."));
 	else if (A == "cansat" && Stage == EISStage::Sealed && Bit)
@@ -613,7 +663,10 @@ FString AISHomeWorld::Objective() const
 	switch (Stage)
 	{
 	case EISStage::NoOrder: return TEXT("Check the ORDER laptop on the workbench.");
-	case EISStage::Build: return TEXT("Build the CanSat at the workbench (E). Then seal the can.");
+	case EISStage::Build:
+		if (UsesHunt() && FoundCount(true) < RequiredCount())
+			return FString::Printf(TEXT("Find the CanSat parts around the house: %d/%d found.  Press Q to scan for parts nearby."), FoundCount(true), RequiredCount());
+		return TEXT("Build the CanSat at the WORKBENCH in the garage (E). Then seal the can.");
 	case EISStage::Sealed: return TEXT("Pick up the sealed CanSat.");
 	case EISStage::Carry: return TEXT("Carry the CanSat to the LAUNCH PAD (follow the dirt path).");
 	case EISStage::OnPad: return TEXT("Start the countdown at the pad (E).");
@@ -634,9 +687,19 @@ void AISHomeWorld::Tick(float Dt)
 	Super::Tick(Dt);
 	if (IsHidden()) return;
 
+	// doors swing smoothly
+	for (int32 i = 0; i < Doors.Num(); ++i)
+	{
+		FISDoor& D = Doors[i];
+		if (!D.Hinge || FMath::IsNearlyEqual(D.Angle, D.Target, 0.05f)) continue;
+		D.Angle = FMath::FInterpTo(D.Angle, D.Target, Dt, 7.f);
+		D.Hinge->SetRelativeRotation(FRotator(0, (DoorYaw.IsValidIndex(i) ? DoorYaw[i] : 0.f) + D.Angle, 0));
+	}
+	ScanT = FMath::Max(0.f, ScanT - Dt);
+
 	// bench hands animation
 	const bool bBench = Stage == EISStage::Build;
-	BenchHandModel.SetVisible(bBench);
+	BenchHandModel.SetVisible(false);
 	if (bBench)
 	{
 		BenchHandT = FMath::Max(0.f, BenchHandT - Dt * 1.5f);

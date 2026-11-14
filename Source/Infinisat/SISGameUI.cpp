@@ -267,6 +267,7 @@ AISPlayerController* SISGameUI::IPC() const { return Cast<AISPlayerController>(P
 AISHomeWorld* SISGameUI::HW() const { AISPlayerController* P = IPC(); return P ? P->World : nullptr; }
 bool SISGameUI::InWorld() const { AISPlayerController* P = IPC(); return P && P->GetMode() != EISMode::Menu; }
 void SISGameUI::ShowOrders() { Screen = EScreen::Missions; bDirty = true; }
+void SISGameUI::ShowPause() { Screen = EScreen::Pause; bDirty = true; }
 void SISGameUI::ShowTitle() { Go(EScreen::Title); }
 void SISGameUI::ShowCanSatDebrief()
 {
@@ -288,7 +289,7 @@ void SISGameUI::UpdateScene()
 		Scene->SetBitMood(0);
 		break;
 	case EScreen::Debrief: Scene->ShowCompare(Design, Mission().RealMesh, Mission().RealName); break;
-	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: break;
+	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: case EScreen::Pause: break;
 	case EScreen::Pedia:
 		Scene->ShowModelOnly(MeshOf(Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Mesh), Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Name);
 		break;
@@ -376,6 +377,7 @@ void SISGameUI::Rebuild()
 	case EScreen::Play: W = BuildPlay(); break;
 	case EScreen::Bench: W = BuildBench(); break;
 	case EScreen::CanDebrief: W = BuildCanDebrief(); break;
+	case EScreen::Pause: W = BuildPause(); break;
 	}
 	Root->SetContent(W);
 	if (PartsBox.IsValid()) PartsBox->SetScrollOffset(PartsScroll);
@@ -429,6 +431,7 @@ TSharedRef<SWidget> SISGameUI::BuildTitle()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sandbox: design anything"), [this]() { StartMission(ISData::Missions().Num() - 1); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Sat-o-pedia: real spacecraft"), [this]() { Go(EScreen::Pedia); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); }, 0, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Settings (graphics, mouse)"), [this]() { Screen = EScreen::Pause; bDirty = true; }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Quit"), [this]() { if (PC.IsValid()) PC->ConsoleCommand(TEXT("quit")); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 14, 0, 0)
 					[
@@ -1245,6 +1248,54 @@ TSharedRef<SWidget> SISGameUI::BuildCanDebrief()
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Build a better CanSat (try again)"), [this, WW]() { if (WW.IsValid()) WW->StartCanSatOrder(WW->MissionIdx); if (IPC()) IPC()->ClosePanel(); }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Next order (order board)  >"), [this]() { MissionIdx = FMath::Min(MissionIdx + 1, ISData::Missions().Num() - 1); ShowOrders(); }, 1, 14)])
 				]
+			]
+		];
+}
+
+// ----------------------------------------------------------------------------------------------- PAUSE / SETTINGS
+TSharedRef<SWidget> SISGameUI::BuildPause()
+{
+	AISPlayerController* P = IPC();
+	if (!P) return SNullWidget::NullWidget;
+	auto Row = [this](const FString& Label, TFunction<FString()> Value, TFunction<void()> Minus, TFunction<void()> Plus)
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[Txt(Label, 15, CText)]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4)[Btn(TEXT("-"), Minus, 0, 15)]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0)
+			[
+				SNew(SBox).WidthOverride(70).HAlign(HAlign_Center)
+				[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 15)).ColorAndOpacity(CAccent).Text_Lambda([Value]() { return FText::FromString(Value()); })]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4)[Btn(TEXT("+"), Plus, 0, 15)];
+	};
+	return SNew(SOverlay)
+		+ SOverlay::Slot()[SNew(SBorder).BorderImage(&WhiteBrush).BorderBackgroundColor(FLinearColor(0, 0, 0, 0.55f))]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+		[
+			SNew(SBox).WidthOverride(520)
+			[
+				Panel(SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 14)[Txt(TEXT("PAUSED"), 28, CText, true)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Row(TEXT("Mouse sensitivity"), [P]() { return ISSim::Fmt(P->MouseSens, 2); },
+						[P]() { P->MouseSens = FMath::Max(0.1f, P->MouseSens - 0.1f); P->SaveSettings(); }, [P]() { P->MouseSens = FMath::Min(6.f, P->MouseSens + 0.1f); P->SaveSettings(); })]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Row(TEXT("Field of view"), [P]() { return ISSim::Fmt(P->Fov, 0); },
+						[P]() { P->Fov = FMath::Max(60.f, P->Fov - 5.f); P->SaveSettings(); }, [P]() { P->Fov = FMath::Min(120.f, P->Fov + 5.f); P->SaveSettings(); })]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Row(TEXT("Graphics"), [P]() { return AISPlayerController::GraphicsName(P->Graphics); },
+						[P]() { P->Graphics = FMath::Max(0, P->Graphics - 1); P->ApplyGraphics(); P->SaveSettings(); }, [P]() { P->Graphics = FMath::Min(3, P->Graphics + 1); P->ApplyGraphics(); P->SaveSettings(); })]
+					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("Low (low-poly) runs on laptops without a graphics card. Trees and grass density apply after re-entering the world."), 11, CDim)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
+					[
+						SNew(SCheckBox)
+						.IsChecked_Lambda([P]() { return P->bInvertY ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+						.OnCheckStateChanged_Lambda([P](ECheckBoxState S) { P->bInvertY = S == ECheckBoxState::Checked; P->SaveSettings(); })
+						[Txt(TEXT("Invert mouse Y"), 15, CText)]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 16, 0, 4)[Btn(TEXT("Resume"), [this]() { if (InWorld()) { if (IPC()) IPC()->ClosePanel(); } else Go(EScreen::Title); }, 1, 16)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Order board"), [this]() { ShowOrders(); }, 0, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Main menu"), [this]() { if (IPC()) IPC()->EnterMenu(); Go(EScreen::Title); }, 0, 14)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 0)[Txt(TEXT("WASD move  |  Mouse look  |  SHIFT faster  |  SPACE hover up  |  CTRL/C hover low  |  E interact  |  F chase cam  |  ESC pause"), 11, CDim)],
+					24.f)
 			]
 		];
 }

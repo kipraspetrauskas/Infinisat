@@ -16,6 +16,8 @@ namespace
 		Gold(0.85f, 0.65f, 0.2f), Silver(0.8f, 0.8f, 0.82f), Copper(0.75f, 0.38f, 0.18f), Orange(1.f, 0.35f, 0.05f), White(0.92f, 0.92f, 0.94f);
 }
 
+int32 ISQuality::Level = 2;
+
 namespace ISMat
 {
 	UMaterialInterface* Color() { static UMaterialInterface* M = Rooted<UMaterialInterface>(TEXT("/Game/Infinisat/Materials/M_IS_Color.M_IS_Color")); return M; }
@@ -117,6 +119,24 @@ namespace ISBuild
 	float CanSatPart(UObject* O, USceneComponent* P, FName Id, const FVector& B, FISModel* M)
 	{
 		const FString S = Id.ToString();
+		// real component models (KiCad library, converted in Autodesk Fusion) when available
+		static const TMap<FString, FString> Cad = { { TEXT("cpu_ard"), TEXT("esp32_wroom32") }, { TEXT("com_433"), TEXT("radio_zeta433") },
+			{ TEXT("pl_temp"), TEXT("dht11") }, { TEXT("bat_aa"), TEXT("battery_18650") }, { TEXT("ex_wires"), TEXT("header_1x15") }, { TEXT("ex_buzzer"), TEXT("buzzer") } };
+		if (const FString* C = Cad.Find(S))
+		{
+			const FString Path = FString::Printf(TEXT("/Game/Infinisat/CAD/%s/SM_%s.SM_%s"), **C, **C, **C);
+			if (UStaticMesh* Mesh = ISMat::Mesh(Path))
+			{
+				const bool bEsp = S == TEXT("cpu_ard"), bRadio = S == TEXT("com_433");
+				if (bEsp || bRadio)   // modules sit on a small carrier board
+					Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.08f), FVector(bEsp ? 2.8f : 2.4f, bEsp ? 5.2f : 2.4f, 0.16f), bEsp ? PCBBlue : PCBGreen, M);
+				Asset(O, P, Path, B + FVector(0, 0, 0.16f), 1.f, M);
+				const float H = Mesh->GetBoundingBox().GetSize().Z + 0.2f;
+				if (bRadio)   // quarter-wave whip: 17.3 cm at 433 MHz
+					Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 8.65f), FVector(0.08f, 0.08f, 17.3f), Silver, M, FRotator::ZeroRotator, 1.f, 0.2f);
+				return H;
+			}
+		}
 		if (S == TEXT("bat_aa"))
 		{
 			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.15f), FVector(5.4f, 3.1f, 0.3f), Chip, M);

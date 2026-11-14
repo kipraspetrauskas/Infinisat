@@ -26,10 +26,11 @@ public:
 	void ShowOrders();
 	void ShowTitle();
 	void ShowCanSatDebrief();
+	void ShowPause();
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
 private:
-	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief };
+	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause };
 
 	// navigation / state changes (deferred rebuild)
 	void Go(EScreen S);
@@ -54,6 +55,7 @@ private:
 	TSharedRef<SWidget> BuildPlay();
 	TSharedRef<SWidget> BuildBench();
 	TSharedRef<SWidget> BuildCanDebrief();
+	TSharedRef<SWidget> BuildPause();
 	class AISPlayerController* IPC() const;
 	class AISHomeWorld* HW() const;
 	bool InWorld() const;

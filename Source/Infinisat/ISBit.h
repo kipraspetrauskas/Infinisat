@@ -30,7 +30,10 @@ public:
 	UPROPERTY() USceneComponent* HoldRoot;   // held objects attach here (between the hands)
 	bool bHolding = false;
 
+	float WalkSpeed = 360.f;
+	float SprintSpeed = 620.f;
+	float EyeHeight = 62.f;
+
 private:
-	FISModel HandModel;
-	float T = 0.f, ReachT = 0.f;
+	float T = 0.f, ReachT = 0.f, CamZ = 0.f, Roll = 0.f;
 };

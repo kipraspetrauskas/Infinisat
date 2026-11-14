@@ -81,6 +81,9 @@ struct FISEval
 
 namespace ISSim
 {
+	extern int32 Difficulty;                 // 0 Easy, 1 Normal, 2 Hard
+	FString DifficultyName(int32 D);
+	FISMission ApplyDifficulty(const FISMission& M);
 	FISEval Evaluate(const FISDesign& D, const FISMission& M);
 	FString Fmt(double V, int32 Decimals = 1);
 	FString FmtMass(double Kg);
@@ -125,6 +128,7 @@ public:
 
 	double Day = 0.0;
 	double EndDay = 1.0;
+	int32 GoodChoices = 0, TotalChoices = 0;
 	double DataGb = 0.0;
 	double Battery = 1.0;   // 0..1 for telemetry display
 	double Health = 1.0;

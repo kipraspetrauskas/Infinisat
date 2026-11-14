@@ -89,6 +89,25 @@ private:
 	float Warp = 1.f;
 	int32 RunSeed = 1;
 	TArray<int32> QuizAnswers;
+	// team play + scoring
+	int32 TeamSize = 1, ActivePlayer = 0;
+	TArray<bool> Ready;
+	FString TeamName = TEXT("Team Infinisat");
+	bool bAckFinish = false, bRecorded = false;
+	FString LastReportPath, Notice;
+	struct FISRole { FString Name; TArray<EISCat> Cats; bool bLaunch = false; FString Goal; int32 GoalId = 0; };
+	TArray<FISRole> Roles() const;
+	bool OwnsCat(EISCat C) const;
+	bool OwnsLaunch() const;
+	bool RoleGoalMet(int32 GoalId) const;
+	struct FISScore { float Success = 0, Science = 0, Efficiency = 0, Decisions = 0, Team = 0, Total = 0; };
+	FISScore ComputeScore() const;
+	FString DesignCode() const;
+	bool ApplyDesignCode(const FString& Code);
+	void RecordScore(const FISScore& S);
+	TArray<FString> Leaderboard() const;
+	FString WriteReport(const FISScore& S);
+	TSharedRef<SWidget> BuildTeamBar();
 	int32 PediaSel = 0;
 	float PartsScroll = 0.f, BudgetScroll = 0.f;
 	TSharedPtr<SScrollBox> PartsBox, BudgetBox;

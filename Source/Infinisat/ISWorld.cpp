@@ -1,4 +1,6 @@
 #include "ISWorld.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "ISBit.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -380,6 +382,7 @@ void AISHomeWorld::BeginPlay()
 	BuildField();
 	BuildBackyard();
 	SpawnHunt();
+	if (FParse::Param(FCommandLine::Get(), TEXT("ISValidate"))) ValidateLayout();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -409,7 +412,7 @@ void AISHomeWorld::SetActive(bool bOn)
 
 FTransform AISHomeWorld::SpawnPoint() const
 {
-	return FTransform(FRotator(0, 110.f, 0), FVector(400.f, 820.f, 100.f));
+	return FTransform(FRotator(0, 100.f, 0), FVector(380.f, 830.f, 100.f));
 }
 
 // =====================================================================================================

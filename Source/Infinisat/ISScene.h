@@ -28,6 +28,13 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	void SetActive(bool bOn);
+	// launch animation + follow camera
+	void StartLaunch(bool bHeavy);
+	void SkipLaunch() { if (LaunchT >= 0.f) LaunchT = 0.999f; }
+	bool IsLaunching() const { return LaunchT >= 0.f; }
+	FString LaunchCaption() const;
+	void ToggleMap();
+	bool IsFollowing() const { return bFollow; }
 	void ShowTitle();
 	void ShowWorkshop(const FISDesign& D);
 	void ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FISDesign& D, int32 Fleet);
@@ -100,6 +107,11 @@ private:
 	TArray<FSwarmSat> SwarmSats;
 
 	EISView View = EISView::Title;
+	bool bFollow = true;
+	float LaunchT = -1.f;
+	float LastSatSize = 400.f, MapDist = 30000.f, PlanetRUU = 6371.f;
+	FVector LaunchSite = FVector::ZeroVector, RocketPrev = FVector::ZeroVector;
+	UPROPERTY() USceneComponent* RocketRoot = nullptr;
 	EISDest ViewDest = EISDest::LEO;
 	float ViewK = 1.f;          // uu per km in orbit views
 	float OrbitRadiusUU = 0.f;

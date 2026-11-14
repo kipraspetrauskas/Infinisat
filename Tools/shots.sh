@@ -1,6 +1,6 @@
 #!/bin/sh
 # Render each game screen to a PNG (headless review). Usage: shots.sh <outdir> name:"args" ...
-OUT="$1"; shift
+OUT="$(mkdir -p "$1" && cd "$1" && pwd)"; shift
 UE="/c/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe"
 mkdir -p "$OUT"
 for spec in "$@"; do

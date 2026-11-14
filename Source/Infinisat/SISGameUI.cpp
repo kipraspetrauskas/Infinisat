@@ -20,6 +20,12 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Notifications/SProgressBar.h"
 #include "Styling/CoreStyle.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Misc/DateTime.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "UnrealClient.h"
@@ -138,6 +144,8 @@ void SISGameUI::Construct(const FArguments& InArgs)
 	// Dev / demo shortcuts: -ISMission=2 -ISScreen=design|launch|ops|debrief|pedia|missions|help
 	int32 DevMission = -1;
 	FString DevScreen;
+	FParse::Value(FCommandLine::Get(), TEXT("ISTeam="), TeamSize);
+	FParse::Value(FCommandLine::Get(), TEXT("ISDiff="), ISSim::Difficulty);
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISMission="), DevMission)) StartMission(FMath::Clamp(DevMission, 0, ISData::Missions().Num() - 1));
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISScreen="), DevScreen))
 	{
@@ -168,7 +176,7 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 		W->Toasts.Reset();
 		if (Screen == EScreen::Bench && SeenDesignVersion != W->DesignVersion) { SeenDesignVersion = W->DesignVersion; Eval = W->Eval; bDirty = true; }
 	}
-	if (Screen == EScreen::Ops && !Ops.IsPaused() && Warp > 0)
+	if (Screen == EScreen::Ops && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
 	{
 		const double Rate = FMath::Max(Ops.EndDay / 45.0, 1e-6);
 		if (Ops.Advance(Rate * Warp * Dt)) bDirty = true;
@@ -341,6 +349,8 @@ void SISGameUI::StartMission(int32 Index)
 	InfoLine.Reset();
 	PartsScroll = BudgetScroll = 0.f;
 	Eval = ISSim::Evaluate(Design, Mission());
+	ActivePlayer = 0;
+	Ready.Init(false, TeamSize);
 	Go(EScreen::Design);
 }
 
@@ -348,9 +358,11 @@ void SISGameUI::StartOps()
 {
 	Eval = ISSim::Evaluate(Design, Mission());
 	Ops.Start(Design, Mission(), Eval, RunSeed++);
+	bAckFinish = false; bRecorded = false; LastReportPath.Reset();
 	Warp = 1.f;
 	QuizAnswers.Init(-1, Mission().Quiz.Num());
 	Go(EScreen::Ops);
+	if (Scene.IsValid()) { const FISVehicle* V = ISData::FindVehicle(Design.Vehicle); Scene->StartLaunch(V && V->CostM >= 100.f); }
 }
 
 // =====================================================================================================
@@ -408,7 +420,7 @@ TSharedRef<SWidget> SISGameUI::BuildBitTip(const FString& Text)
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("BIT says:"), 11, CAccent, true)]
+			+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("BIT says:"), 12, CAccent, true)]
 			+ SVerticalBox::Slot().AutoHeight()[Txt(Text, 13, CText)]
 		], 10.f, 1);
 }
@@ -441,7 +453,7 @@ TSharedRef<SWidget> SISGameUI::BuildTitle()
 						[Txt(TEXT("Judge / teacher mode: all chapters and parts unlocked"), 12, CText)]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 14, 0, 0)
-					[Txt(TEXT("NASA Space Apps 2026 - Space Mission Design Game.  3D models & planet textures: NASA 3D Resources (public domain). Data: NASA, USGS, NASA Earthdata, planet4589.org. Hackathon prototype, not affiliated with NASA."), 10, CDim)],
+					[Txt(TEXT("NASA Space Apps 2026 - Space Mission Design Game.  3D models & planet textures: NASA 3D Resources (public domain). Data: NASA, USGS, NASA Earthdata, planet4589.org. Hackathon prototype, not affiliated with NASA."), 12, CDim)],
 					24.f)
 			]
 		];
@@ -489,15 +501,40 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 						+ SScrollBox::Slot().Padding(0, 8)[Txt(M.Brief, 14, CText)]
 						+ SScrollBox::Slot().Padding(0, 4)[Txt(FString::Printf(TEXT("Destination: %s   |   Budget: %s   |   Life: %s"),
 							*ISData::DestName(M.Dest), M.Id == "sandbox" ? TEXT("unlimited") : *ISSim::FmtMoney(M.BudgetM), *ISSim::FmtDays(M.LifeYears * 365.25)), 12, CGold)]
-						+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(TEXT("You will learn:"), 13, CAccent, true)]
+						+ SScrollBox::Slot().Padding(0, 12, 0, 2)[Txt(TEXT("You will learn:"), 13, CAccent, true)]
 						+ SScrollBox::Slot()[Learn]
-						+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(M.RealName.IsEmpty() ? FString() : TEXT("Real-world reference: ") + M.RealName, 13, CAccent, true)]
+						+ SScrollBox::Slot().Padding(0, 12, 0, 2)[Txt(M.RealName.IsEmpty() ? FString() : TEXT("Real-world reference: ") + M.RealName, 13, CAccent, true)]
 						+ SScrollBox::Slot()[Txt(M.RealFacts, 12, CDim)]
+						+ SScrollBox::Slot().Padding(0, 12, 0, 4)[Txt(TEXT("DIFFICULTY"), 13, CAccent, true)]
+						+ SScrollBox::Slot()
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("Easy"), [this]() { ISSim::Difficulty = 0; bDirty = true; }, ISSim::Difficulty == 0 ? 2 : 0, 13)]
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("Normal"), [this]() { ISSim::Difficulty = 1; bDirty = true; }, ISSim::Difficulty == 1 ? 2 : 0, 13)]
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("Hard"), [this]() { ISSim::Difficulty = 2; bDirty = true; }, ISSim::Difficulty == 2 ? 2 : 0, 13)]
+						]
+						+ SScrollBox::Slot()[Txt(ISSim::Difficulty == 0 ? TEXT("Easy: 50% more budget, relaxed pointing and data targets, fewer failures.") : ISSim::Difficulty == 2 ? TEXT("Hard: 20% less budget and twice as many component failures. Scores x1.25.") : TEXT("Normal: realistic budget and failure rates."), 12, CDim)]
+						+ SScrollBox::Slot().Padding(0, 10, 0, 4)[Txt(TEXT("PLAYERS (same screen, take turns)"), 13, CAccent, true)]
+						+ SScrollBox::Slot()
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("Solo"), [this]() { TeamSize = 1; bDirty = true; }, TeamSize == 1 ? 2 : 0, 13)]
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("2 players"), [this]() { TeamSize = 2; bDirty = true; }, TeamSize == 2 ? 2 : 0, 13)]
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("3 players"), [this]() { TeamSize = 3; bDirty = true; }, TeamSize == 3 ? 2 : 0, 13)]
+							+ SHorizontalBox::Slot().AutoWidth().Padding(2)[Btn(TEXT("4 players"), [this]() { TeamSize = 4; bDirty = true; }, TeamSize == 4 ? 2 : 0, 13)]
+						]
+						+ SScrollBox::Slot()[Txt([this]() { FString S; const TArray<FISRole> R = Roles(); for (int32 i = 0; i < R.Num(); ++i) S += FString::Printf(TEXT("Player %d: %s  -  goal: %s\n"), i + 1, *R[i].Name, *R[i].Goal); return TeamSize > 1 ? S : FString(TEXT("Solo: you make every decision.")); }(), 12, CDim)]
+						+ SScrollBox::Slot().Padding(0, 6)
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)[Txt(TEXT("Team / player name:"), 13, CText)]
+							+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(SEditableTextBox).Text(FText::FromString(TeamName)).OnTextCommitted_Lambda([this](const FText& T, ETextCommit::Type) { TeamName = T.ToString(); }).OnTextChanged_Lambda([this](const FText& T) { TeamName = T.ToString(); })]
+						]
 						+ SScrollBox::Slot().Padding(0, 14, 0, 0)[Btn(TEXT("Accept order  >"), [this]() {
 							if (Mission().Id == "m0" && HW() && IPC()) { HW()->StartCanSatOrder(MissionIdx); IPC()->EnterWorld(); }
 							else { if (IPC() && InWorld()) IPC()->EnterMenu(); StartMission(MissionIdx); }
 						}, 1, 16)]
-						+ SScrollBox::Slot().Padding(0, 6)[Txt(M.Id == "m0" ? TEXT("Hands-on: you build it on the garage workbench, launch it in the field and track it down.") : TEXT("Engineering view: design in the satellite workshop (clean room + spaceport scenes are next in development)."), 11, CDim)],
+						+ SScrollBox::Slot().Padding(0, 6)[Txt(M.Id == "m0" ? TEXT("Hands-on: you build it on the garage workbench, launch it in the field and track it down.") : TEXT("Engineering view: design in the satellite workshop (clean room + spaceport scenes are next in development)."), 12, CDim)],
 						18.f)
 				]
 			]
@@ -522,7 +559,7 @@ TSharedRef<SWidget> SISGameUI::BuildBudgets(bool bCompact)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)[Txt(L.Status == EISStatus::Ok ? TEXT("OK") : L.Status == EISStatus::Fail ? TEXT("X") : L.Status == EISStatus::Warn ? TEXT("!") : TEXT("i"), 12, StatusColor(L.Status), true)]
 				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Label)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CText)]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6, 0)[SNew(STextBlock).Text(FText::FromString(L.Value)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 12)).ColorAndOpacity(StatusColor(L.Status))]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Limit.IsEmpty() ? FString() : TEXT("/ ") + L.Limit)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 11)).ColorAndOpacity(CDim)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Limit.IsEmpty() ? FString() : TEXT("/ ") + L.Limit)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CDim)]
 			]
 		];
 		if (bSel)
@@ -568,7 +605,7 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 	{
 		if (P.Cat != Cat) continue;
 		const bool bSel = Design.Has(P.Id);
-		const bool bOpen = IsUnlocked(P);
+		const bool bOpen = IsUnlocked(P) && OwnsCat(P.Cat);
 		FString Stats = ISSim::FmtMass(P.MassKg) + TEXT("  |  ") + ISSim::FmtMoney(P.CostM);
 		if (P.PowerW > 0) Stats += FString::Printf(TEXT("  |  uses %s W"), *ISSim::Fmt(P.PowerW, 1));
 		if (P.SolarW > 0) Stats += FString::Printf(TEXT("  |  +%s W"), *ISSim::Fmt(P.SolarW, 0));
@@ -599,7 +636,7 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()[Txt((bSel ? TEXT("> ") : TEXT("")) + P.Name + (bOpen ? FString() : FString::Printf(TEXT("  (unlocks Ch.%d)"), P.Unlock)), 12, CText, bSel)]
-				+ SVerticalBox::Slot().AutoHeight()[Txt(Stats, 10, CDim)]
+				+ SVerticalBox::Slot().AutoHeight()[Txt(Stats, 12, CDim)]
 			]
 		];
 	}
@@ -640,6 +677,7 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("DESIGN  -  ") + M.Title)]
+		+ SVerticalBox::Slot().AutoHeight().Padding(12, 0, 12, 8)[BuildTeamBar()]
 		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 0)
 		[
 			SNew(SHorizontalBox)
@@ -677,6 +715,8 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Mission briefing"), [this]() { Go(EScreen::Missions); })]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Copy design code (share)"), [this]() { FPlatformApplicationMisc::ClipboardCopy(*DesignCode()); Notice = TEXT("Design code copied: paste it to a teammate or another team to compare."); bDirty = true; }, 0, 12)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Paste design code"), [this]() { FString C; FPlatformApplicationMisc::ClipboardPaste(C); Notice = ApplyDesignCode(C) ? TEXT("Design loaded from the clipboard.") : TEXT("The clipboard does not contain a design code for this mission."); Recompute(); }, 0, 12)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2)[Btn(TEXT("Next: choose rocket  >"), [this]() { Go(EScreen::Launch); }, 1, 14)]
 				]
 			]
@@ -700,12 +740,13 @@ TSharedRef<SWidget> SISGameUI::BuildLaunch()
 		[
 			SNew(SButton)
 			.ButtonStyle(Design.Vehicle == Id ? &StyleSelected : &StyleNormal)
+			.IsEnabled(OwnsLaunch())
 			.OnClicked_Lambda([this, Id]() { Design.Vehicle = Id; Recompute(); return FReply::Handled(); })
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()[Txt(V.Name, 13, CText, true)]
-				+ SVerticalBox::Slot().AutoHeight()[Txt(FString::Printf(TEXT("%s  |  %s  |  success %s%%"), *V.Site, *Price, *ISSim::Fmt(V.Reliability * 100, 0)), 10, CDim)]
-				+ SVerticalBox::Slot().AutoHeight()[Txt(Cap > 0 ? FString::Printf(TEXT("Can lift %s to %s  ->  %s"), *ISSim::FmtMass(Cap), *ISData::DestName(Dest), bFits ? TEXT("FITS") : TEXT("too heavy")) : FString::Printf(TEXT("Cannot reach %s"), *ISData::DestName(Dest)), 11, bFits ? COk : CFail)]
+				+ SVerticalBox::Slot().AutoHeight()[Txt(FString::Printf(TEXT("%s  |  %s  |  success %s%%"), *V.Site, *Price, *ISSim::Fmt(V.Reliability * 100, 0)), 12, CDim)]
+				+ SVerticalBox::Slot().AutoHeight()[Txt(Cap > 0 ? FString::Printf(TEXT("Can lift %s to %s  ->  %s"), *ISSim::FmtMass(Cap), *ISData::DestName(Dest), bFits ? TEXT("FITS") : TEXT("too heavy")) : FString::Printf(TEXT("Cannot reach %s"), *ISData::DestName(Dest)), 12, bFits ? COk : CFail)]
 			]
 		];
 	}
@@ -745,7 +786,8 @@ TSharedRef<SWidget> SISGameUI::BuildLaunch()
 						+ SVerticalBox::Slot().FillHeight(1.f)[SAssignNew(BudgetBox, SScrollBox) + SScrollBox::Slot()[BuildBudgets(true)]]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)[Block]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("<  Back to design"), [this]() { Go(EScreen::Design); })]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("LAUNCH!"), [this]() { StartOps(); }, 1, 20, Eval.bCanLaunch)])
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[BuildTeamBar()]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("LAUNCH!"), [this]() { StartOps(); }, 1, 20, Eval.bCanLaunch && (TeamSize <= 1 || !Ready.Contains(false)))])
 				]
 			]
 		];
@@ -764,7 +806,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[Txt(FString::Printf(TEXT("T+%s   %s"), *ISSim::FmtDays(E.Day), *E.Text), 12, C, E.Type != EISEvt::Info)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(14, 0, 0, 0)[Txt(E.Edu, 10, CDim)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(14, 0, 0, 0)[Txt(E.Edu, 12, CDim)]
 		];
 	}
 
@@ -787,7 +829,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("MISSION CLOCK"), 12, CAccent, true)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 22)).ColorAndOpacity(CText)
 								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("T+ %s"), *ISSim::FmtDays(Ops.Day))); })]
-							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("of ") + ISSim::FmtDays(Ops.EndDay) + TEXT(" planned"), 11, CDim)]
+							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("of ") + ISSim::FmtDays(Ops.EndDay) + TEXT(" planned"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
 							[
 								SNew(SHorizontalBox)
@@ -796,18 +838,19 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("x3"), 3.f)]
 								+ SHorizontalBox::Slot().AutoWidth().Padding(2)[WarpBtn(TEXT("x10"), 10.f)]
 							]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Battery"), 11, CDim)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Battery"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)Ops.Battery); }).FillColorAndOpacity(COk)]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Spacecraft health"), 11, CDim)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Spacecraft health"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>(Ops.bMissionLost ? 0.f : (float)Ops.Health); }).FillColorAndOpacity(CAccent)]]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Mission progress"), 11, CDim)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Mission progress"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)(Ops.Day / FMath::Max(1e-9, Ops.EndDay))); }).FillColorAndOpacity(CGold)]]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
 							[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
 								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("Data downloaded: %s Gb\nLink: %s kbps  |  contact %s min/day\nPower avg: %s W for %s W load"),
 									*ISSim::Fmt(Ops.DataGb, 2), *ISSim::Fmt(Eval.LinkKbps, 1), *ISSim::Fmt(Eval.ContactMin, 0), *ISSim::Fmt(Eval.AvgGenW, 0), *ISSim::Fmt(Eval.LoadW, 0))); })]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("Tip: drag with the mouse to rotate, wheel to zoom. The satellite is drawn much bigger than real size so you can see it."), 10, CDim)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("Tip: drag with the mouse to rotate, wheel to zoom. The satellite is drawn much bigger than real size so you can see it."), 12, CDim)]
 							+ SVerticalBox::Slot().FillHeight(1.f)[SNew(SSpacer)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Toggle follow camera / orbit map"), [this]() { if (Scene.IsValid()) Scene->ToggleMap(); }, 0, 13)]
 							+ SVerticalBox::Slot().AutoHeight()[Ops.IsFinished() ? Btn(TEXT("Debrief  >"), [this]() { Go(EScreen::Debrief); }, 1, 16) : Btn(TEXT("Abort and redesign"), [this]() { Go(EScreen::Design); })])
 					]
 				]
@@ -824,6 +867,39 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 				]
 			]
 		];
+
+	// launch commentary (top centre)
+	O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 90, 0, 0)
+	[
+		SNew(SBorder).BorderImage(&PanelBrush).BorderBackgroundColor(CPanel2).Padding(14)
+		.Visibility_Lambda([this]() { return Scene.IsValid() && Scene->IsLaunching() ? EVisibility::Visible : EVisibility::Collapsed; })
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 20)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->LaunchCaption() : FString()); })]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[Btn(TEXT("Skip launch"), [this]() { if (Scene.IsValid()) Scene->SkipLaunch(); }, 0, 12)]
+		]
+	];
+	// big, unmissable end-of-mission panel (friend feedback: failures were easy to miss)
+	if (Ops.IsFinished() && !bAckFinish)
+	{
+		FString Why;
+		for (int32 i = Ops.Log.Num() - 1; i >= 0; --i)
+			if (Ops.Log[i].Type == EISEvt::Fatal) { Why = Ops.Log[i].Text + TEXT("\n\n") + Ops.Log[i].Edu; break; }
+		const bool bLost = Ops.bMissionLost || Ops.bLaunchFailed;
+		O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+		[
+			SNew(SBox).WidthOverride(680)
+			[
+				Panel(SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[Txt(bLost ? TEXT("MISSION LOST") : TEXT("MISSION COMPLETE"), 26, bLost ? CFail : COk, true)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)[Txt(FString::Printf(TEXT("After %s of a planned %s."), *ISSim::FmtDays(bLost ? FMath::Max(0.0, Ops.LostDay) : Ops.EndDay), *ISSim::FmtDays(Ops.EndDay)), 15, CText)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Txt(bLost ? (Why.IsEmpty() ? Ops.Debrief : Why) : Ops.Debrief, 15, CText)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 0)[Btn(TEXT("See the debrief: what happened and how to fix it  >"), [this]() { bAckFinish = true; Go(EScreen::Debrief); }, 1, 16)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Read the event log first"), [this]() { bAckFinish = true; bDirty = true; }, 0, 13)],
+					22.f, 1)
+			]
+		];
+	}
 
 	if (Ops.AwaitingChoice())
 	{
@@ -879,6 +955,22 @@ TSharedRef<SWidget> SISGameUI::BuildDebrief()
 			Quiz->AddSlot().AutoHeight().Padding(0, 2)[Txt((Picked == Q.Correct ? TEXT("Correct! ") : TEXT("Not quite. ")) + Q.Why, 12, Picked == Q.Correct ? COk : CWarn)];
 	}
 
+	// score breakdown, team goals, leaderboard
+	const FISScore Sc = ComputeScore();
+	if (!bRecorded && Ops.IsFinished()) { bRecorded = true; RecordScore(Sc); }
+	FString ScoreText = FString::Printf(TEXT("SCORE %d  (%s)\nMission success %d/50   Science value %d/20\nResource efficiency %d/15   Decisions %d/15"),
+		FMath::RoundToInt(Sc.Total), *ISSim::DifficultyName(ISSim::Difficulty), FMath::RoundToInt(Sc.Success), FMath::RoundToInt(Sc.Science), FMath::RoundToInt(Sc.Efficiency), FMath::RoundToInt(Sc.Decisions));
+	if (TeamSize > 1)
+	{
+		ScoreText += FString::Printf(TEXT("   Team coordination %d/20\n\nTEAM GOALS (competing priorities):"), FMath::RoundToInt(Sc.Team));
+		for (const FISRole& R : Roles()) ScoreText += FString::Printf(TEXT("\n[%s] %s: %s"), RoleGoalMet(R.GoalId) ? TEXT("x") : TEXT(" "), *R.Name, *R.Goal);
+	}
+	FString Board = TEXT("LEADERBOARD (this mission)\n");
+	{
+		const TArray<FString> L = Leaderboard();
+		for (int32 i = 0; i < L.Num(); ++i) Board += FString::Printf(TEXT("%d. %s\n"), i + 1, *L[i]);
+	}
+
 	// compare table
 	const FString YourLife = Ops.bMissionLost ? ISSim::FmtDays(FMath::Max(0.0, Ops.LostDay)) : ISSim::FmtDays(Ops.EndDay);
 	const FString Compare = FString::Printf(TEXT("YOUR DESIGN\nMass: %s   |   Power: %s W avg   |   Cost: %s\nOperated: %s   |   Data returned: %s Gb\n\nREAL MISSION: %s\n%s"),
@@ -899,9 +991,10 @@ TSharedRef<SWidget> SISGameUI::BuildDebrief()
 						SNew(SScrollBox)
 						+ SScrollBox::Slot()[Txt(Stars + FString::Printf(TEXT("   %s%% of objectives"), *ISSim::Fmt(Ops.ScorePct, 0)), 26, CGold, true)]
 						+ SScrollBox::Slot().Padding(0, 6)[Txt(Ops.Debrief, 14, CText)]
-						+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(TEXT("OBJECTIVES"), 13, CAccent, true)]
+							+ SScrollBox::Slot().Padding(0, 6)[Panel(Txt(ScoreText, 14, CGold), 10.f, 1)]
+						+ SScrollBox::Slot().Padding(0, 12, 0, 2)[Txt(TEXT("OBJECTIVES"), 13, CAccent, true)]
 						+ SScrollBox::Slot()[BuildObjectives(Ops.FinalObjectives)]
-						+ SScrollBox::Slot().Padding(0, 10, 0, 2)[Txt(TEXT("QUICK CHECK"), 13, CAccent, true)]
+						+ SScrollBox::Slot().Padding(0, 12, 0, 2)[Txt(TEXT("QUICK CHECK"), 13, CAccent, true)]
 						+ SScrollBox::Slot()[Quiz])
 				]
 			]
@@ -913,7 +1006,8 @@ TSharedRef<SWidget> SISGameUI::BuildDebrief()
 					Panel(
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("COMPARE WITH REALITY"), 13, CAccent, true)]
-						+ SVerticalBox::Slot().FillHeight(1.f).Padding(0, 6)[SNew(SScrollBox) + SScrollBox::Slot()[Txt(Compare, 12, CText)]]
+						+ SVerticalBox::Slot().FillHeight(1.f).Padding(0, 6)[SNew(SScrollBox) + SScrollBox::Slot()[Txt(Compare, 12, CText)] + SScrollBox::Slot().Padding(0, 10)[Txt(Board, 13, CText)]]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(LastReportPath.IsEmpty() ? TEXT("Save mission report") : TEXT("Report saved - open folder"), [this, Sc]() { if (LastReportPath.IsEmpty()) LastReportPath = WriteReport(Sc); FPlatformProcess::ExploreFolder(*FPaths::GetPath(LastReportPath)); bDirty = true; }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Improve the design"), [this]() { Go(EScreen::Design); }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Fly the same design again"), [this]() { StartOps(); }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(bHasNext ? TEXT("Next chapter  >") : TEXT("Order board"), [this, bHasNext]()
@@ -945,7 +1039,7 @@ TSharedRef<SWidget> SISGameUI::BuildPedia()
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[Txt(E.Name, 18, CAccent, true)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6)[Txt(E.Facts, 13, CText)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6)[Txt(TEXT("Drag to rotate, mouse wheel to zoom."), 10, CDim)], 16.f)
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6)[Txt(TEXT("Drag to rotate, mouse wheel to zoom."), 12, CDim)], 16.f)
 				]
 			]
 		];
@@ -1003,14 +1097,14 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 			SNew(SBox).WidthOverride(430)
 			[
 				Panel(SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("OBJECTIVE"), 11, CAccent, true)]
+					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("OBJECTIVE"), 12, CAccent, true)]
 					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 14)).ColorAndOpacity(CText).AutoWrapText(true)
 						.Text_Lambda([WW]() { return FText::FromString(WW.IsValid() ? WW->Objective() : FString()); })], 10.f)
 			]
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(16)
 		[
-			Panel(Txt(TEXT("WASD move   Mouse look   SHIFT float fast   SPACE hover up\nE interact   F chase camera (in flight)   ESC menu"), 11, CDim), 8.f)
+			Panel(Txt(TEXT("WASD move   Mouse look   SHIFT float fast   SPACE hover up\nE interact   F chase camera (in flight)   ESC menu"), 12, CDim), 8.f)
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(16)
 		[
@@ -1043,7 +1137,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 				.Visibility_Lambda([WW]() { return WW.IsValid() && (WW->IsTracking() || WW->Stage == EISStage::Countdown) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("FLIGHT TELEMETRY  (cyan = altitude, orange = temperature)"), 11, CAccent, true)]
+					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("FLIGHT TELEMETRY  (cyan = altitude, orange = temperature)"), 12, CAccent, true)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)
 					[
 						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Mono", 12)).ColorAndOpacity(CText)
@@ -1057,7 +1151,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 						})
 					]
 					+ SVerticalBox::Slot().AutoHeight()[SNew(SISTelemetryGraph).World(WW)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("HANDHELD RECEIVER 433 MHz (Yagi antenna)"), 11, CAccent, true)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("HANDHELD RECEIVER 433 MHz (Yagi antenna)"), 12, CAccent, true)]
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Mono", 13)).ColorAndOpacity(CText).AutoWrapText(true)
@@ -1114,7 +1208,7 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 						+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("CLICK a part on the bench to put it into the can. Click it in this list to take it out again. Parts stack inside: watch the height!"), 12, CText)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 2)[Txt(TEXT("INSIDE THE CAN"), 12, CAccent, true)]
 						+ SVerticalBox::Slot().AutoHeight()[Installed]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("PART INFO (hover a part)"), 12, CAccent, true)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 2)[Txt(TEXT("PART INFO (hover a part)"), 12, CAccent, true)]
 						+ SVerticalBox::Slot().FillHeight(1.f)
 						[
 							SNew(SScrollBox) + SScrollBox::Slot()
@@ -1283,7 +1377,7 @@ TSharedRef<SWidget> SISGameUI::BuildPause()
 						[P]() { P->Fov = FMath::Max(60.f, P->Fov - 5.f); P->SaveSettings(); }, [P]() { P->Fov = FMath::Min(120.f, P->Fov + 5.f); P->SaveSettings(); })]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Row(TEXT("Graphics"), [P]() { return AISPlayerController::GraphicsName(P->Graphics); },
 						[P]() { P->Graphics = FMath::Max(0, P->Graphics - 1); P->ApplyGraphics(); P->SaveSettings(); }, [P]() { P->Graphics = FMath::Min(3, P->Graphics + 1); P->ApplyGraphics(); P->SaveSettings(); })]
-					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("Low (low-poly) runs on laptops without a graphics card. Trees and grass density apply after re-entering the world."), 11, CDim)]
+					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("Low (low-poly) runs on laptops without a graphics card. Trees and grass density apply after re-entering the world."), 12, CDim)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
 					[
 						SNew(SCheckBox)
@@ -1294,8 +1388,200 @@ TSharedRef<SWidget> SISGameUI::BuildPause()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 16, 0, 4)[Btn(TEXT("Resume"), [this]() { if (InWorld()) { if (IPC()) IPC()->ClosePanel(); } else Go(EScreen::Title); }, 1, 16)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Order board"), [this]() { ShowOrders(); }, 0, 14)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)[Btn(TEXT("Main menu"), [this]() { if (IPC()) IPC()->EnterMenu(); Go(EScreen::Title); }, 0, 14)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 0)[Txt(TEXT("WASD move  |  Mouse look  |  SHIFT faster  |  SPACE hover up  |  CTRL/C hover low  |  E interact  |  F chase cam  |  ESC pause"), 11, CDim)],
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 12, 0, 0)[Txt(TEXT("WASD move  |  Mouse look  |  SHIFT faster  |  SPACE hover up  |  CTRL/C hover low  |  E interact  |  F chase cam  |  ESC pause"), 12, CDim)],
 					24.f)
 			]
 		];
+}
+
+// =====================================================================================================
+//  team play, scoring, leaderboard, reports, shareable design codes
+// =====================================================================================================
+TArray<SISGameUI::FISRole> SISGameUI::Roles() const
+{
+	using C = EISCat;
+	auto R = [](const TCHAR* N, TArray<EISCat> Cats, bool bLaunch, const TCHAR* Goal, int32 Id) { FISRole X; X.Name = N; X.Cats = Cats; X.bLaunch = bLaunch; X.Goal = Goal; X.GoalId = Id; return X; };
+	TArray<FISRole> L;
+	switch (TeamSize)
+	{
+	case 2:
+		L.Add(R(TEXT("Mission Planner & Spacecraft Engineer"), { C::Bus, C::Power, C::Battery, C::ADCS, C::Propulsion, C::Computer, C::Thermal }, true, TEXT("keep total cost under 85% of the budget"), 0));
+		L.Add(R(TEXT("Science & Communications Lead"), { C::Payload, C::Extra, C::Comms, C::Ground }, false, TEXT("return 50% more data than required, or fly a bonus instrument"), 2));
+		break;
+	case 3:
+		L.Add(R(TEXT("Mission Planner"), { C::Propulsion, C::Ground }, true, TEXT("keep total cost under 85% of the budget"), 0));
+		L.Add(R(TEXT("Spacecraft Engineer"), { C::Bus, C::Power, C::Battery, C::ADCS, C::Computer, C::Thermal }, false, TEXT("at least 75% chance that every part survives"), 1));
+		L.Add(R(TEXT("Science & Comms Lead"), { C::Payload, C::Extra, C::Comms }, false, TEXT("return 50% more data than required, or fly a bonus instrument"), 2));
+		break;
+	case 4:
+		L.Add(R(TEXT("Mission Planner"), { C::Propulsion }, true, TEXT("keep total cost under 85% of the budget"), 0));
+		L.Add(R(TEXT("Spacecraft Engineer"), { C::Bus, C::Power, C::Battery, C::ADCS, C::Computer, C::Thermal }, false, TEXT("at least 75% chance that every part survives"), 1));
+		L.Add(R(TEXT("Science Lead"), { C::Payload, C::Extra }, false, TEXT("return 50% more data than required, or fly a bonus instrument"), 2));
+		L.Add(R(TEXT("Comms & Resources Manager"), { C::Comms, C::Ground }, false, TEXT("15% mass margin on the rocket and 10% spare power"), 3));
+		break;
+	default:
+		break;
+	}
+	return L;
+}
+
+bool SISGameUI::OwnsCat(EISCat C) const
+{
+	if (TeamSize <= 1) return true;
+	const TArray<FISRole> L = Roles();
+	return L.IsValidIndex(ActivePlayer) && L[ActivePlayer].Cats.Contains(C);
+}
+
+bool SISGameUI::OwnsLaunch() const
+{
+	if (TeamSize <= 1) return true;
+	const TArray<FISRole> L = Roles();
+	return L.IsValidIndex(ActivePlayer) && L[ActivePlayer].bLaunch;
+}
+
+bool SISGameUI::RoleGoalMet(int32 GoalId) const
+{
+	const FISMission M = ISSim::ApplyDifficulty(Mission());
+	switch (GoalId)
+	{
+	case 0: return Eval.TotalCostM <= 0.85f * M.BudgetM;
+	case 1: return Eval.RelSat >= 0.75f;
+	case 2:
+	{
+		bool bBonus = false;
+		for (FName T : M.Bonus) if (Design.HasTag(T)) bBonus = true;
+		return bBonus || (M.MinDataGbDay > 0 && Eval.DataDownGb >= 1.5f * M.MinDataGbDay);
+	}
+	case 3: return Eval.VehicleCap > 0 && Eval.TotalKg <= 0.85f * Eval.VehicleCap && Eval.AvgGenW >= 1.1f * Eval.LoadW / 0.85f;
+	}
+	return false;
+}
+
+TSharedRef<SWidget> SISGameUI::BuildTeamBar()
+{
+	if (TeamSize <= 1)
+		return Panel(Txt(Notice.IsEmpty() ? FString::Printf(TEXT("Solo mission  |  %s difficulty  |  every decision is yours. Watch the budgets: every part costs mass, power, money and data."), *ISSim::DifficultyName(ISSim::Difficulty)) : Notice, 13, CText), 8.f, 1);
+	const TArray<FISRole> L = Roles();
+	if (Ready.Num() != TeamSize) const_cast<SISGameUI*>(this)->Ready.Init(false, TeamSize);
+	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
+	const FISRole& Me = L[FMath::Clamp(ActivePlayer, 0, L.Num() - 1)];
+	FString Cats;
+	for (EISCat C : Me.Cats) Cats += (Cats.IsEmpty() ? TEXT("") : TEXT(", ")) + ISData::CatName(C);
+	if (Me.bLaunch) Cats += TEXT(", Launch vehicle");
+	Row->AddSlot().FillWidth(1.f).VAlign(VAlign_Center)
+	[
+		Txt(FString::Printf(TEXT("PLAYER %d: %s  -  you decide: %s.\nYour goal: %s. Talk to your team: other players see the same budgets."), ActivePlayer + 1, *Me.Name, *Cats, *Me.Goal), 14, CGold)
+	];
+	for (int32 i = 0; i < TeamSize; ++i)
+		Row->AddSlot().AutoWidth().Padding(3).VAlign(VAlign_Center)
+		[
+			Btn(FString::Printf(TEXT("P%d %s"), i + 1, Ready.IsValidIndex(i) && Ready[i] ? TEXT("agrees") : TEXT("...")), [this, i]() { if (Ready.IsValidIndex(i)) Ready[i] = !Ready[i]; bDirty = true; }, Ready.IsValidIndex(i) && Ready[i] ? 1 : 0, 12)
+		];
+	Row->AddSlot().AutoWidth().Padding(6, 3).VAlign(VAlign_Center)
+	[
+		Btn(TEXT("Hand over to next player  >"), [this]() { ActivePlayer = (ActivePlayer + 1) % FMath::Max(1, TeamSize); Notice.Reset(); bDirty = true; }, 1, 13)
+	];
+	return Panel(Row, 8.f, 1);
+}
+
+SISGameUI::FISScore SISGameUI::ComputeScore() const
+{
+	FISScore S;
+	const FISMission M = ISSim::ApplyDifficulty(Mission());
+	S.Success = 50.f * Ops.ScorePct / 100.f;
+	int32 BonusN = 0, BonusMet = 0;
+	for (const FISObjective& O : Ops.FinalObjectives) if (O.bBonus) { ++BonusN; if (O.bMet) ++BonusMet; }
+	const float BonusFrac = BonusN ? (float)BonusMet / BonusN : 0.f;
+	const double NeedData = M.MinDataGbDay * Ops.EndDay;
+	const float DataFrac = NeedData > 0 ? FMath::Clamp((float)(Ops.DataGb / NeedData), 0.f, 1.f) : (Ops.bMissionLost ? 0.3f : 1.f);
+	S.Science = 20.f * (0.5f * BonusFrac + 0.5f * DataFrac);
+	const float BudgetLeft = M.BudgetM > 0 ? FMath::Clamp(1.f - Eval.TotalCostM / M.BudgetM, 0.f, 0.5f) / 0.5f : 0.f;
+	const float MassLeft = Eval.VehicleCap > 0 ? FMath::Clamp(1.f - Eval.TotalKg / Eval.VehicleCap, 0.f, 0.5f) / 0.5f : 0.f;
+	S.Efficiency = 15.f * (0.6f * BudgetLeft + 0.4f * MassLeft);
+	S.Decisions = 15.f * (Ops.TotalChoices > 0 ? (float)Ops.GoodChoices / Ops.TotalChoices : 1.f);
+	if (TeamSize > 1)
+	{
+		int32 Met = 0; const TArray<FISRole> L = Roles();
+		for (const FISRole& R : L) if (RoleGoalMet(R.GoalId)) ++Met;
+		S.Team = 20.f * Met / FMath::Max(1, L.Num());
+	}
+	const float Mult = ISSim::Difficulty == 0 ? 0.8f : ISSim::Difficulty == 2 ? 1.25f : 1.f;
+	S.Total = (S.Success + S.Science + S.Efficiency + S.Decisions + S.Team) * Mult;
+	return S;
+}
+
+static FString BoardFile() { return FPaths::ProjectSavedDir() / TEXT("Infinisat") / TEXT("leaderboard.csv"); }
+
+void SISGameUI::RecordScore(const FISScore& S)
+{
+	const FString Line = FString::Printf(TEXT("%s;%s;%d;%s;%d;%s\n"), *Mission().Id.ToString(), *TeamName.Replace(TEXT(";"), TEXT(",")), FMath::RoundToInt(S.Total),
+		*ISSim::DifficultyName(ISSim::Difficulty), TeamSize, *FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M")));
+	FFileHelper::SaveStringToFile(Line, *BoardFile(), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
+}
+
+TArray<FString> SISGameUI::Leaderboard() const
+{
+	TArray<FString> Lines, Out;
+	FFileHelper::LoadFileToStringArray(Lines, *BoardFile());
+	struct FE { int32 Score; FString Text; };
+	TArray<FE> E;
+	for (const FString& L : Lines)
+	{
+		TArray<FString> P; L.ParseIntoArray(P, TEXT(";"), false);
+		if (P.Num() >= 6 && P[0] == Mission().Id.ToString())
+			E.Add({ FCString::Atoi(*P[2]), FString::Printf(TEXT("%s  -  %s pts  (%s, %s player%s, %s)"), *P[1], *P[2], *P[3], *P[4], P[4] == TEXT("1") ? TEXT("") : TEXT("s"), *P[5]) });
+	}
+	E.Sort([](const FE& A, const FE& B) { return A.Score > B.Score; });
+	for (int32 i = 0; i < FMath::Min(10, E.Num()); ++i) Out.Add(E[i].Text);
+	if (Out.Num() == 0) Out.Add(TEXT("(no scores yet)"));
+	return Out;
+}
+
+FString SISGameUI::DesignCode() const
+{
+	FString Parts;
+	for (const FName& P : Design.Parts) Parts += (Parts.IsEmpty() ? TEXT("") : TEXT(",")) + P.ToString();
+	return FString::Printf(TEXT("INFINISAT1|%s|%s|%s|%d|%d"), *Mission().Id.ToString(), *Parts, *Design.Vehicle.ToString(), Design.Fleet, (int32)Design.Dest);
+}
+
+bool SISGameUI::ApplyDesignCode(const FString& Code)
+{
+	TArray<FString> P; Code.TrimStartAndEnd().ParseIntoArray(P, TEXT("|"), false);
+	if (P.Num() < 6 || P[0] != TEXT("INFINISAT1") || P[1] != Mission().Id.ToString()) return false;
+	TArray<FString> Ids; P[2].ParseIntoArray(Ids, TEXT(","));
+	FISDesign D = Design;
+	D.Parts.Reset();
+	for (const FString& Id : Ids) if (ISData::FindPart(FName(*Id))) D.Parts.Add(FName(*Id));
+	D.Vehicle = FName(*P[3]);
+	D.Fleet = FMath::Max(1, FCString::Atoi(*P[4]));
+	D.Dest = (EISDest)FMath::Clamp(FCString::Atoi(*P[5]), 0, (int32)EISDest::Count - 1);
+	Design = D;
+	return true;
+}
+
+FString SISGameUI::WriteReport(const FISScore& S)
+{
+	const FISMission& M = Mission();
+	auto Esc = [](FString X) { return X.Replace(TEXT("&"), TEXT("&amp;")).Replace(TEXT("<"), TEXT("&lt;")).Replace(TEXT("\n"), TEXT("<br>")); };
+	FString H = TEXT("<!doctype html><meta charset='utf-8'><title>Infinisat mission report</title><style>body{font-family:Segoe UI,Arial;max-width:900px;margin:30px auto;color:#123}td,th{border-bottom:1px solid #ccd;padding:6px;text-align:left;vertical-align:top}h1{color:#0a5}.x{color:#c33}.ok{color:#183}</style>");
+	H += FString::Printf(TEXT("<h1>%s</h1><p><b>%s</b> | %s difficulty | %d player(s) | %s</p>"), *Esc(M.Title), *Esc(TeamName), *ISSim::DifficultyName(ISSim::Difficulty), TeamSize, *FDateTime::Now().ToString());
+	H += FString::Printf(TEXT("<h2>Score: %d</h2><p>Mission success %d/50, science value %d/20, resource efficiency %d/15, decisions %d/15%s</p>"), FMath::RoundToInt(S.Total),
+		FMath::RoundToInt(S.Success), FMath::RoundToInt(S.Science), FMath::RoundToInt(S.Efficiency), FMath::RoundToInt(S.Decisions), TeamSize > 1 ? *FString::Printf(TEXT(", team coordination %d/20"), FMath::RoundToInt(S.Team)) : TEXT(""));
+	H += TEXT("<h2>Why it went this way</h2><p>") + Esc(Ops.Debrief) + TEXT("</p><h2>Objectives</h2><table>");
+	for (const FISObjective& O : Ops.FinalObjectives)
+		H += FString::Printf(TEXT("<tr><td class='%s'>%s</td><td>%s</td><td>%s</td></tr>"), O.bMet ? TEXT("ok") : TEXT("x"), O.bMet ? TEXT("met") : TEXT("missed"), *Esc(O.Text), *Esc(O.Why));
+	H += TEXT("</table><h2>Design</h2><ul>");
+	for (const FName& Id : Design.Parts) if (const FISPart* P = ISData::FindPart(Id)) H += TEXT("<li>") + Esc(ISData::CatName(P->Cat) + TEXT(": ") + P->Name) + TEXT("</li>");
+	if (const FISVehicle* V = ISData::FindVehicle(Design.Vehicle)) H += TEXT("<li>Launch: ") + Esc(V->Name + TEXT(" from ") + V->Site) + TEXT("</li>");
+	H += TEXT("</ul><p>Design code (paste in the game to load it): <code>") + Esc(DesignCode()) + TEXT("</code></p><h2>Budgets and the physics behind them</h2><table>");
+	for (const FISLine& L : Eval.Lines)
+		H += FString::Printf(TEXT("<tr><td><b>%s</b></td><td>%s / %s</td><td>%s</td></tr>"), *Esc(L.Label), *Esc(L.Value), *Esc(L.Limit), *Esc(L.Why));
+	H += TEXT("</table><h2>Mission timeline</h2><table>");
+	for (const FISEvent& E : Ops.Log)
+		H += FString::Printf(TEXT("<tr><td>T+%s</td><td>%s</td><td><i>%s</i></td></tr>"), *ISSim::FmtDays(E.Day), *Esc(E.Text), *Esc(E.Edu));
+	H += TEXT("</table><h2>Real-world reference</h2><p>") + Esc(M.RealName + TEXT(": ") + M.RealFacts) + TEXT("</p>");
+	const FString Dir = FPaths::Combine(FPlatformProcess::UserDir(), TEXT("Infinisat Reports"));
+	const FString File = FPaths::Combine(Dir, FString::Printf(TEXT("%s_%s.html"), *M.Id.ToString(), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+	FFileHelper::SaveStringToFile(H, *File, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	return File;
 }

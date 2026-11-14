@@ -134,8 +134,13 @@ private:
 	UStaticMeshComponent* Paint(const FVector& Center, const FVector& Size, const FLinearColor& C, float Rough = 0.6f, bool bCollide = true, float Yaw = 0.f, float Metal = 0.f);
 	void RoomLight(const FVector& Pos, float Lumens, bool bFixture = true);
 	TArray<FISDoor> Doors;
+	// layout validation (dev: -ISValidate)
+	struct FISPlaced { FString Name; UStaticMeshComponent* C = nullptr; bool bSurface = false; bool bOnTop = false; };
+	TArray<FISPlaced> Furniture;
+	TArray<FBox> Openings;      // keep-clear volumes in front of doors and windows
+	void ValidateLayout();
 	TArray<float> DoorYaw;
-	float MudShelfTop = 100.f, GarageShelfTop = 120.f;
+	float MudShelfTop = 100.f, GarageShelfTop = 120.f, OfficeShelfTop = 100.f, MonitorTop = 120.f, JunkBoxTop = 40.f, DeskTopZ = 90.f, DeskTopY = 1005.f, OfficeShelfX = 460.f, MudShelfX = 1290.f, GarageShelfX = -730.f;
 	void BuildGround2();
 	bool IsFound(FName Part) const;
 	void BuildField();

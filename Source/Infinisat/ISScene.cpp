@@ -87,11 +87,11 @@ void AISSpaceScene::BeginPlay()
 		Sun->SetMaterial(0, SunM);
 	}
 
-	SunLight->SetIntensity(2.2f);
+	SunLight->SetIntensity(4.5f);
 	SunLight->SetLightColor(FLinearColor(1.f, 0.97f, 0.92f));
 	SunLight->SetWorldRotation(FRotator(-25.f, -60.f, 0.f));
 	SunLight->SetCastShadows(true);
-	FillLight->SetIntensity(0.35f);
+	FillLight->SetIntensity(1.2f);
 	FillLight->SetLightColor(FLinearColor(0.45f, 0.55f, 1.f));
 	FillLight->SetWorldRotation(FRotator(20.f, 120.f, 0.f));
 	FillLight->SetCastShadows(false);
@@ -716,6 +716,57 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	SatRoot->SetRelativeScale3D(FVector(SatSize / 150.f));
 	AddMesh(SatRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, 120.f), FVector(0.3f)), FLinearColor(1.f, 0.55f, 0.15f, 1.f), true, 6.f, &SatParts);
 	SetMissionTime(0.0, 1.0, 100.0, true);
+	LastSatSize = SatSize;
+	MapDist = CamDistGoal;
+	PlanetRUU = Dest == EISDest::Moon ? 1737.4f : 6371.f;
+	const bool bNear = Dest != EISDest::Backyard && Dest != EISDest::Interstellar && Dest != EISDest::Jupiter;
+	bFollow = bNear;
+	if (bFollow) { CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; }
+}
+
+void AISSpaceScene::ToggleMap()
+{
+	if (View != EISView::Orbit) return;
+	bFollow = !bFollow;
+	CamDistGoal = bFollow ? LastSatSize * 5.f : MapDist;
+	CamMin = bFollow ? LastSatSize * 1.2f : 2000.f;
+}
+
+FString AISSpaceScene::LaunchCaption() const
+{
+	if (LaunchT < 0.f) return FString();
+	if (LaunchT < 0.12f) return TEXT("LIFT-OFF!  The engines push about 1.3x the rocket's own weight.");
+	if (LaunchT < 0.30f) return TEXT("GRAVITY TURN  -  tilting east to build sideways speed: low orbit needs about 7.8 km/s.");
+	if (LaunchT < 0.45f) return TEXT("MAX-Q  -  the moment of maximum air pressure on the rocket.");
+	if (LaunchT < 0.60f) return TEXT("STAGE SEPARATION  -  dropping empty tanks saves mass (the rocket equation!).");
+	if (LaunchT < 0.75f) return TEXT("FAIRING SEPARATION  -  above the atmosphere the nose cone is no longer needed.");
+	return TEXT("ORBIT INSERTION  -  engine cut-off... spacecraft separation!");
+}
+
+void AISSpaceScene::StartLaunch(bool bHeavy)
+{
+	if (View != EISView::Orbit || ViewDest == EISDest::Backyard || ViewDest == EISDest::Jupiter || ViewDest == EISDest::Interstellar || ViewDest == EISDest::Moon) return;
+	if (!RocketRoot)
+	{
+		RocketRoot = NewObject<USceneComponent>(this);
+		RocketRoot->SetupAttachment(SceneRoot);
+		RocketRoot->RegisterComponent();
+	}
+	RocketRoot->SetVisibility(true, true);
+	const float Size = LastSatSize * 1.6f;
+	UStaticMesh* RM = LoadObject<UStaticMesh>(nullptr, *ModelPath(bHeavy ? TEXT("SaturnV") : TEXT("AresI")));
+	if (RM) AddMesh(RocketRoot, RM, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(Size / 100.f)), KeepMat, false, 0.f, nullptr);
+	else AddMesh(RocketRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(Size / 900.f, Size / 900.f, Size / 100.f)), FLinearColor(0.95f, 0.95f, 0.95f), false, 0.f, nullptr);
+	AddMesh(RocketRoot, MCone, FTransform(FRotator(180, 0, 0), FVector(0, 0, -Size * 0.62f), FVector(Size / 500.f, Size / 500.f, Size / 220.f)), FLinearColor(1.f, 0.55f, 0.15f), true, 9.f, nullptr);
+	const FVector Sat = SatRoot->GetRelativeLocation();
+	const FVector Dir = FQuat(FVector::UpVector, FMath::DegreesToRadians(-50.f)).RotateVector(Sat.GetSafeNormal());
+	LaunchSite = Dir * PlanetRUU;
+	RocketPrev = LaunchSite;
+	RocketRoot->SetRelativeLocation(LaunchSite);
+	LaunchT = 0.f;
+	SatRoot->SetVisibility(false, true);
+	bFollow = true;
+	CamDistGoal = Size * 4.f; CamDist = CamDistGoal; CamPitch = -8.f;
 }
 
 void AISSpaceScene::SetMissionTime(double Day, double EndDay, double PeriodMin, bool bAlive)
@@ -770,7 +821,31 @@ void AISSpaceScene::Tick(float Dt)
 	// camera
 	CamDist = FMath::FInterpTo(CamDist, CamDistGoal, Dt, 6.f);
 	CamFocus = FMath::VInterpTo(CamFocus, CamFocusGoal, Dt, 4.f);
-	if (View == EISView::Orbit && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter && CamDistGoal < OrbitRadiusUU * 0.9f)
+	// launch sequence: the rocket climbs from the pad to the spacecraft's orbit
+	if (LaunchT >= 0.f && RocketRoot)
+	{
+		LaunchT = FMath::Min(1.f, LaunchT + Dt / 11.f);
+		const FVector Target = SatRoot->GetRelativeLocation();
+		const float H = FMath::Pow(LaunchT, 1.4f);
+		const float S = FMath::SmoothStep(0.12f, 1.f, LaunchT);
+		const FVector D = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(LaunchSite.GetSafeNormal(), Target.GetSafeNormal()), S).RotateVector(LaunchSite.GetSafeNormal());
+		const FVector Pos = D * FMath::Lerp(PlanetRUU, Target.Size(), H);
+		const FVector Vel = Pos - RocketPrev;
+		if (Vel.SizeSquared() > 1.f) RocketRoot->SetRelativeRotation(FRotationMatrix::MakeFromZ(Vel.GetSafeNormal()).Rotator());
+		RocketRoot->SetRelativeLocation(Pos);
+		RocketPrev = Pos;
+		CamFocusGoal = RocketRoot->GetComponentLocation();
+		if (LaunchT >= 1.f)
+		{
+			LaunchT = -1.f;
+			RocketRoot->SetVisibility(false, true);
+			SatRoot->SetVisibility(true, true);
+			CamDistGoal = LastSatSize * 5.f;
+		}
+	}
+	else if (View == EISView::Orbit && bFollow && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter)
+		CamFocusGoal = SatRoot->GetComponentLocation();
+	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter && CamDistGoal < OrbitRadiusUU * 0.9f)
 		CamFocusGoal = SatRoot->GetComponentLocation();
 	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard) CamFocusGoal = ViewDest == EISDest::Jupiter ? CamFocusGoal : FVector::ZeroVector;
 	const FRotator CR(CamPitch, CamYaw, 0.f);
@@ -785,6 +860,7 @@ void AISSpaceScene::Tick(float Dt)
 	for (UTextRenderComponent* L : Labels)
 	{
 		if (!L) continue;
+		L->SetVisibility(!(View == EISView::Orbit && bFollow));   // follow view: clean screen, map view: labels
 		const FVector P = L->GetComponentLocation();
 		L->SetWorldRotation((CamLoc - P).Rotation());
 		L->SetWorldSize(FMath::Max(8.f, FVector::Dist(CamLoc, P) * 0.014f));

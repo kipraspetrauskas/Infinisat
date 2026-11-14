@@ -180,6 +180,17 @@ namespace
 
 namespace ISSim
 {
+	int32 Difficulty = 1;
+	FString DifficultyName(int32 D) { return D == 0 ? TEXT("Easy") : D == 2 ? TEXT("Hard") : TEXT("Normal"); }
+	FISMission ApplyDifficulty(const FISMission& In)
+	{
+		FISMission M = In;
+		if (M.Id == "sandbox") return M;
+		if (Difficulty == 0) { M.BudgetM *= 1.5f; M.MaxPointingDeg *= 3.f; M.MinDataGbDay *= 0.5f; }
+		if (Difficulty == 2) { M.BudgetM *= 0.8f; }
+		return M;
+	}
+
 	FString Fmt(double V, int32 Dec)
 	{
 		FNumberFormattingOptions O; O.MinimumFractionalDigits = 0; O.MaximumFractionalDigits = Dec; O.UseGrouping = true;
@@ -239,8 +250,9 @@ namespace ISSim
 	EISDest EffectiveDest(const FISDesign& D, const FISMission& M) { return M.Id == "sandbox" ? D.Dest : M.Dest; }
 	float EffectiveAlt(const FISDesign& D, const FISMission& M) { return M.Id == "sandbox" ? DefaultAlt(D.Dest) : M.AltKm; }
 
-	FISEval Evaluate(const FISDesign& D, const FISMission& M)
+	FISEval Evaluate(const FISDesign& D, const FISMission& MIn)
 	{
+		const FISMission M = ApplyDifficulty(MIn);
 		FISEval E;
 		const bool bSandbox = M.Id == "sandbox";
 		E.Dest = EffectiveDest(D, M);
@@ -723,7 +735,7 @@ void FISOps::Start(const FISDesign& D, const FISMission& M, const FISEval& E, in
 	Design = D; Mission = M; Eval = E;
 	Rng.Initialize(Seed);
 	Queue.Reset(); Log.Reset(); LostTagsDay.Reset(); LostParts.Reset();
-	Next = 0; Day = 0; DataGb = 0; Health = 1; Battery = 1;
+	Next = 0; Day = 0; DataGb = 0; Health = 1; Battery = 1; GoodChoices = 0; TotalChoices = 0; GoodChoices = 0; TotalChoices = 0; GoodChoices = 0; TotalChoices = 0;
 	bAwaitingChoice = false; bFinished = false; bLaunchFailed = false; bMissionLost = false; LostDay = -1;
 	bHasRedundancy = D.HasTag(ISTag::Redundancy);
 
@@ -829,7 +841,7 @@ void FISOps::Start(const FISDesign& D, const FISMission& M, const FISEval& E, in
 	{
 		const FISPart* P = ISData::FindPart(Id);
 		if (!P || P->Cat == EISCat::Ground || P->RelPerYear >= 0.9999f) continue;
-		const double Lambda = -FMath::Loge(P->RelPerYear);
+		const double Lambda = -FMath::Loge(P->RelPerYear) * (ISSim::Difficulty == 0 ? 0.5 : ISSim::Difficulty == 2 ? 2.0 : 1.0);
 		const double U = FMath::Max(1e-6, (double)Rng.FRand());
 		const double TDays = (-FMath::Loge(U) / Lambda) * 365.25;
 		const double At = OpsStart + TDays;
@@ -964,6 +976,8 @@ void FISOps::Choose(int32 Index)
 {
 	if (!bAwaitingChoice || !ChoiceKinds.IsValidIndex(Index)) return;
 	const int32 Kind = ChoiceKinds[Index];
+	++TotalChoices;
+	if (Kind == 0 || Kind == 1 || Kind == 4) ++GoodChoices;
 	const FName Part = Pending.Part;
 	const FISPart* P = ISData::FindPart(Part);
 	bAwaitingChoice = false;

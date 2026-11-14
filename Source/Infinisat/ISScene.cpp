@@ -253,6 +253,7 @@ void AISSpaceScene::ClearView()
 	if (CloudShell) CloudShell->SetVisibility(false);
 	Sky->SetWorldScale3D(FVector(40000.f));
 	Sky->SetWorldLocation(FVector::ZeroVector);
+	Sky->SetVisibility(true);
 	for (UStaticMeshComponent* C : SatParts) if (C) C->DestroyComponent();
 	for (UStaticMeshComponent* C : RealParts) if (C) C->DestroyComponent();
 	for (UStaticMeshComponent* C : Extras) if (C) C->DestroyComponent();
@@ -373,17 +374,83 @@ void AISSpaceScene::ShowTitle()
 	SetCameraTarget(FVector(0, 30, 40), 900.f, 180.f, -6.f, 400.f, 3000.f);
 }
 
+void AISSpaceScene::BuildCleanRoom()
+{
+	// Integration hall (ISO 8 clean room) around the satellite. Units: the bus is 100 units wide.
+	const FLinearColor Floor(0.8f, 0.82f, 0.85f), WallC(0.93f, 0.94f, 0.95f), Blue(0.0f, 0.33f, 0.62f), Yellow(1.f, 0.78f, 0.05f), Steel(0.62f, 0.64f, 0.67f);
+	auto B = [&](const FVector& P, const FVector& S, const FLinearColor& C, float Metal = 0.f, float Rough = 0.5f)
+	{
+		UStaticMeshComponent* M = AddMesh(SceneRoot, MCube, FTransform(FRotator::ZeroRotator, P, S / 100.f), C, false, 0.f, nullptr);
+		if (M) if (UMaterialInstanceDynamic* I = Cast<UMaterialInstanceDynamic>(M->GetMaterial(0))) { I->SetScalarParameterValue(TEXT("Metallic"), Metal); I->SetScalarParameterValue(TEXT("Roughness"), Rough); }
+		return M;
+	};
+	const float HX = 1800.f, HY = 1300.f, Hz = 1000.f, FloorZ = -260.f;
+	B(FVector(0, 0, FloorZ - 5.f), FVector(2 * HX, 2 * HY, 10.f), Floor, 0.f, 0.18f);                     // epoxy floor
+	for (int32 i = -7; i <= 7; ++i) B(FVector(i * 240.f, 0, FloorZ + 0.3f), FVector(1.5f, 2 * HY, 0.5f), Floor * 0.9f, 0.f, 0.3f); // ESD grid
+	for (int32 s : { -1, 1 })
+	{
+		B(FVector(s * 380.f, 0, FloorZ + 0.6f), FVector(14.f, 760.f, 0.8f), Yellow, 0.f, 0.4f);      // safety box
+		B(FVector(0, s * 380.f, FloorZ + 0.6f), FVector(760.f, 14.f, 0.8f), Yellow, 0.f, 0.4f);
+		// walls with a blue band
+		B(FVector(s * HX, 0, FloorZ + Hz * 0.5f), FVector(20.f, 2 * HY, Hz), WallC, 0.f, 0.6f);
+		B(FVector(0, s * HY, FloorZ + Hz * 0.5f), FVector(2 * HX, 20.f, Hz), WallC, 0.f, 0.6f);
+		B(FVector(s * (HX - 11.f), 0, FloorZ + 260.f), FVector(2.f, 2 * HY, 40.f), Blue, 0.f, 0.4f);
+		B(FVector(0, s * (HY - 11.f), FloorZ + 260.f), FVector(2 * HX, 2.f, 40.f), Blue, 0.f, 0.4f);
+		// gantry crane rails
+		B(FVector(0, s * 900.f, FloorZ + Hz - 120.f), FVector(2 * HX - 40.f, 30.f, 40.f), Yellow * 0.9f, 0.3f, 0.5f);
+	}
+	B(FVector(0, 0, FloorZ + Hz + 10.f), FVector(2 * HX, 2 * HY, 20.f), WallC * 0.95f, 0.f, 0.8f);           // ceiling
+	// bridge crane + hoist above the stand
+	B(FVector(-250.f, 0, FloorZ + Hz - 90.f), FVector(60.f, 1860.f, 50.f), Yellow, 0.3f, 0.45f);
+	B(FVector(-250.f, 0, FloorZ + Hz - 140.f), FVector(70.f, 90.f, 60.f), FLinearColor(0.2f, 0.2f, 0.22f), 0.5f, 0.5f);
+	AddMesh(SceneRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector(-250.f, 0, FloorZ + Hz - 320.f), FVector(0.03f, 0.03f, 3.2f)), FLinearColor(0.15f, 0.15f, 0.15f), false, 0.f, nullptr);
+	// ceiling light panels + HEPA grilles
+	for (int32 ix = -3; ix <= 3; ++ix) for (int32 iy = -2; iy <= 2; ++iy)
+	{
+		const bool bLight = (ix + iy) % 2 == 0;
+		AddMesh(SceneRoot, MCube, FTransform(FRotator::ZeroRotator, FVector(ix * 480.f, iy * 480.f, FloorZ + Hz - 1.f), FVector(2.4f, 1.2f, 0.02f)),
+			bLight ? FLinearColor(1.f, 0.98f, 0.95f) : FLinearColor(0.7f, 0.72f, 0.75f), bLight, bLight ? 3.f : 0.f, nullptr);
+	}
+	// integration stand: base, column, rotating table, adapter ring
+	AddMesh(SceneRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, FloorZ + 15.f), FVector(2.2f, 2.2f, 0.3f)), Steel, false, 0.f, nullptr);
+	AddMesh(SceneRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, FloorZ + 100.f), FVector(0.5f, 0.5f, 1.7f)), Steel, false, 0.f, nullptr);
+	AddMesh(SceneRoot, MCyl, FTransform(FRotator::ZeroRotator, FVector(0, 0, -120.f), FVector(1.4f, 1.4f, 0.12f)), FLinearColor(0.25f, 0.27f, 0.3f), false, 0.f, nullptr);
+	// equipment: test racks with status LEDs, workstations, parts store doors
+	for (int32 k = 0; k < 4; ++k)
+	{
+		const FVector R(-HX + 60.f, -700.f + k * 140.f, FloorZ + 110.f);
+		B(R, FVector(80.f, 110.f, 220.f), FLinearColor(0.12f, 0.13f, 0.15f), 0.4f, 0.5f);
+		for (int32 l = 0; l < 6; ++l)
+			AddMesh(SceneRoot, MCube, FTransform(FRotator::ZeroRotator, R + FVector(41.f, -30.f + (l % 3) * 30.f, 60.f - (l / 3) * 30.f), FVector(0.02f, 0.06f, 0.04f)),
+				(l + k) % 3 ? FLinearColor(0.1f, 1.f, 0.3f) : FLinearColor(1.f, 0.6f, 0.1f), true, 6.f, nullptr);
+	}
+	for (int32 k = 0; k < 3; ++k)
+	{
+		const FVector Dsk(600.f + k * 320.f, -HY + 120.f, FloorZ + 45.f);
+		B(Dsk, FVector(220.f, 90.f, 90.f), WallC * 0.9f, 0.f, 0.5f);
+		AddMesh(SceneRoot, MCube, FTransform(FRotator(0, 0, 0), Dsk + FVector(0, -25.f, 85.f), FVector(1.1f, 0.04f, 0.6f)), FLinearColor(0.15f, 0.45f, 0.75f), true, 1.2f, nullptr);
+	}
+	const TCHAR* Stores[] = { TEXT("OPTICS & CAMERAS"), TEXT("AVIONICS & PROCESSORS"), TEXT("POWER & BATTERIES"), TEXT("COMMS & ANTENNAS"), TEXT("PROPULSION") };
+	for (int32 k = 0; k < 5; ++k)
+	{
+		const float X = -1300.f + k * 650.f;
+		B(FVector(X, HY - 12.f, FloorZ + 150.f), FVector(240.f, 6.f, 300.f), FLinearColor(0.25f, 0.3f, 0.36f), 0.6f, 0.35f);
+		AddLabel(Stores[k], FVector(X, HY - 30.f, FloorZ + 340.f), FColor(30, 60, 110));
+	}
+	AddLabel(TEXT("INTEGRATION HALL  -  CLEAN ROOM ISO 8"), FVector(HX - 30.f, 0, FloorZ + 520.f), FColor(30, 60, 110));
+	// the hall must not shadow the key light: only the spacecraft casts shadows (onto the floor)
+	for (UStaticMeshComponent* C : Extras) if (C) { C->SetCastShadow(false); }
+}
+
 void AISSpaceScene::ShowWorkshop(const FISDesign& D)
 {
 	ClearView();
 	View = EISView::Workshop;
-	SetEarth(Planet, 6000.f, FVector(-1500, 0, -7000.f), true);
-	PlanetAtmo->SetWorldScale3D(FVector(6150.f / 50.f));
-	PlanetAtmo->SetWorldLocation(Planet->GetComponentLocation());
-	PlanetAtmo->SetVisibility(true);
+	Sky->SetVisibility(false);
+	BuildCleanRoom();
 	BuildSatellite(SatRoot, D, SatParts);
 	BitRoot->SetVisibility(false, true);   // you are BIT: no robot in your own view
-	SetCameraTarget(FVector(0, -60, 20), 1000.f, 205.f, -12.f, 250.f, 4000.f);
+	SetCameraTarget(FVector(0, 0, 40), 900.f, 205.f, -14.f, 220.f, 2400.f);
 }
 
 void AISSpaceScene::ShowCompare(const FISDesign& D, const FString& RealMesh, const FString& RealName)

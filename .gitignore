@@ -11,3 +11,4 @@ DerivedDataCache/
 _downloads/
 Packaged/
 __pycache__/
+Build/

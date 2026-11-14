@@ -118,6 +118,7 @@ private:
 	TArray<FTruePt> TruePts;
 	void SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVector& Pos, bool bClouds);
 	void TickTrueScale(float Dt);
+	void BuildCleanRoom();
 	float LaunchT = -1.f;
 	float LastSatSize = 400.f, MapDist = 30000.f, PlanetRUU = 6371.f;
 	FVector LaunchSite = FVector::ZeroVector, RocketPrev = FVector::ZeroVector;

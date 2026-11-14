@@ -32,25 +32,41 @@
 
 namespace
 {
-	const FLinearColor CText(0.92f, 0.95f, 1.f);
-	const FLinearColor CDim(0.62f, 0.7f, 0.82f);
-	const FLinearColor CAccent(0.35f, 0.82f, 1.f);
+	const FLinearColor CText(0.93f, 0.96f, 1.f);
+	const FLinearColor CDim(0.6f, 0.69f, 0.8f);
+	const FLinearColor CAccent(0.36f, 0.86f, 1.f);
 	const FLinearColor COk(0.4f, 1.f, 0.55f);
 	const FLinearColor CWarn(1.f, 0.75f, 0.25f);
 	const FLinearColor CFail(1.f, 0.4f, 0.35f);
 	const FLinearColor CGold(1.f, 0.82f, 0.35f);
-	const FLinearColor CPanel(0.015f, 0.04f, 0.1f, 0.9f);
-	const FLinearColor CPanel2(0.04f, 0.09f, 0.2f, 0.95f);
+	const FLinearColor CPanel(0.012f, 0.022f, 0.05f, 0.78f);
+	const FLinearColor CPanel2(0.025f, 0.06f, 0.13f, 0.86f);
+
+
+	// Titillium Web (UI text), Rajdhani (headings), Share Tech Mono (readouts) - SIL Open Font License
+	FSlateFontInfo ISFont(const char* Style, int32 Size)
+	{
+		const FString S(Style);
+		FString File = TEXT("TitilliumWeb-Regular.ttf");
+		float Scale = 1.08f;
+		if (S == TEXT("Bold")) { File = TEXT("Rajdhani-Bold.ttf"); Scale = 1.2f; }
+		else if (S == TEXT("SemiBold")) { File = TEXT("TitilliumWeb-SemiBold.ttf"); }
+		else if (S == TEXT("Mono")) { File = TEXT("ShareTechMono-Regular.ttf"); Scale = 1.f; }
+		const FString Path = FPaths::ProjectContentDir() / TEXT("Slate/Fonts") / File;
+		if (!FPaths::FileExists(Path)) return FCoreStyle::GetDefaultFontStyle(Style, Size);
+		return FSlateFontInfo(Path, FMath::RoundToInt(Size * Scale));
+	}
 
 	FButtonStyle MakeStyle(const FLinearColor& N, const FLinearColor& H, const FLinearColor& P)
 	{
 		FButtonStyle S;
-		S.SetNormal(FSlateRoundedBoxBrush(N, 6.f));
-		S.SetHovered(FSlateRoundedBoxBrush(H, 6.f));
-		S.SetPressed(FSlateRoundedBoxBrush(P, 6.f));
-		S.SetDisabled(FSlateRoundedBoxBrush(FLinearColor(0.1f, 0.1f, 0.12f, 0.8f), 6.f));
-		S.SetNormalPadding(FMargin(10, 6));
-		S.SetPressedPadding(FMargin(10, 7, 10, 5));
+		const FLinearColor Edge(0.4f, 0.8f, 1.f, 0.28f);
+		S.SetNormal(FSlateRoundedBoxBrush(N, 8.f, Edge, 1.f));
+		S.SetHovered(FSlateRoundedBoxBrush(H, 8.f, FLinearColor(0.55f, 0.9f, 1.f, 0.7f), 1.f));
+		S.SetPressed(FSlateRoundedBoxBrush(P, 8.f, Edge, 1.f));
+		S.SetDisabled(FSlateRoundedBoxBrush(FLinearColor(0.06f, 0.07f, 0.09f, 0.7f), 8.f));
+		S.SetNormalPadding(FMargin(14, 8));
+		S.SetPressedPadding(FMargin(14, 9, 14, 7));
 		return S;
 	}
 
@@ -116,9 +132,9 @@ void SISGameUI::Construct(const FArguments& InArgs)
 {
 	Scene = InArgs._Scene;
 	PC = InArgs._PC;
-	StyleNormal = MakeStyle(FLinearColor(0.08f, 0.16f, 0.3f), FLinearColor(0.12f, 0.26f, 0.45f), FLinearColor(0.05f, 0.1f, 0.2f));
-	StylePrimary = MakeStyle(FLinearColor(0.0f, 0.45f, 0.7f), FLinearColor(0.05f, 0.6f, 0.9f), FLinearColor(0.0f, 0.3f, 0.5f));
-	StyleSelected = MakeStyle(FLinearColor(0.75f, 0.45f, 0.05f), FLinearColor(0.9f, 0.55f, 0.1f), FLinearColor(0.6f, 0.35f, 0.05f));
+	StyleNormal = MakeStyle(FLinearColor(0.04f, 0.08f, 0.15f, 0.92f), FLinearColor(0.07f, 0.16f, 0.28f, 0.95f), FLinearColor(0.02f, 0.05f, 0.1f));
+	StylePrimary = MakeStyle(FLinearColor(0.0f, 0.42f, 0.66f), FLinearColor(0.02f, 0.58f, 0.86f), FLinearColor(0.0f, 0.3f, 0.48f));
+	StyleSelected = MakeStyle(FLinearColor(0.78f, 0.46f, 0.08f), FLinearColor(0.92f, 0.58f, 0.14f), FLinearColor(0.6f, 0.35f, 0.05f));
 	StyleDisabled = MakeStyle(FLinearColor(0.12f, 0.12f, 0.14f), FLinearColor(0.15f, 0.15f, 0.17f), FLinearColor(0.1f, 0.1f, 0.12f));
 	BarStyle = FCoreStyle::Get().GetWidgetStyle<FProgressBarStyle>("ProgressBar");
 
@@ -206,7 +222,7 @@ TSharedRef<STextBlock> SISGameUI::Txt(const FString& S, int32 Size, const FLinea
 {
 	return SNew(STextBlock)
 		.Text(FText::FromString(S))
-		.Font(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", Size))
+		.Font(ISFont(bBold ? "Bold" : "Regular", Size))
 		.ColorAndOpacity(C)
 		.AutoWrapText(true);
 }
@@ -221,7 +237,7 @@ TSharedRef<SWidget> SISGameUI::Btn(const FString& Label, TFunction<void()> OnCli
 		[
 			SNew(STextBlock)
 			.Text(FText::FromString(Label))
-			.Font(FCoreStyle::GetDefaultFontStyle(Kind == 1 ? "Bold" : "Regular", Size))
+			.Font(ISFont(Kind == 1 ? "Bold" : "Regular", Size))
 			.ColorAndOpacity(bEnabled ? CText : CDim)
 			.AutoWrapText(true)
 		];
@@ -558,9 +574,9 @@ TSharedRef<SWidget> SISGameUI::BuildBudgets(bool bCompact)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)[Txt(L.Status == EISStatus::Ok ? TEXT("OK") : L.Status == EISStatus::Fail ? TEXT("X") : L.Status == EISStatus::Warn ? TEXT("!") : TEXT("i"), 12, StatusColor(L.Status), true)]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Label)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CText)]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6, 0)[SNew(STextBlock).Text(FText::FromString(L.Value)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 12)).ColorAndOpacity(StatusColor(L.Status))]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Limit.IsEmpty() ? FString() : TEXT("/ ") + L.Limit)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CDim)]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Label)).Font(ISFont("Regular", 12)).ColorAndOpacity(CText)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6, 0)[SNew(STextBlock).Text(FText::FromString(L.Value)).Font(ISFont("Bold", 12)).ColorAndOpacity(StatusColor(L.Status))]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(L.Limit.IsEmpty() ? FString() : TEXT("/ ") + L.Limit)).Font(ISFont("Regular", 12)).ColorAndOpacity(CDim)]
 			]
 		];
 		if (bSel)
@@ -828,7 +844,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 						Panel(
 							SNew(SVerticalBox)
 							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("MISSION CLOCK"), 12, CAccent, true)]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 22)).ColorAndOpacity(CText)
+							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 22)).ColorAndOpacity(CText)
 								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("T+ %s"), *ISSim::FmtDays(Ops.Day))); })]
 							+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("of ") + ISSim::FmtDays(Ops.EndDay) + TEXT(" planned"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8)
@@ -852,7 +868,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[Txt(TEXT("Mission progress"), 12, CDim)]
 							+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(14)[SNew(SProgressBar).Percent_Lambda([this]() { return TOptional<float>((float)(Ops.Day / FMath::Max(1e-9, Ops.EndDay))); }).FillColorAndOpacity(CGold)]]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
-							[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
+							[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
 								.Text_Lambda([this]() { return FText::FromString(FString::Printf(TEXT("Data downloaded: %s Gb\nLink: %s kbps  |  contact %s min/day\nPower avg: %s W for %s W load"),
 									*ISSim::Fmt(Ops.DataGb, 2), *ISSim::Fmt(Eval.LinkKbps, 1), *ISSim::Fmt(Eval.ContactMin, 0), *ISSim::Fmt(Eval.AvgGenW, 0), *ISSim::Fmt(Eval.LoadW, 0))); })]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("Tip: drag with the mouse to rotate, wheel to zoom. The satellite is drawn much bigger than real size so you can see it."), 12, CDim)]
@@ -882,7 +898,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 		.Visibility_Lambda([this]() { return Scene.IsValid() && Scene->IsLaunching() ? EVisibility::Visible : EVisibility::Collapsed; })
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 20)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->LaunchCaption() : FString()); })]
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->LaunchCaption() : FString()); })]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[Btn(TEXT("Skip launch"), [this]() { if (Scene.IsValid()) Scene->SkipLaunch(); }, 0, 12)]
 		]
 	];
@@ -1095,7 +1111,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[Txt(TEXT("+"), 18, FLinearColor(1, 1, 1, 0.8f), true)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 40, 0, 0)
 			[
-				SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 16)).ColorAndOpacity(CGold).ShadowOffset(FVector2D(1, 1))
+				SNew(STextBlock).Font(ISFont("Bold", 16)).ColorAndOpacity(CGold).ShadowOffset(FVector2D(1, 1))
 				.Text_Lambda([this]() { return FText::FromString(IPC() ? IPC()->Prompt() : FString()); })
 			]
 		]
@@ -1105,7 +1121,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 			[
 				Panel(SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("OBJECTIVE"), 12, CAccent, true)]
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 14)).ColorAndOpacity(CText).AutoWrapText(true)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Regular", 14)).ColorAndOpacity(CText).AutoWrapText(true)
 						.Text_Lambda([WW]() { return FText::FromString(WW.IsValid() ? WW->Objective() : FString()); })], 10.f)
 			]
 		]
@@ -1124,7 +1140,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 10, 0)[SNew(SBox).WidthOverride(70).HeightOverride(44)[SNew(SImage).Image(&BitBrush)]]
 					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 					[
-						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 13)).ColorAndOpacity(CText).AutoWrapText(true)
+						SNew(STextBlock).Font(ISFont("Regular", 13)).ColorAndOpacity(CText).AutoWrapText(true)
 						.Text_Lambda([this]()
 						{
 							FString S;
@@ -1147,7 +1163,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 					+ SVerticalBox::Slot().AutoHeight()[Txt(TEXT("FLIGHT TELEMETRY  (cyan = altitude, orange = temperature)"), 12, CAccent, true)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4)
 					[
-						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Mono", 12)).ColorAndOpacity(CText)
+						SNew(STextBlock).Font(ISFont("Mono", 12)).ColorAndOpacity(CText)
 						.Text_Lambda([WW]()
 						{
 							if (!WW.IsValid()) return FText();
@@ -1161,7 +1177,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)[Txt(TEXT("HANDHELD RECEIVER 433 MHz (Yagi antenna)"), 12, CAccent, true)]
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Mono", 13)).ColorAndOpacity(CText).AutoWrapText(true)
+						SNew(STextBlock).Font(ISFont("Mono", 13)).ColorAndOpacity(CText).AutoWrapText(true)
 						.Text_Lambda([this, WW]()
 						{
 							if (!WW.IsValid()) return FText();
@@ -1220,7 +1236,7 @@ TSharedRef<SWidget> SISGameUI::BuildBench()
 						[
 							SNew(SScrollBox) + SScrollBox::Slot()
 							[
-								SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
+								SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(CText).AutoWrapText(true)
 								.Text_Lambda([WW]()
 								{
 									const FISPart* P = WW.IsValid() ? ISData::FindPart(WW->BenchInfoPart) : nullptr;
@@ -1366,7 +1382,7 @@ TSharedRef<SWidget> SISGameUI::BuildPause()
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0)
 			[
 				SNew(SBox).WidthOverride(70).HAlign(HAlign_Center)
-				[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 15)).ColorAndOpacity(CAccent).Text_Lambda([Value]() { return FText::FromString(Value()); })]
+				[SNew(STextBlock).Font(ISFont("Bold", 15)).ColorAndOpacity(CAccent).Text_Lambda([Value]() { return FText::FromString(Value()); })]
 			]
 			+ SHorizontalBox::Slot().AutoWidth().Padding(4)[Btn(TEXT("+"), Plus, 0, 15)];
 	};

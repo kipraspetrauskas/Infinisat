@@ -114,7 +114,7 @@ private:
 
 	// styles
 	FSlateColorBrush WhiteBrush = FSlateColorBrush(FLinearColor::White);
-	FSlateRoundedBoxBrush PanelBrush = FSlateRoundedBoxBrush(FLinearColor::White, 10.f);
+	FSlateRoundedBoxBrush PanelBrush = FSlateRoundedBoxBrush(FLinearColor::White, 14.f, FLinearColor(0.45f, 0.82f, 1.f, 0.35f), 1.f);
 	FButtonStyle StyleNormal, StylePrimary, StyleSelected, StyleDisabled;
 	FSlateBrush LogoBrush, BitBrush;
 	FProgressBarStyle BarStyle;

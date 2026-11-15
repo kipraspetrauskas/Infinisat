@@ -61,6 +61,7 @@ class AISHomeWorld : public AActor
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY() class AISEarth* Earth = nullptr;   // the real globe around the site (set by the player controller)
 	AISHomeWorld();
 	virtual void BeginPlay() override;
 	virtual void Tick(float Dt) override;

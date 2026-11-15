@@ -27,6 +27,7 @@ class AISSpaceScene : public AActor
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY() class AISEarth* Earth = nullptr;   // the real globe (set by the player controller)
 	AISSpaceScene();
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;

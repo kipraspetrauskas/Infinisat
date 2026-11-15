@@ -1,4 +1,5 @@
 #include "ISGame.h"
+#include "ISEarth.h"
 #include "Kismet/GameplayStatics.h"
 #include "Infinisat.h"
 #include "ISScene.h"
@@ -43,6 +44,9 @@ void AISPlayerController::BeginPlay()
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	World = GetWorld()->SpawnActor<AISHomeWorld>(AISHomeWorld::StaticClass(), FTransform::Identity, SP);
 	Scene = GetWorld()->SpawnActor<AISSpaceScene>(AISSpaceScene::StaticClass(), FTransform::Identity, SP);
+	Earth = GetWorld()->SpawnActor<AISEarth>(AISEarth::StaticClass(), FTransform::Identity, SP);
+	if (Scene) Scene->Earth = Earth;
+	if (World) World->Earth = Earth;
 
 	if (GEngine && GEngine->GameViewport)
 	{
@@ -116,6 +120,7 @@ void AISPlayerController::EnterMenu()
 	UE_LOG(LogInfinisat, Log, TEXT("EnterMenu"));
 	Mode = EISMode::Menu;
 	if (World) World->SetActive(false);
+	if (Earth) Earth->SetVisible(false);   // the space views switch it back on where the real Earth is in view
 	if (Bit) Bit->SetActorHiddenInGame(true);
 	if (Scene) { Scene->SetActive(true); if (Scene->GetCamera()) SetViewTarget(Scene->GetCamera()); }
 	SetCursorMode(true);
@@ -125,6 +130,7 @@ void AISPlayerController::EnterWorld()
 {
 	if (Scene) Scene->SetActive(false);
 	if (World) World->SetActive(true);
+	if (Earth) { Earth->UseSiteOrigin(); Earth->SetVisible(true); }
 	if (!Bit && World)
 	{
 		FActorSpawnParameters SP;

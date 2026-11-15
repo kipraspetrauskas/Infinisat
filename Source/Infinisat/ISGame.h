@@ -54,6 +54,7 @@ public:
 	static FString GraphicsName(int32 L);
 
 	UPROPERTY() AISSpaceScene* Scene = nullptr;
+	UPROPERTY() class AISEarth* Earth = nullptr;   // the real globe (Cesium), shared by the walking world and the space views
 	UPROPERTY() AISHomeWorld* World = nullptr;
 	UPROPERTY() AISBitCharacter* Bit = nullptr;
 	TSharedPtr<SISGameUI> UI;

@@ -7,6 +7,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "ISEarth.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -609,9 +610,9 @@ void AISHomeWorld::BuildBackyard()
 	UStaticMeshComponent* Path = Paint((Gate + PadPos) * 0.5f + FVector(0, 0, 0.6f), FVector(Seg.Size2D(), 160, 1.2f), FLinearColor(0.55f, 0.42f, 0.3f), 0.95f, false);
 	Path->SetRelativeRotation(FRotator(0, Seg.Rotation().Yaw, 0));
 
-	// rolling hills on the horizon (soft Astroneer-like silhouettes)
+	// rolling hills on the horizon (soft Astroneer-like silhouettes); on the real Earth the real hills are there instead
 	FRandomStream R(11);
-	for (int32 i = 0; i < 14; ++i)
+	for (int32 i = 0; i < (AISEarth::Enabled() ? 0 : 14); ++i)
 	{
 		const float A = R.FRandRange(0.f, 2.f * PI);
 		const float D = R.FRandRange(60000.f, 110000.f);
@@ -643,6 +644,7 @@ void AISHomeWorld::BuildBackyard()
 			if (FMath::Abs(P.Y + 1800.f) < 900.f) continue;
 			if (FVector::Dist2D(P, PadPos) < 4000.f) continue;
 			if (P.X > 12200.f && P.X < 23900.f && P.Y > -1300.f && P.Y < 4400.f) continue;   // space centre grounds
+			if (AISEarth::Enabled() && !AISEarth::InSite(P)) continue;   // beyond the site plate the real ground has its own trees
 			{
 				static const FVector2D Nb[] = { { -2700, 500 }, { 3600, 500 }, { 6900, 500 }, { -1600, -3700 }, { 1800, -3700 }, { 5200, -3700 }, { -5200, -3700 } };
 				bool bIn = false;
@@ -754,6 +756,15 @@ bool AISHomeWorld::IsFound(FName Part) const
 
 void AISHomeWorld::BuildGround2()
 {
+	if (AISEarth::Enabled())
+	{
+		// on the real Earth: only the site itself is our ground, a levelled plate on the real coast at Mahia (a deep
+		// block, so wherever the real ground dips at its edge there is an embankment, not a hole); beyond it the
+		// real terrain and imagery take over
+		Paint(FVector(7500, 750, -2000), FVector(35000, 13500, 4000), FLinearColor(0.2f, 0.33f, 0.12f), 0.95f);   // the colour of the real pasture around it
+		Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);
+		return;
+	}
 	UStaticMeshComponent* G = NewObject<UStaticMeshComponent>(this);
 	G->SetStaticMesh(ISMat::Cube());
 	G->SetupAttachment(Root);

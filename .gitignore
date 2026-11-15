@@ -12,3 +12,4 @@ _downloads/
 Packaged/
 __pycache__/
 Build/
+Plugins/CesiumForUnreal/

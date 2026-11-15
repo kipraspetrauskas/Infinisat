@@ -186,6 +186,111 @@ void AISHomeWorld::BuildSky()
 	if (UMaterialInterface* Ol = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Outline.M_IS_Outline")))
 		S.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Ol));
 	S.bOverride_AmbientOcclusionIntensity = true; S.AmbientOcclusionIntensity = 0.6f;
+	ApplyLook();
+}
+
+// Demo look presets (-ISLook=N, default 1 on Demo_ maps). Every look locks the exposure (no histogram pumping
+// between cuts), uses a realistic grade (warm highlights, cool shadows) and turns Lumen on from High up.
+// -ISEV=x adds to the exposure for tuning without a rebuild.
+void AISHomeWorld::ApplyLook()
+{
+	const int32 L = ISDemo::Look;
+	if (L <= 0 || !PPV || !Sun) return;
+	struct FLook
+	{
+		float SunPitch, SunYaw, SunLux, SunAngle, SkyI, FogDensity, FogScatter, CloudCover, EV, EVIn, WhiteTemp, RimLux;
+		FVector4 GainShadows, GainHighlights;
+	};
+	static const FLook Looks[] = {
+		// A golden hour: sun ~8 deg, raking through the garage door, long shadows, haze and light shafts
+		// (the garage door faces -Y: a sun travelling +Y reaches the bench at the back wall)
+		{ -8.f, 75.f, 14.f, 1.5f, 1.0f, 0.02f, 0.85f, -0.25f, -0.6f, -3.6f, 5800.f, 0.f, FVector4(0.93f, 0.98f, 1.08f, 1.f), FVector4(1.08f, 1.0f, 0.9f, 1.f) },
+		// B bright morning: high clean sun, crisp shadows, light haze
+		{ -42.f, 50.f, 12.f, 0.8f, 2.2f, 0.005f, 0.3f, -0.3f, -1.9f, -3.9f, 6300.f, 0.f, FVector4(0.97f, 0.99f, 1.03f, 1.f), FVector4(1.03f, 1.0f, 0.97f, 1.f) },
+		// C soft overcast + warm rim: dim, very soft key under heavy cloud, warm low light from behind
+		{ -55.f, 120.f, 5.f, 10.f, 2.0f, 0.012f, 0.5f, 0.45f, -2.2f, -3.9f, 6800.f, 4.f, FVector4(0.95f, 0.98f, 1.05f, 1.f), FVector4(1.05f, 1.0f, 0.94f, 1.f) },
+	};
+	const FLook& K = Looks[L - 1];
+	const bool bHigh = ISQuality::Level >= 2;
+
+	Sun->SetRelativeRotation(FRotator(K.SunPitch, K.SunYaw, 0.f));
+	Sun->SetIntensity(K.SunLux);
+	Sun->SetLightSourceAngle(K.SunAngle);
+	Sun->SetVolumetricScatteringIntensity(1.5f);
+	Sun->SetEnableLightShaftBloom(L == 1);
+	Sun->SetBloomScale(0.15f);
+	Sun->SetBloomThreshold(4.f);
+	SkyLight->SetIntensity(K.SkyI);
+	Fog->SetFogDensity(K.FogDensity);
+	Fog->SetVolumetricFog(bHigh);
+	Fog->SetVolumetricFogScatteringDistribution(K.FogScatter);
+	if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
+	{
+		UMaterialInstanceDynamic* CMID = UMaterialInstanceDynamic::Create(CM, this);
+		CMID->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), K.CloudCover);
+		Clouds->SetMaterial(CMID);
+	}
+	if (K.RimLux > 0.f)
+	{
+		if (!Rim)
+		{
+			Rim = NewObject<UDirectionalLightComponent>(this);
+			Rim->SetupAttachment(Root);
+			Rim->RegisterComponent();
+		}
+		Rim->SetRelativeRotation(FRotator(-10.f, 250.f, 0.f));
+		Rim->SetIntensity(K.RimLux);
+		Rim->SetLightColor(FLinearColor(1.f, 0.66f, 0.4f));
+		Rim->SetAtmosphereSunLight(false);
+		Rim->SetCastShadows(true);
+		Rim->SetLightSourceAngle(2.f);
+		Rim->SetVisibility(true);
+	}
+	else if (Rim) Rim->SetVisibility(false);
+
+	float EVTune = 0.f;
+	FParse::Value(FCommandLine::Get(), TEXT("ISEV="), EVTune);
+	FPostProcessSettings& S = PPV->Settings;
+	S.bOverride_AutoExposureMethod = true; S.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
+	S.bOverride_AutoExposureApplyPhysicalCameraExposure = true; S.AutoExposureApplyPhysicalCameraExposure = false;
+	LookEV = K.EV + EVTune;
+	LookEVIn = K.EVIn + EVTune;
+	bEVInit = false;   // UpdateLookExposure snaps to the right value on the next tick
+	S.bOverride_AutoExposureBias = true; S.AutoExposureBias = LookEV;
+	S.bOverride_BloomIntensity = true; S.BloomIntensity = 0.7f;
+	if (UTexture* Dirt = LoadObject<UTexture>(nullptr, TEXT("/Engine/MapTemplates/T_ScreenDirt02_w.T_ScreenDirt02_w")))
+	{
+		S.bOverride_BloomDirtMask = true; S.BloomDirtMask = Dirt;
+		S.bOverride_BloomDirtMaskIntensity = true; S.BloomDirtMaskIntensity = 1.5f;
+	}
+	S.bOverride_VignetteIntensity = true; S.VignetteIntensity = 0.45f;
+	S.bOverride_WhiteTemp = true; S.WhiteTemp = K.WhiteTemp;
+	S.bOverride_ColorSaturation = true; S.ColorSaturation = FVector4(1.02f, 1.02f, 1.02f, 1.f);
+	S.bOverride_ColorContrast = true; S.ColorContrast = FVector4(1.05f, 1.05f, 1.05f, 1.f);
+	S.bOverride_ColorGain = true; S.ColorGain = FVector4(1.f, 1.f, 1.f, 1.f);
+	S.bOverride_ColorGainShadows = true; S.ColorGainShadows = K.GainShadows;
+	S.bOverride_ColorGainHighlights = true; S.ColorGainHighlights = K.GainHighlights;
+	S.bOverride_FilmGrainIntensity = true; S.FilmGrainIntensity = 0.04f;
+	S.bOverride_DynamicGlobalIlluminationMethod = bHigh;
+	S.DynamicGlobalIlluminationMethod = EDynamicGlobalIlluminationMethod::Lumen;
+	S.bOverride_ReflectionMethod = bHigh;
+	S.ReflectionMethod = EReflectionMethod::Lumen;
+	S.bOverride_LumenFinalGatherQuality = bHigh; S.LumenFinalGatherQuality = 2.f;
+	S.bOverride_LumenSceneLightingQuality = bHigh; S.LumenSceneLightingQuality = 2.f;
+}
+
+void AISHomeWorld::UpdateLookExposure(float Dt)
+{
+	if (ISDemo::Look <= 0 || !PPV) return;
+	const APlayerController* P = GetWorld()->GetFirstPlayerController();
+	if (!P || !P->PlayerCameraManager) return;
+	const FVector Cam = P->PlayerCameraManager->GetCameraLocation();
+	bool bIn = false;
+	for (const FBox& B : Interiors) if (B.IsInsideOrOn(Cam)) { bIn = true; break; }
+	const float Target = bIn ? LookEVIn : LookEV;
+	CurEV = bEVInit ? FMath::FInterpTo(CurEV, Target, Dt, 2.5f) : Target;   // ~1 s blend through a doorway, like an eye
+	bEVInit = true;
+	PPV->Settings.AutoExposureBias = CurEV;
 }
 
 void AISHomeWorld::BuildGround()
@@ -315,27 +420,38 @@ void AISHomeWorld::BuildField()
 	PadRoot->SetupAttachment(Root);
 	PadRoot->SetRelativeLocation(PadPos);
 	PadRoot->RegisterComponent();
-	ISBuild::LaunchPad(this, PadRoot, &PadModel);
+	const bool bKitPad = KitReady() && KitMeshAsset(TEXT("LP"), TEXT("LaunchPad")) != nullptr;
+	if (bKitPad) DressLaunchSite(PadPos);   // handmade pad + camp (ISDress.cpp)
+	else ISBuild::LaunchPad(this, PadRoot, &PadModel);
 	AddInteract(PadPos + FVector(0, 0, 100), FVector(60, 60, 100), "pad");
-	AddInteract(PadPos + FVector(-250, 120, 10), FVector(25, 20, 15), "pad");
-	AddSign(TEXT("LAUNCH PAD"), PadPos + FVector(-260, 120, 60), 180.f, 25.f, FColor(255, 200, 40));
+	AddInteract(PadPos + FVector(-250, 120, bKitPad ? 50.f : 10.f), FVector(25, 20, 15), "pad");
+	AddSign(TEXT("LAUNCH PAD"), PadPos + FVector(-260, 120, bKitPad ? 110.f : 60.f), 180.f, 25.f, FColor(255, 200, 40));
 	// safety perimeter markers
-	for (int32 i = 0; i < 16; ++i)
+	for (int32 i = 0; i < 16 && !bKitPad; ++i)
 	{
 		const FVector D = FRotator(0, i * 22.5f, 0).Vector() * 1500.f;
 		ISBuild::Prim(this, PadRoot, ISMat::Cone(), D + FVector(0, 0, 18), FVector(20, 20, 36), FLinearColor(1.f, 0.35f, 0.05f), &PadModel);
 	}
-	Place(TEXT("wooden_picnic_table"), PadPos + FVector(-700, 400, 0), 70.f, 1.f, true);
-	Place(TEXT("binoculars"), PadPos + FVector(-700, 400, 78), 10.f);
+	if (!bKitPad)
+	{
+		Place(TEXT("wooden_picnic_table"), PadPos + FVector(-700, 400, 0), 70.f, 1.f, true);
+		Place(TEXT("binoculars"), PadPos + FVector(-700, 400, 78), 10.f);
+	}
 	RocketRoot->SetRelativeLocation(PadPos + FVector(0, 0, 40));
 	RocketModel.Destroy();
-	ISBuild::HobbyRocket(this, RocketRoot, &RocketModel);
+	if (UStaticMeshComponent* Toy = bKitPad ? KitPiece(TEXT("LP"), TEXT("RocketToy"), PadPos + FVector(0, 0, 33), 0.f, FVector(1.f)) : nullptr)
+	{
+		Toy->AttachToComponent(RocketRoot, FAttachmentTransformRules::KeepWorldTransform);   // handmade rocket; the CanSat rides inside
+		RocketModel.Parts.Add(Toy);
+	}
+	else ISBuild::HobbyRocket(this, RocketRoot, &RocketModel);
 	RocketModel.SetVisible(true);
 	// motor flame under the nozzle, shown only while the motor burns
 	RocketFlame.Destroy();
 	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -14.f), FVector(4.5f, 4.5f, 26.f), FLinearColor(1.f, 0.5f, 0.12f), 12.f, &RocketFlame, FRotator(180, 0, 0));
 	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -6.f), FVector(2.4f, 2.4f, 11.f), FLinearColor(1.f, 0.92f, 0.7f), 25.f, &RocketFlame, FRotator(180, 0, 0));
 	RocketFlame.SetVisible(false);
+	if (KitReady()) GrassCarpet();   // needs PadPos (the field and the path to the pad)
 }
 
 void AISHomeWorld::BuildNature()
@@ -694,6 +810,7 @@ void AISHomeWorld::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	if (IsHidden()) return;
+	UpdateLookExposure(Dt);
 
 	// doors swing smoothly
 	for (int32 i = 0; i < Doors.Num(); ++i)

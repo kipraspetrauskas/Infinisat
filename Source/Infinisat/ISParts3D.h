@@ -16,6 +16,15 @@ namespace ISQuality
 	inline float Density() { return Level <= 0 ? 0.25f : Level == 1 ? 0.6f : 1.f; }
 }
 
+// Pitch-video / jury demo mode: a map named Demo_* (or -ISDemo). Demo-only behaviour checks bDemo.
+namespace ISDemo
+{
+	extern bool bDemo;
+	extern int32 Look;       // world look: 0 = original, 1 golden hour, 2 bright morning, 3 soft overcast + warm rim (-ISLook=N)
+	extern FString Map;      // current map name (e.g. Demo_Backyard)
+	void Init(const UObject* WorldContext);   // reads the map name + command line; safe to call more than once
+}
+
 namespace ISMat
 {
 	UMaterialInterface* Color();

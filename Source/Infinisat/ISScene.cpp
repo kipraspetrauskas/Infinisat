@@ -274,6 +274,7 @@ void AISSpaceScene::ClearView()
 	bFlight = false;
 	if (RocketRoot) RocketRoot->SetVisibility(false, true);
 	StageVis.Reset(); BoosterVis.Reset(); FairingVis.Reset(); PlumeCore.Reset(); PlumeBoost.Reset();
+	if (bStylized) HideStylizedEarth();
 	bTrueScale = false;
 	bRealEarth = false;
 	bGlobe = false;
@@ -556,10 +557,11 @@ void AISSpaceScene::ShowWorkshop(const FISDesign& D)
 	ClearView();
 	View = EISView::Workshop;
 	Sky->SetVisibility(false);
-	BuildCleanRoom();
+	const bool bKitLab = LabKitAvailable();
+	if (bKitLab) BuildLabKit(); else BuildCleanRoom();
 	BuildSatellite(SatRoot, D, SatParts);
 	BitRoot->SetVisibility(false, true);   // you are BIT: no robot in your own view
-	SetCameraTarget(FVector(0, -60, 30), 640.f, 215.f, -16.f, 220.f, 2400.f);   // close: the satellite fills the space right of the catalogue
+	SetCameraTarget(FVector(0, -60, 30), 640.f, 215.f, -16.f, 220.f, bKitLab ? 1100.f : 2400.f);   // close: the satellite fills the space right of the catalogue (kit lab: the camera stays inside the hall)
 }
 
 void AISSpaceScene::ShowCompare(const FISDesign& D, const FString& RealMesh, const FString& RealName)
@@ -684,6 +686,11 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 		VoyAltKm = AltKm;
 		BuildJupiterScene();
 	}
+	else if (Dest != EISDest::Moon && StylizedAvailable())
+	{
+		BuildStylizedEarth(AltKm, IncDeg);
+		SetCameraTarget(FVector::ZeroVector, 2000.f, 200.f, -28.f, 300.f, LPRadius * 4.f);
+	}
 	else
 	{
 		// TRUE SCALE: 1 unit = 1 cm, real planet sizes and orbit radii (Unreal large-world coordinates). Deep-space missions
@@ -763,7 +770,7 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	else
 	{
 		SatRoot->SetRelativeScale3D(FVector(SatSize / 150.f));
-		AddMesh(SatRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, 120.f), FVector(0.3f)), FLinearColor(1.f, 0.55f, 0.15f, 1.f), true, 6.f, &SatParts);
+		if (!bStylized) AddMesh(SatRoot, MSphere, FTransform(FRotator::ZeroRotator, FVector(0, 0, 120.f), FVector(0.3f)), FLinearColor(1.f, 0.55f, 0.15f, 1.f), true, 6.f, &SatParts);
 	}
 	if (!bVoyage) SetMissionTime(0.0, 1.0, 100.0, true);   // a voyage keeps its mission clock across view changes
 	LastSatSize = SatSize;
@@ -772,6 +779,7 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	const bool bNear = Dest != EISDest::Backyard;
 	bFollow = bNear;
 	if (bFollow) { FollowPitch = -28.f; FollowYaw = 25.f; CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
+	if (bStylized) { CamPitch = -30.f; CamYaw = 200.f; CamMax = LPRadius * 4.f; }   // 3/4 view from above: the planet fills the lower half
 }
 
 void AISSpaceScene::ToggleMap()
@@ -983,10 +991,11 @@ void AISSpaceScene::Tick(float Dt)
 
 	if (SkyAtmo)
 	{
-		const bool bAir = bTrueScale && View == EISView::Orbit && !bJupiterScene;   // Earth's sky only around Earth
+		const bool bAir = (bTrueScale || bStylized) && View == EISView::Orbit && !bJupiterScene;   // Earth's sky only around Earth (Moon missions start from Earth now)
 		if (SkyAtmo->IsVisible() != bAir) { SkyAtmo->SetVisibility(bAir); PlanetAtmo->SetVisibility(!bAir && PlanetAtmo->IsVisible()); }
 	}
 	if (bTrueScale) TickTrueScale(Dt);
+	if (bStylized) TickStylizedEarth(Dt, CamLoc);
 	if (bTrueScale) Sky->SetWorldLocation(CamLoc);
 	if (View == EISView::Cosmos) TickCosmos(Dt, CamLoc);
 

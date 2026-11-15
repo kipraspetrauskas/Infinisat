@@ -149,6 +149,7 @@ public:
 	FVector TrackDirWorld = FVector::ZeroVector;
 	FVector PadWorld() const { return PadPos; }
 	bool bDebriefReady = false;
+	void SkipFlight();   // N in flight: simulate the rest of the flight at once (to the landing)
 
 private:
 	void BuildSky();

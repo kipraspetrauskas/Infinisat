@@ -447,3 +447,11 @@ void AISHomeWorld::ProcessThumbs()
 		ThumbFrames = -1;
 	}
 }
+
+// N during the CanSat flight: run the rest of the flight physics at once (same result as watching it), land, then search.
+void AISHomeWorld::SkipFlight()
+{
+	if (Stage == EISStage::Countdown) Countdown = 0.001f;
+	if (Stage == EISStage::Countdown) Tick(0.01f);
+	for (int32 i = 0; i < 120000 && Stage >= EISStage::Boost && Stage <= EISStage::Descent; ++i) StepFlight(0.01f);
+}

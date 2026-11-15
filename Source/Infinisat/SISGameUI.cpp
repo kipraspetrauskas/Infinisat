@@ -1359,7 +1359,9 @@ namespace
 		{
 			AISHomeWorld* W = World.Get();
 			APlayerController* P = PC.Get();
-			if (!W || !P || W->ScanT <= 0.f || !GEngine || !GEngine->GameViewport) return Layer;
+			// the landed (or falling) CanSat: marker while its beacon is heard
+			const bool bTrack = W && W->IsTracking() && W->Stage >= EISStage::Descent && W->bTrackSignal;
+			if (!W || !P || (W->ScanT <= 0.f && !bTrack) || !GEngine || !GEngine->GameViewport) return Layer;
 			FVector2D VP; GEngine->GameViewport->GetViewportSize(VP);
 			if (VP.X < 1) return Layer;
 			const FVector2f Size = FVector2f(G.GetLocalSize()), K = Size / FVector2f(VP), Mid = Size * 0.5f;
@@ -1370,7 +1372,40 @@ namespace
 			const FSlateFontInfo Font = ISFont("Bold", 12);
 			TArray<FVector2f> Used;   // label positions already drawn: never stack two labels on top of each other
 			auto Free = [&Used](FVector2f LP) { for (int32 k = 0; k < 14; ++k) { bool bHit = false; for (const FVector2f& U : Used) if (FMath::Abs(U.Y - LP.Y) < 19.f && FMath::Abs(U.X - LP.X) < 280.f) { bHit = true; break; } if (!bHit) break; LP.Y += 20.f; } Used.Add(LP); return LP; };
-			for (const FISHuntItem& H : W->Hunt)
+			if (bTrack)
+			{
+				// radio direction finding: a weak signal gives only a rough bearing (wobbles up to ~25 deg); GNSS gives the exact spot
+				const float Margin = W->TrackRssi - W->TrackSens;
+				const float Err = W->bHasGnss ? 0.f : FMath::Lerp(25.f, 3.f, FMath::Clamp(Margin / 30.f, 0.f, 1.f));
+				const float T = (float)FPlatformTime::Seconds();
+				const FVector Can = W->CanRootLocation();
+				const FVector ToCan = Can - CamLoc;
+				const FVector Bear = FRotator(0, ToCan.Rotation().Yaw + Err * FMath::Sin(T * 0.7f) * 0.8f, 0).Vector();
+				const float Dm = ToCan.Size2D() / 100.f;
+				const FVector Pos = W->bHasGnss ? Can + FVector(0, 0, 40) : CamLoc + Bear * FMath::Min((float)ToCan.Size2D(), 4000.f) + FVector(0, 0, -60);
+				const FLinearColor TC(1.f, 0.35f, 0.25f, 0.95f);
+				const FString Label = W->bHasGnss ? FString::Printf(TEXT("CANSAT  %.0f m  (GNSS fix)"), Dm) : FString::Printf(TEXT("CANSAT  signal %d/10  ~%.0f m"), FMath::Clamp((int32)(Margin / 6.f) + 1, 1, 10), Dm);
+				FVector2D Px;
+				const bool bFront = FVector::DotProduct(CamRot.Vector(), (Pos - CamLoc).GetSafeNormal()) > 0.f;
+				if (bFront && P->ProjectWorldLocationToScreen(Pos, Px, true) && Px.X > 0 && Px.Y > 0 && Px.X < VP.X && Px.Y < VP.Y)
+				{
+					const FVector2f At = FVector2f(Px) * K;
+					TArray<FVector2f> D = { At + FVector2f(0, -16), At + FVector2f(16, 0), At + FVector2f(0, 16), At + FVector2f(-16, 0), At + FVector2f(0, -16) };
+					FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), D, ESlateDrawEffect::None, TC, true, 3.f);
+					FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(360, 22), FSlateLayoutTransform(At + FVector2f(20, -11))), Label, ISFont("Bold", 14), ESlateDrawEffect::None, TC);
+				}
+				else
+				{
+					const FVector L = CamRot.UnrotateVector(Pos - CamLoc);
+					FVector2f Dir = FVector2f((float)L.Y, (float)-L.Z).GetSafeNormal();
+					if (Dir.IsNearlyZero()) Dir = FVector2f(0, 1);
+					const FVector2f At = Mid + Dir * (Size.Y * 0.4f), Nrm(-Dir.Y, Dir.X);
+					TArray<FVector2f> A = { At - Dir * 14.f + Nrm * 11.f, At + Dir * 14.f, At - Dir * 14.f - Nrm * 11.f };
+					FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), A, ESlateDrawEffect::None, TC, true, 3.5f);
+					FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(360, 22), FSlateLayoutTransform(At + FVector2f(18, -10))), Label, ISFont("Bold", 14), ESlateDrawEffect::None, TC);
+				}
+			}
+			if (W->ScanT > 0.f) for (const FISHuntItem& H : W->Hunt)
 			{
 				if (H.bFound || !H.Root) continue;
 				const FVector Pos = H.Root->GetComponentLocation() + FVector(0, 0, 8);

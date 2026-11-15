@@ -349,6 +349,10 @@ void AISPlayerController::TickWalk(float Dt)
 		const float Cur = UGameplayStatics::GetGlobalTimeDilation(this);
 		if (WasInputKeyJustPressed(EKeys::Period)) UGameplayStatics::SetGlobalTimeDilation(this, FMath::Min(8.f, Cur * 2.f));
 		if (WasInputKeyJustPressed(EKeys::Comma)) UGameplayStatics::SetGlobalTimeDilation(this, FMath::Max(0.125f, Cur * 0.5f));
+		// TAB held: fast-forward 8x;  N: skip straight to the landing (the flight is still simulated step by step)
+		if (WasInputKeyJustPressed(EKeys::Tab)) UGameplayStatics::SetGlobalTimeDilation(this, 8.f);
+		if (WasInputKeyJustReleased(EKeys::Tab)) UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+		if (WasInputKeyJustPressed(EKeys::N) && World->Stage <= EISStage::Descent) World->SkipFlight();
 	}
 	else if (!FMath::IsNearlyEqual(UGameplayStatics::GetGlobalTimeDilation(this), 1.f) && !FParse::Param(FCommandLine::Get(), TEXT("ISCanTest"))) UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
 

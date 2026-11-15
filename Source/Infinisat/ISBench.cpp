@@ -253,7 +253,7 @@ FString AISHomeWorld::ModeTag() const
 {
 	switch (Stage)
 	{
-	case EISStage::NoOrder: return TEXT("NEW ORDER WAITING");
+	case EISStage::NoOrder: return JobPhase == 1 ? TEXT("BUILD THE SATELLITE") : JobPhase == 3 ? TEXT("REPORT") : TEXT("NEW ORDER WAITING");
 	case EISStage::Build: return UsesHunt() && FoundCount(true) < RequiredCount() ? FString::Printf(TEXT("FIND PARTS  %d/%d"), FoundCount(true), RequiredCount()) : FString(TEXT("BUILD THE CANSAT"));
 	case EISStage::Sealed: case EISStage::Carry: return TEXT("CARRY TO THE PAD");
 	case EISStage::OnPad: case EISStage::Countdown: return TEXT("LAUNCH");

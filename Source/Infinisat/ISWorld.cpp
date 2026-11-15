@@ -667,7 +667,10 @@ FString AISHomeWorld::Objective() const
 {
 	switch (Stage)
 	{
-	case EISStage::NoOrder: return TEXT("Check the order laptop on the office desk.");
+	case EISStage::NoOrder:
+		if (JobPhase == 1) return FString::Printf(TEXT("%s: build the satellite at the ASSEMBLY HALL stand (walk east along the street, E at the console)."), *JobTitle);
+		if (JobPhase == 3) return FString::Printf(TEXT("%s: the mission is over. File the report at MISSION CONTROL (E at the console)."), *JobTitle);
+		return TEXT("New orders arrive at MISSION CONTROL (the space centre at the end of the street) and on the laptop in the garage.");
 	case EISStage::Build:
 		if (UsesHunt() && FoundCount(true) < RequiredCount())
 			return FString::Printf(TEXT("Find the CanSat parts around the house: %d/%d found.  Press Q to scan for parts nearby."), FoundCount(true), RequiredCount());

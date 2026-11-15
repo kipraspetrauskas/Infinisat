@@ -545,7 +545,7 @@ void AISSpaceScene::ShowWorkshop(const FISDesign& D)
 	BuildCleanRoom();
 	BuildSatellite(SatRoot, D, SatParts);
 	BitRoot->SetVisibility(false, true);   // you are BIT: no robot in your own view
-	SetCameraTarget(FVector(0, 0, 40), 900.f, 205.f, -14.f, 220.f, 2400.f);
+	SetCameraTarget(FVector(0, -60, 30), 640.f, 215.f, -16.f, 220.f, 2400.f);   // close: the satellite fills the space right of the catalogue
 }
 
 void AISSpaceScene::ShowCompare(const FISDesign& D, const FString& RealMesh, const FString& RealName)
@@ -1138,4 +1138,19 @@ void AISSpaceScene::ShowGlobe(float AltM)
 	CamDist = CamDistGoal = R + AltM * 100.f;
 	CamMin = R + 100000.f * 100.f;
 	CamMax = R * 60.f;
+}
+
+FVector AISSpaceScene::SatMountWorld(int32 M) const
+{
+	FVector L = FVector::ZeroVector;
+	switch (M)
+	{
+	case 1: L = FVector(SatHalf.X * 1.35f, 0, 0); break;                    // nadir
+	case 2: L = FVector(-SatHalf.X * 1.35f, 0, 0); break;                   // zenith
+	case 3: L = FVector(0, SatHalf.Y + FMath::Max(60.f, SatHalf.Y * 1.6f), SatHalf.Z * 0.3f); break;   // wings
+	case 4: L = FVector(0, 0, -SatHalf.Z * 1.3f); break;                    // base
+	case 5: L = FVector(0, -SatHalf.Y * 1.35f, SatHalf.Z * 0.4f); break;     // side panels
+	default: L = FVector(0, 0, SatHalf.Z * 0.15f); break;                   // inside
+	}
+	return SatRoot ? SatRoot->GetComponentTransform().TransformPosition(L) : L;
 }

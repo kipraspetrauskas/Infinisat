@@ -75,6 +75,7 @@ public:
 	int32 TakeZoomPast() { const int32 Z = ZoomPast; ZoomPast = 0; return Z; }
 	// the globe view: the real Earth with your space centre, reached by zooming out from the ground
 	void ShowGlobe(float AltM);
+	FVector SatMountWorld(int32 Mount) const;  // where a mounting place of the satellite on the stand is, for the build UI
 	bool bGlobe = false, bLand = false;
 	bool TakeLand() { const bool B = bLand; bLand = false; return B; }
 	int32 ZoomPast = 0, ZoomPastCount = 0;
@@ -156,6 +157,7 @@ private:
 	bool bRealEarth = false;            // the true-scale Earth is the real Cesium globe (Earth-centred origin)
 	FQuat OrbitQuat() const;            // the orbital plane: through the real launch site at the real launch heading
 	FVector FlightBase = FVector::ZeroVector;   // shifts the flight (which starts at radius Re) onto the real pad
+	FVector SatHalf = FVector(50.f);           // half size of the bus being built (model units)
 	float RealSatCm = 200.f;
 	double PeriodS = 5600.0;
 	UPROPERTY() ULineBatchComponent* Lines = nullptr;

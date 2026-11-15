@@ -90,6 +90,8 @@ void AISPlayerController::BeginPlay()
 	if (bWorldArg) EnterWorld();
 	double OvA = 0.0;   // dev: -ISOverview=metres starts with the camera lifted above the site
 	if (bWorldArg && FParse::Value(FCommandLine::Get(), TEXT("ISOverview="), OvA)) EnterOverview(OvA);
+	int32 DevJob = -1;   // dev: -ISJob=N starts orbital order N as a job in the world
+	if (bWorldArg && UI && FParse::Value(FCommandLine::Get(), TEXT("ISJob="), DevJob)) UI->DevStartJob(DevJob);
 }
 
 void AISPlayerController::EndPlay(const EEndPlayReason::Type Reason)
@@ -350,6 +352,7 @@ void AISPlayerController::TickWalk(float Dt)
 	if (WasInputKeyJustPressed(EKeys::MouseScrollDown) && !World->IsTracking()) { EnterOverview(80.0); return; }
 	if (WasInputKeyJustPressed(EKeys::E) && !LookAction.IsNone())
 	{
+		if (LookAction == "sc_orders" && World->JobPhase == 3) { World->JobPhase = 0; World->Toast(FString::Printf(TEXT("Report filed for %s. The customer has the data; new orders are on the board."), *World->JobTitle)); }
 		if (LookAction == "laptop" || LookAction == "sc_orders") { OpenPanel(); if (UI) UI->ShowOrders(); }
 		else if (LookAction == "sc_design" || LookAction == "sc_lab" || LookAction == "sc_track") { Bit->Reach(); EnterMenu(); if (UI) UI->OpenBuilding(LookAction); }
 		else if (LookAction == "bench" && World->Stage == EISStage::Build) { Bit->Reach(); EnterBench(); }

@@ -13,6 +13,7 @@ struct FISDesign
 	int32 Fleet = 1;
 	EISDest Dest = EISDest::LEO;  // used by sandbox; missions force their own
 	float AltKm = 500.f;
+	TMap<FName, uint8> Mount;     // where each part sits on the bus (ISMount); parts not listed are in their usual place
 
 	bool Has(FName Id) const { return Parts.Contains(Id); }
 	FName GetSingle(EISCat Cat) const;

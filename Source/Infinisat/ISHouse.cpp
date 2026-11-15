@@ -946,10 +946,9 @@ void AISHomeWorld::BuildSpaceCentre()
 	auto Console = [&](const FVector& P, float Face, FName Action, const TCHAR* Label)
 	{
 		F(TEXT("desk"), P, Face);
-		F(TEXT("computerScreen"), P + FVector(0, 0, 160.f), Face);
+		F(TEXT("computerScreen"), P + FVector(0, 0, 78.f), Face + 180.f);   // on the desk top, facing the chair
 		F(TEXT("chairDesk"), P + FRotator(0, Face, 0).RotateVector(FVector(-90.f, 0, 0)), Face);
-		Paint(P + FVector(0, 0, 290.f), FVector(10, 160, 60), FLinearColor(0.1f, 0.6f, 1.f) * 1.5f, 0.2f, false, Face);   // lit wall screen
-		AddSign(Label, P + FVector(0, 0, 340.f), Face + 90.f, 22.f, FColor(255, 145, 30));
+		AddSign(Label, P + FVector(0, 0, 175.f), Face - 90.f, 18.f, FColor(255, 145, 30));
 		AddInteract(P + FVector(0, 0, 120.f), FVector(80, 80, 80), Action);
 	};
 

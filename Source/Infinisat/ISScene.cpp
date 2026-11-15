@@ -756,8 +756,10 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 				if (CloudShell) CloudShell->SetVisibility(false);   // the real imagery; a painted cloud sphere would cover it
 				// 6,371 km from the origin the sun's shadow maps lose precision and put everything in shadow: no sun shadows here
 				SunLight->SetCastShadows(false);
-				// the same time of day as the walking world: mid-morning at Mahia, the sun 50 deg up in the north-east
-				const FVector ToSun = (Earth->SiteUpEarthFrame() * 0.77f + Earth->SiteEastEarthFrame() * 0.5f + Earth->SiteNorthEarthFrame() * 0.4f).GetSafeNormal();
+				// mid-morning at the launch pad (Mahia unless the bought rocket flies from elsewhere): the sun 50 deg up,
+				// toward the equator and the east
+				const float Eq = PadLat < 0.0 ? 1.f : -1.f;
+				const FVector ToSun = (AISEarth::GeoUp(PadLon, PadLat) * 0.77f + AISEarth::GeoEast(PadLon, PadLat) * 0.5f + AISEarth::GeoNorth(PadLon, PadLat) * (0.4f * Eq)).GetSafeNormal();
 				SunLight->SetWorldRotation((-ToSun).Rotation());
 			}
 			SetPlanet(Moon, TEX_MOON, (float)(1737.4 * K), FVector(0, 384400.0 * K, 0));
@@ -1114,8 +1116,8 @@ FQuat AISSpaceScene::OrbitQuat() const
 		return FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
 	// the real orbital plane: it passes over Mahia, heading where a launch to this inclination must go
 	// (sin(azimuth) = cos(inclination) / cos(latitude); sun-synchronous and polar orbits leave toward the south)
-	const FVector U = Earth->SiteUpEarthFrame(), E = Earth->SiteEastEarthFrame(), N = Earth->SiteNorthEarthFrame();
-	const double CosLat = FMath::Cos(FMath::DegreesToRadians(FMath::Abs(AISEarth::SiteLat)));
+	const FVector U = AISEarth::GeoUp(PadLon, PadLat), E = AISEarth::GeoEast(PadLon, PadLat), N = AISEarth::GeoNorth(PadLon, PadLat);
+	const double CosLat = FMath::Cos(FMath::DegreesToRadians(FMath::Abs(PadLat)));
 	double Az = FMath::Asin(FMath::Clamp(FMath::Cos(FMath::DegreesToRadians((double)OrbitInc)) / CosLat, -1.0, 1.0));
 	if (OrbitInc > 80.f) Az = PI - Az;
 	const FVector Dn = (N * (float)FMath::Cos(Az) + E * (float)FMath::Sin(Az)).GetSafeNormal();

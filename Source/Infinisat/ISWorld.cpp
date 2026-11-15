@@ -1,4 +1,5 @@
 #include "ISWorld.h"
+#include "ISCareer.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "TimerManager.h"
@@ -555,7 +556,7 @@ FString AISHomeWorld::PromptFor(FName A) const
 {
 	if (A == "laptop" || A == "sc_orders") return TEXT("E  Open the order board (customers waiting)");
 	if (A == "sc_design") return TEXT("E  Design a satellite (assembly hall)");
-	if (A == "sc_lab") return TEXT("E  Part library: how every part works");
+	if (A == "sc_lab") return TEXT("E  R&D Lab: research new parts (science + funds)");
 	if (A == "sc_track") return TEXT("E  Map of space (tracking station)");
 	const FString AS = A.ToString();
 	if (AS.StartsWith(TEXT("door:")))
@@ -668,8 +669,19 @@ FString AISHomeWorld::Objective() const
 	switch (Stage)
 	{
 	case EISStage::NoOrder:
-		if (JobPhase == 1) return FString::Printf(TEXT("%s: build the satellite at the ASSEMBLY HALL stand (walk east along the street, E at the console)."), *JobTitle);
+		if (JobPhase == 1)
+		{
+			const TArray<FISMission>& Ms = ISData::Missions();
+			if (Ms.IsValidIndex(JobMission) && !ISCareer::TierOk(Ms[JobMission]))
+				return FString::Printf(TEXT("%s: the parts it needs are tech tier %d. Research it at the R&D LAB first, then build it at the ASSEMBLY HALL stand."), *JobTitle, Ms[JobMission].Chapter);
+			return FString::Printf(TEXT("%s: build the satellite at the ASSEMBLY HALL stand (walk east along the street, E at the console)."), *JobTitle);
+		}
 		if (JobPhase == 3) return FString::Printf(TEXT("%s: the mission is over. File the report at MISSION CONTROL (E at the console)."), *JobTitle);
+		{
+			const ISCareer::FState& C = ISCareer::Get();
+			if (C.Tier < ISCareer::MaxTier && ISCareer::CanResearch(C.Tier + 1))
+				return FString::Printf(TEXT("You have enough science to research tier %d (%s) at the R&D LAB. New orders wait at MISSION CONTROL."), C.Tier + 1, *ISCareer::TierName(C.Tier + 1));
+		}
 		return TEXT("New orders arrive at MISSION CONTROL (the space centre at the end of the street) and on the laptop in the garage.");
 	case EISStage::Build:
 		if (UsesHunt() && FoundCount(true) < RequiredCount())

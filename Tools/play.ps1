@@ -47,6 +47,7 @@ switch ($Action) {
     for ($i = 1; $i -le 20; $i++) { [W]::SetCursorPos([int]($c.X + ($o.X + [int]$A1 - $c.X) * $i / 20), [int]($c.Y + ($o.Y + [int]$A2 - $c.Y) * $i / 20)) | Out-Null; Start-Sleep -Milliseconds 25 }
     Write-Output "glide $A1,$A2"
   }
+  "wheel" { [W]::mouse_event(0x0800, 0, 0, [uint32]([int]$A1 -band 0xFFFFFFFF), [IntPtr]::Zero); Write-Output "wheel $A1" }   # +120 = one notch up
   "move" { [W]::mouse_event(0x0001, [int]$A1, [int]$A2, 0, [IntPtr]::Zero); Write-Output "move $A1,$A2" }
   "key" {
     $vk = [byte][int]$A1; $hold = if ($A2) { [int]$A2 } else { 60 }

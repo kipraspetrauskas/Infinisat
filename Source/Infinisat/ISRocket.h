@@ -31,6 +31,8 @@ struct FISLauncher
 	double FairingKg = 0, FairingDiameterM = 1, FairingLengthM = 2;
 	double MaxQPa = 45000;            // structural limit with the nose pointed into the wind
 	double SiteLatDeg = 28.5;
+	double SiteLonDeg = -80.6;        // the real pad (WGS84); the flight starts there on the real Earth
+	double SiteHeightM = -25.0;       // rough ellipsoid height of the pad (refined from the terrain at launch)
 	FString Site;
 	static const FISLauncher* Find(FName VehicleId);   // maps the game's vehicle ids to real launchers
 };

@@ -8,6 +8,7 @@
 #include "Styling/SlateTypes.h"
 #include "ISData.h"
 #include "ISSim.h"
+#include "ISCareer.h"
 
 class AISSpaceScene;
 class APlayerController;
@@ -38,7 +39,7 @@ public:
 	virtual FReply OnMouseButtonUp(const FGeometry& G, const FPointerEvent& E) override;
 
 private:
-	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos, Globe };
+	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos, Globe, Lab };
 
 	// navigation / state changes (deferred rebuild)
 	void Go(EScreen S);
@@ -82,6 +83,12 @@ private:
 	TSharedRef<SWidget> BuildBench();
 	TSharedRef<SWidget> BuildCanDebrief();
 	TSharedRef<SWidget> BuildPause();
+	TSharedRef<SWidget> BuildLab();          // R&D: spend science + funds on tech tiers (the parts the stand can use)
+	int32 LabSel = 1;
+	bool bConfirmNew = false;                // title: "New career" asks once before wiping a saved career
+	bool bAwarded = false;                   // this flight's payment has been made (debrief)
+	FISCareerReward LastReward;
+	void StartCareerWorld();                 // continue / new career: into the world at the house
 	class AISPlayerController* IPC() const;
 	class AISHomeWorld* HW() const;
 	bool InWorld() const;
@@ -102,10 +109,7 @@ private:
 
 	EScreen Screen = EScreen::Title;
 	bool bDirty = true;
-	bool bJudgeMode = true;
 	int32 MissionIdx = 0;
-	int32 MaxChapter = 0;
-	TArray<int32> BestStars;
 	FISDesign Design;
 	FISEval Eval;
 	EISCat Cat = EISCat::Bus;

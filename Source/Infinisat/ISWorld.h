@@ -88,7 +88,8 @@ public:
 	int32 JobPhase = 0;
 	void Toast(const FString& S) { Toasts.Add(S); }
 	FString JobTitle;
-	void BeginJob(const FString& Title) { JobTitle = Title; JobPhase = 1; Toast(FString::Printf(TEXT("Order accepted: %s. The satellite is built at the Assembly Hall stand."), *Title)); }
+	int32 JobMission = -1;
+	void BeginJob(const FString& Title, int32 Idx) { JobTitle = Title; JobMission = Idx; JobPhase = 1; Toast(FString::Printf(TEXT("Order accepted: %s. The satellite is built at the Assembly Hall stand."), *Title)); }
 	bool HasWaypoint() const { return JobPhase == 1 || JobPhase == 3; }
 	FVector Waypoint() const { return JobPhase == 1 ? FVector(18300, 1100, 150) : FVector(14200, 1200, 150); }
 	FString WaypointLabel() const { return JobPhase == 1 ? TEXT("ASSEMBLY HALL - satellite stand") : TEXT("MISSION CONTROL - file the report"); }

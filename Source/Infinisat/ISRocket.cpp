@@ -22,23 +22,23 @@ namespace
 	{
 		TArray<FISLauncher> A;
 		{
-			FISLauncher L; L.Id = "lv_electron"; L.Name = TEXT("Electron"); L.Site = TEXT("Mahia, New Zealand"); L.SiteLatDeg = -39.26; L.MaxQPa = 50000;
+			FISLauncher L; L.Id = "lv_electron"; L.Name = TEXT("Electron"); L.Site = TEXT("Mahia, New Zealand"); L.SiteLatDeg = -39.2615; L.SiteLonDeg = 177.8649; L.SiteHeightM = 122.0; L.MaxQPa = 50000;
 			L.Stages.Add(S(TEXT("Stage 1 (9 Rutherford)"), 950, 9250, 224e3, 239e3, 293, 311, 0.6, false, 1.2, 12.1, Black));
 			L.Stages.Add(S(TEXT("Stage 2 (Rutherford Vacuum)"), 250, 2050, 18e3, 25.8e3, 240, 343, 0.6, false, 1.2, 2.4, Black));
 			L.FairingKg = 50; L.FairingDiameterM = 1.2; L.FairingLengthM = 2.5;
 			A.Add(L);
 		}
 		{
-			FISLauncher L; L.Id = "lv_f9"; L.Name = TEXT("Falcon 9 Block 5"); L.Site = TEXT("Cape Canaveral SLC-40, Florida"); L.SiteLatDeg = 28.56; L.MaxQPa = 50000;
+			FISLauncher L; L.Id = "lv_f9"; L.Name = TEXT("Falcon 9 Block 5"); L.Site = TEXT("Cape Canaveral SLC-40, Florida"); L.SiteLatDeg = 28.5619; L.SiteLonDeg = -80.5772; L.SiteHeightM = -24.0; L.MaxQPa = 50000;
 			L.Stages.Add(S(TEXT("Stage 1 (9 Merlin 1D)"), 25600, 395700, 7607e3, 8227e3, 283, 312, 0.4, false, 3.66, 47.0, White));
 			L.Stages.Add(S(TEXT("Stage 2 (Merlin Vacuum)"), 4000, 92670, 600e3, 981e3, 200, 348, 0.39, false, 3.66, 13.8, White));
 			L.FairingKg = 1900; L.FairingDiameterM = 5.2; L.FairingLengthM = 13.1;
 			A.Add(L);
-			FISLauncher R = L; R.Id = "lv_rideshare"; R.Name = TEXT("Falcon 9 rideshare (Transporter)"); R.Site = TEXT("Vandenberg SLC-4E, California"); R.SiteLatDeg = 34.63;
+			FISLauncher R = L; R.Id = "lv_rideshare"; R.Name = TEXT("Falcon 9 rideshare (Transporter)"); R.Site = TEXT("Vandenberg SLC-4E, California"); R.SiteLatDeg = 34.6321; R.SiteLonDeg = -120.6106; R.SiteHeightM = 55.0;
 			A.Add(R);
 		}
 		{
-			FISLauncher L; L.Id = "lv_vega"; L.Name = TEXT("Vega-C"); L.Site = TEXT("Guiana Space Centre ELV, Kourou"); L.SiteLatDeg = 5.24; L.MaxQPa = 55000;
+			FISLauncher L; L.Id = "lv_vega"; L.Name = TEXT("Vega-C"); L.Site = TEXT("Guiana Space Centre ELV, Kourou"); L.SiteLatDeg = 5.2364; L.SiteLonDeg = -52.7752; L.SiteHeightM = 10.0; L.MaxQPa = 55000;
 			L.Stages.Add(S(TEXT("P120C (solid)"), 11000, 141600, 2700e3, 3000e3, 255, 279, 1.0, true, 3.4, 13.5, White));
 			L.Stages.Add(S(TEXT("Zefiro 40 (solid)"), 3800, 36200, 1100e3, 1304e3, 250, 293, 1.0, true, 2.4, 8.3, White));
 			L.Stages.Add(S(TEXT("Zefiro 9 (solid)"), 1300, 10500, 230e3, 317e3, 230, 296, 1.0, true, 1.9, 4.1, White));
@@ -47,7 +47,7 @@ namespace
 			A.Add(L);
 		}
 		{
-			FISLauncher L; L.Id = "lv_a6"; L.Name = TEXT("Ariane 6 (A64)"); L.Site = TEXT("Guiana Space Centre ELA-4, Kourou"); L.SiteLatDeg = 5.24; L.MaxQPa = 50000;
+			FISLauncher L; L.Id = "lv_a6"; L.Name = TEXT("Ariane 6 (A64)"); L.Site = TEXT("Guiana Space Centre ELA-4, Kourou"); L.SiteLatDeg = 5.2611; L.SiteLonDeg = -52.7902; L.SiteHeightM = 10.0; L.MaxQPa = 50000;
 			FISEngineStage Core = S(TEXT("Core stage (Vulcain 2.1)"), 17000, 150000, 1000e3, 1370e3, 318, 431, 0.8, false, 5.4, 30.0, White);
 			Boost(Core, 4, 11000, 141600, 2700e3, 3000e3, 255, 279, 3.4, 13.5, true);
 			L.Stages.Add(Core);
@@ -56,7 +56,7 @@ namespace
 			A.Add(L);
 		}
 		{
-			FISLauncher L; L.Id = "lv_fh"; L.Name = TEXT("Falcon Heavy"); L.Site = TEXT("Kennedy Space Center LC-39A, Florida"); L.SiteLatDeg = 28.61; L.MaxQPa = 50000;
+			FISLauncher L; L.Id = "lv_fh"; L.Name = TEXT("Falcon Heavy"); L.Site = TEXT("Kennedy Space Center LC-39A, Florida"); L.SiteLatDeg = 28.6083; L.SiteLonDeg = -80.6041; L.SiteHeightM = -20.0; L.MaxQPa = 50000;
 			FISEngineStage Core = S(TEXT("Centre core (9 Merlin 1D)"), 28000, 395700, 7607e3, 8227e3, 283, 312, 0.4, false, 3.66, 47.0, White);
 			Boost(Core, 2, 25600, 395700, 7607e3, 8227e3, 283, 312, 3.66, 44.0, false);
 			L.Stages.Add(Core);
@@ -65,7 +65,7 @@ namespace
 			A.Add(L);
 		}
 		{
-			FISLauncher L; L.Id = "lv_sls"; L.Name = TEXT("SLS Block 1"); L.Site = TEXT("Kennedy Space Center LC-39B, Florida"); L.SiteLatDeg = 28.63; L.MaxQPa = 45000;
+			FISLauncher L; L.Id = "lv_sls"; L.Name = TEXT("SLS Block 1"); L.Site = TEXT("Kennedy Space Center LC-39B, Florida"); L.SiteLatDeg = 28.6272; L.SiteLonDeg = -80.6209; L.SiteHeightM = -20.0; L.MaxQPa = 45000;
 			FISEngineStage Core = S(TEXT("Core stage (4 RS-25)"), 85000, 987000, 7440e3, 9100e3, 366, 452, 0.67, false, 8.4, 65.0, Orange);
 			Boost(Core, 2, 98000, 628000, 14600e3, 16000e3, 242, 269, 3.7, 54.0, true);
 			L.Stages.Add(Core);

@@ -37,6 +37,12 @@ public:
 	void StartLaunch(bool bHeavy);
 	// real rocket flight (ISRocket.h): physics ascent the player can fly; replaces the scripted launch for orbital vehicles
 	bool StartFlight(FName VehicleId, double PayloadKg, double TargetAltKm, double IncDeg);
+	// where the bought launch flies from (the real pad of that vehicle; Mahia by default). Call before ShowOrbit:
+	// the orbital plane and the morning sun are placed over this pad.
+	void SetLaunchSite(FName VehicleId);
+	double PadLon = 177.8649, PadLat = -39.2615, PadH = 122.0;
+	bool bPadMahia = true;
+	bool bPadLevelled = false;
 	bool IsFlightActive() const { return bFlight; }
 	FISRocketSim* Flight() { return bFlight ? &Sim : nullptr; }
 	void SetFlightWarp(float W) { FlightWarp = W; }

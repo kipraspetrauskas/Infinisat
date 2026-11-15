@@ -3,6 +3,9 @@
 // the plume grows wider as the air thins (under-expanded exhaust in vacuum).
 #include "ISScene.h"
 #include "ISEarth.h"
+#include "ISRocket.h"
+#include "Cesium3DTileset.h"
+#include "CesiumSampleHeightResult.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -47,15 +50,49 @@ bool AISSpaceScene::StartFlight(FName VehicleId, double PayloadKg, double Target
 	FlightBase = FVector::ZeroVector;
 	if (bRealEarth && Earth)
 	{
-		// the real pad: Rocket Lab Launch Complex 1 on the Mahia Peninsula, heading down the real launch azimuth
-		const FVector Pad = Earth->SiteToEarth(AISEarth::LC1Site());
+		// the real pad of the rocket you bought: Rocket Lab LC-1 next to your site, or Cape Canaveral, Vandenberg, Kourou...
+		// heading down the real launch azimuth
+		const FVector Pad = bPadMahia ? Earth->SiteToEarth(AISEarth::LC1Site()) : AISEarth::GeoToEarth(PadLon, PadLat, PadH);
 		FlightU = Pad.GetSafeNormal();
 		FlightDn = Q.RotateVector(FVector::RightVector);
 		FlightDn = (FlightDn - FlightU * FVector::DotProduct(FlightDn, FlightU)).GetSafeNormal();
 		FlightBase = Pad - FlightU * (float)(FISRocketSim::Re * 100.0);   // the sim starts at radius Re; the real ground is here
+		// a pad far from home: ask the real terrain how high the ground there is and stand the pad on it
+		if (!bPadMahia && !bPadLevelled && Earth->Terrain)
+		{
+			TWeakObjectPtr<AISSpaceScene> Self(this);
+			Earth->Terrain->SampleHeightMostDetailed({ FVector(PadLon, PadLat, 0.0) }, FCesiumSampleHeightMostDetailedCallback::CreateLambda(
+				[Self](ACesium3DTileset*, const TArray<FCesiumSampleHeightResult>& R, const TArray<FString>&)
+				{
+					if (!Self.IsValid() || !R.Num() || !R[0].SampleSuccess) return;
+					AISSpaceScene* S = Self.Get();
+					S->PadH = R[0].LongitudeLatitudeHeight.Z;
+					S->bPadLevelled = true;
+					UE_LOG(LogTemp, Log, TEXT("[FLIGHT] pad ground at %.5f, %.5f: %.1f m above the ellipsoid"), S->PadLat, S->PadLon, S->PadH);
+					// still on the pad: rebuild it on the real ground
+					if (S->bFlight && S->Sim.Phase == EISFlightPhase::OnPad && S->Earth)
+					{
+						const FVector P = AISEarth::GeoToEarth(S->PadLon, S->PadLat, S->PadH);
+						S->FlightBase = P - S->FlightU * (float)(FISRocketSim::Re * 100.0);
+						S->RetryFlight();
+					}
+				}));
+		}
 	}
 	RetryFlight();
 	return true;
+}
+
+void AISSpaceScene::SetLaunchSite(FName VehicleId)
+{
+	const FISLauncher* L = FISLauncher::Find(VehicleId);
+	const bool bMahia = !L || VehicleId == "lv_electron";
+	if (bMahia) { PadLon = 177.8649; PadLat = -39.2615; PadH = 122.0; }
+	else if (!bPadLevelled || bPadMahia || FMath::Abs(PadLon - L->SiteLonDeg) > 1e-4 || FMath::Abs(PadLat - L->SiteLatDeg) > 1e-4)
+	{
+		PadLon = L->SiteLonDeg; PadLat = L->SiteLatDeg; PadH = L->SiteHeightM; bPadLevelled = false;
+	}
+	bPadMahia = bMahia;
 }
 
 void AISSpaceScene::RetryFlight()

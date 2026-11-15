@@ -102,6 +102,29 @@ void AISEarth::SetVisible(bool bOn)
 static FVector EcefToEarthFrame(const FVector& E) { return FVector(E.X, -E.Y, E.Z) * 100.0; }
 static FVector EarthFrameToEcef(const FVector& U) { return FVector(U.X, -U.Y, U.Z) / 100.0; }
 
+FVector AISEarth::GeoToEarth(double LonDeg, double LatDeg, double H)
+{
+	const double La = FMath::DegreesToRadians(LatDeg), Lo = FMath::DegreesToRadians(LonDeg);
+	const double A = 6378137.0, F = 1.0 / 298.257223563, E2 = F * (2.0 - F);
+	const double Nr = A / FMath::Sqrt(1.0 - E2 * FMath::Square(FMath::Sin(La)));
+	return EcefToEarthFrame(FVector((Nr + H) * FMath::Cos(La) * FMath::Cos(Lo), (Nr + H) * FMath::Cos(La) * FMath::Sin(Lo), (Nr * (1.0 - E2) + H) * FMath::Sin(La)));
+}
+FVector AISEarth::GeoUp(double LonDeg, double LatDeg)
+{
+	const double La = FMath::DegreesToRadians(LatDeg), Lo = FMath::DegreesToRadians(LonDeg);
+	return EcefToEarthFrame(FVector(FMath::Cos(La) * FMath::Cos(Lo), FMath::Cos(La) * FMath::Sin(Lo), FMath::Sin(La))).GetSafeNormal();
+}
+FVector AISEarth::GeoEast(double LonDeg, double)
+{
+	const double Lo = FMath::DegreesToRadians(LonDeg);
+	return EcefToEarthFrame(FVector(-FMath::Sin(Lo), FMath::Cos(Lo), 0.0)).GetSafeNormal();
+}
+FVector AISEarth::GeoNorth(double LonDeg, double LatDeg)
+{
+	const double La = FMath::DegreesToRadians(LatDeg), Lo = FMath::DegreesToRadians(LonDeg);
+	return EcefToEarthFrame(FVector(-FMath::Sin(La) * FMath::Cos(Lo), -FMath::Sin(La) * FMath::Sin(Lo), FMath::Cos(La))).GetSafeNormal();
+}
+
 FVector AISEarth::SiteUpEarthFrame() const
 {
 	const double La = FMath::DegreesToRadians(SiteLat), Lo = FMath::DegreesToRadians(SiteLon);

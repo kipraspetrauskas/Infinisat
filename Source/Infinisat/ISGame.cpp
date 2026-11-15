@@ -1,4 +1,5 @@
 #include "ISGame.h"
+#include "ISCareer.h"
 #include "ISEarth.h"
 #include "Kismet/GameplayStatics.h"
 #include "Infinisat.h"
@@ -87,7 +88,7 @@ void AISPlayerController::BeginPlay()
 	EnterMenu();
 	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld"));
 	UE_LOG(LogInfinisat, Log, TEXT("PC BeginPlay: world=%d scene=%d ui=%d arg=%d"), World != nullptr, Scene != nullptr, UI.IsValid(), bWorldArg);
-	if (bWorldArg) EnterWorld();
+	if (bWorldArg || ISCareer::bEnterWorldOnLoad) { ISCareer::bEnterWorldOnLoad = false; EnterWorld(); }
 	double OvA = 0.0;   // dev: -ISOverview=metres starts with the camera lifted above the site
 	if (bWorldArg && FParse::Value(FCommandLine::Get(), TEXT("ISOverview="), OvA)) EnterOverview(OvA);
 	int32 DevJob = -1;   // dev: -ISJob=N starts orbital order N as a job in the world
@@ -452,6 +453,8 @@ void AISPlayerController::TickCanTest(float Dt)
 		Log(World->Stage == EISStage::Countdown ? TEXT("countdown OK") : TEXT("COUNTDOWN FAILED"));
 		CanTestStep = 3; return;
 	case 3:
+		// -ISCanTestStay: skip the flight to the landing and stay on the debrief (screenshot of the career payment)
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestStay")) && World->Stage >= EISStage::Boost && World->Stage <= EISStage::Descent) World->SkipFlight();
 		if (World->Stage == EISStage::Landed)
 		{
 			Log(FString::Printf(TEXT("landed: apogee %.0f m, landing %.1f m/s, drift %.0f m, broken %d"), World->Report.ApogeeM, World->Report.LandingSpeed, World->Report.DriftM, (int32)World->Report.bBroken));
@@ -462,6 +465,7 @@ void AISPlayerController::TickCanTest(float Dt)
 		else if (CanTestT > 900.f) { Log(TEXT("FAIL: never landed")); CanTestStep = 4; }
 		return;
 	case 4:
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestStay"))) { Log(TEXT("career: ") + ISCareer::StatusLine()); CanTestStep = 5; return; }
 		ConsoleCommand(TEXT("quit"));
 		CanTestStep = 5; return;
 	default: return;

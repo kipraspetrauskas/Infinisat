@@ -959,9 +959,9 @@ void AISHomeWorld::BuildSpaceCentre()
 	Paint(FVector(14200, 1425, 330), FVector(1100, 10, 260), FLinearColor(0.02f, 0.05f, 0.1f), 0.3f, false);   // wall of screens
 	Paint(FVector(14200, 1418, 330), FVector(500, 6, 200), FLinearColor(0.1f, 0.35f, 0.8f) * 1.4f, 0.2f, false);
 
-	// LAB: test sensors and radios, read about every part (the part library)
-	Bldg(FVector2D(16300, 900), 1500, 1100, 520, 260, 300, TEXT("LAB"));
-	Console(FVector(16300, 1200, 12), 270.f, "sc_lab", TEXT("PART LIBRARY"));
+	// R&D LAB: science from the satellites' data + contract money -> new tiers of parts for the stand
+	Bldg(FVector2D(16300, 900), 1500, 1100, 520, 260, 300, TEXT("R&D LAB"));
+	Console(FVector(16300, 1200, 12), 270.f, "sc_lab", TEXT("RESEARCH"));
 	for (int32 k = 0; k < 3; ++k) { F(TEXT("desk"), FVector(15800 + k * 500.f, 700, 12), 0.f); F(TEXT("bookcaseOpen"), FVector(15750 + k * 500.f, 1380, 12), 180.f); }
 	F(TEXT("pottedPlant"), FVector(15650, 520, 12), 0.f);
 

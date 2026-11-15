@@ -84,6 +84,17 @@ UStaticMeshComponent* AISHomeWorld::Block(const FVector& C, const FVector& S, co
 	if (Tex)
 	{
 		if (UTexture* T = LoadObject<UTexture>(nullptr, *TexPath(Tex))) MID->SetTextureParameterValue(TEXT("Tex"), T);
+		// full PBR when the normal / roughness maps were imported (Tools/setup_pbr.py)
+		for (const TCHAR* Map : { TEXT("nor"), TEXT("rough") })
+		{
+			const FString P = FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_%s.%s_%s"), Tex, Map, Tex, Map);
+			if (UTexture* T = LoadObject<UTexture>(nullptr, *P, nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				const bool bNor = Map[0] == TEXT('n');
+				MID->SetTextureParameterValue(bNor ? TEXT("Nor") : TEXT("Rough"), T);
+				if (!bNor) MID->SetScalarParameterValue(TEXT("RoughMul"), 1.f);   // the map carries the real roughness
+			}
+		}
 		MID->SetScalarParameterValue(TEXT("Tile"), Tile);
 		MID->SetVectorParameterValue(TEXT("Tint"), Tint);
 	}
@@ -185,6 +196,111 @@ void AISHomeWorld::BuildSky()
 	if (UMaterialInterface* Ol = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Outline.M_IS_Outline")))
 		S.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Ol));
 	S.bOverride_AmbientOcclusionIntensity = true; S.AmbientOcclusionIntensity = 0.6f;
+	ApplyLook();
+}
+
+// Demo look presets (-ISLook=N, default 1 on Demo_ maps). Every look locks the exposure (no histogram pumping
+// between cuts), uses a realistic grade (warm highlights, cool shadows) and turns Lumen on from High up.
+// -ISEV=x adds to the exposure for tuning without a rebuild.
+void AISHomeWorld::ApplyLook()
+{
+	const int32 L = ISDemo::Look;
+	if (L <= 0 || !PPV || !Sun) return;
+	struct FLook
+	{
+		float SunPitch, SunYaw, SunLux, SunAngle, SkyI, FogDensity, FogScatter, CloudCover, EV, EVIn, WhiteTemp, RimLux;
+		FVector4 GainShadows, GainHighlights;
+	};
+	static const FLook Looks[] = {
+		// A golden hour: sun ~8 deg, raking through the garage door, long shadows, haze and light shafts
+		// (the garage door faces -Y: a sun travelling +Y reaches the bench at the back wall)
+		{ -8.f, 75.f, 14.f, 1.5f, 1.0f, 0.02f, 0.85f, -0.25f, -0.6f, -3.6f, 5800.f, 0.f, FVector4(0.93f, 0.98f, 1.08f, 1.f), FVector4(1.08f, 1.0f, 0.9f, 1.f) },
+		// B bright morning: high clean sun, crisp shadows, light haze
+		{ -42.f, 50.f, 12.f, 0.8f, 1.2f, 0.005f, 0.3f, -0.3f, -1.9f, -3.9f, 6300.f, 0.f, FVector4(0.97f, 0.99f, 1.03f, 1.f), FVector4(1.03f, 1.0f, 0.97f, 1.f) },
+		// C soft overcast + warm rim: dim, very soft key under heavy cloud, warm low light from behind
+		{ -55.f, 120.f, 5.f, 10.f, 2.0f, 0.012f, 0.5f, 0.45f, -2.2f, -3.9f, 6800.f, 4.f, FVector4(0.95f, 0.98f, 1.05f, 1.f), FVector4(1.05f, 1.0f, 0.94f, 1.f) },
+	};
+	const FLook& K = Looks[L - 1];
+	const bool bHigh = ISQuality::Level >= 2;
+
+	Sun->SetRelativeRotation(FRotator(K.SunPitch, K.SunYaw, 0.f));
+	Sun->SetIntensity(K.SunLux);
+	Sun->SetLightSourceAngle(K.SunAngle);
+	Sun->SetVolumetricScatteringIntensity(1.5f);
+	Sun->SetEnableLightShaftBloom(L == 1);
+	Sun->SetBloomScale(0.15f);
+	Sun->SetBloomThreshold(4.f);
+	SkyLight->SetIntensity(K.SkyI);
+	Fog->SetFogDensity(K.FogDensity);
+	Fog->SetVolumetricFog(bHigh);
+	Fog->SetVolumetricFogScatteringDistribution(K.FogScatter);
+	if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
+	{
+		UMaterialInstanceDynamic* CMID = UMaterialInstanceDynamic::Create(CM, this);
+		CMID->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), K.CloudCover);
+		Clouds->SetMaterial(CMID);
+	}
+	if (K.RimLux > 0.f)
+	{
+		if (!Rim)
+		{
+			Rim = NewObject<UDirectionalLightComponent>(this);
+			Rim->SetupAttachment(Root);
+			Rim->RegisterComponent();
+		}
+		Rim->SetRelativeRotation(FRotator(-10.f, 250.f, 0.f));
+		Rim->SetIntensity(K.RimLux);
+		Rim->SetLightColor(FLinearColor(1.f, 0.66f, 0.4f));
+		Rim->SetAtmosphereSunLight(false);
+		Rim->SetCastShadows(true);
+		Rim->SetLightSourceAngle(2.f);
+		Rim->SetVisibility(true);
+	}
+	else if (Rim) Rim->SetVisibility(false);
+
+	float EVTune = 0.f;
+	FParse::Value(FCommandLine::Get(), TEXT("ISEV="), EVTune);
+	FPostProcessSettings& S = PPV->Settings;
+	S.bOverride_AutoExposureMethod = true; S.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
+	S.bOverride_AutoExposureApplyPhysicalCameraExposure = true; S.AutoExposureApplyPhysicalCameraExposure = false;
+	LookEV = K.EV + EVTune;
+	LookEVIn = K.EVIn + EVTune;
+	bEVInit = false;   // UpdateLookExposure snaps to the right value on the next tick
+	S.bOverride_AutoExposureBias = true; S.AutoExposureBias = LookEV;
+	S.bOverride_BloomIntensity = true; S.BloomIntensity = 0.7f;
+	if (UTexture* Dirt = LoadObject<UTexture>(nullptr, TEXT("/Engine/MapTemplates/T_ScreenDirt02_w.T_ScreenDirt02_w")))
+	{
+		S.bOverride_BloomDirtMask = true; S.BloomDirtMask = Dirt;
+		S.bOverride_BloomDirtMaskIntensity = true; S.BloomDirtMaskIntensity = 1.5f;
+	}
+	S.bOverride_VignetteIntensity = true; S.VignetteIntensity = 0.45f;
+	S.bOverride_WhiteTemp = true; S.WhiteTemp = K.WhiteTemp;
+	S.bOverride_ColorSaturation = true; S.ColorSaturation = FVector4(1.02f, 1.02f, 1.02f, 1.f);
+	S.bOverride_ColorContrast = true; S.ColorContrast = FVector4(1.05f, 1.05f, 1.05f, 1.f);
+	S.bOverride_ColorGain = true; S.ColorGain = FVector4(1.f, 1.f, 1.f, 1.f);
+	S.bOverride_ColorGainShadows = true; S.ColorGainShadows = K.GainShadows;
+	S.bOverride_ColorGainHighlights = true; S.ColorGainHighlights = K.GainHighlights;
+	S.bOverride_FilmGrainIntensity = true; S.FilmGrainIntensity = 0.04f;
+	S.bOverride_DynamicGlobalIlluminationMethod = bHigh;
+	S.DynamicGlobalIlluminationMethod = EDynamicGlobalIlluminationMethod::Lumen;
+	S.bOverride_ReflectionMethod = bHigh;
+	S.ReflectionMethod = EReflectionMethod::Lumen;
+	S.bOverride_LumenFinalGatherQuality = bHigh; S.LumenFinalGatherQuality = 2.f;
+	S.bOverride_LumenSceneLightingQuality = bHigh; S.LumenSceneLightingQuality = 2.f;
+}
+
+void AISHomeWorld::UpdateLookExposure(float Dt)
+{
+	if (ISDemo::Look <= 0 || !PPV) return;
+	const APlayerController* P = GetWorld()->GetFirstPlayerController();
+	if (!P || !P->PlayerCameraManager) return;
+	const FVector Cam = P->PlayerCameraManager->GetCameraLocation();
+	bool bIn = false;
+	for (const FBox& B : Interiors) if (B.IsInsideOrOn(Cam)) { bIn = true; break; }
+	const float Target = bIn ? LookEVIn : LookEV;
+	CurEV = bEVInit ? FMath::FInterpTo(CurEV, Target, Dt, 2.5f) : Target;   // ~1 s blend through a doorway, like an eye
+	bEVInit = true;
+	PPV->Settings.AutoExposureBias = CurEV;
 }
 
 void AISHomeWorld::BuildGround()
@@ -689,6 +805,7 @@ void AISHomeWorld::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	if (IsHidden()) return;
+	UpdateLookExposure(Dt);
 
 	// doors swing smoothly
 	for (int32 i = 0; i < Doors.Num(); ++i)

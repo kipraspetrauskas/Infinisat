@@ -235,7 +235,7 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 		DevShotT += Dt;
 		if (!bDevShotTaken && DevShotT > DevShotDelay)
 		{
-			FScreenshotRequest::RequestScreenshot(DevShot, true, false);
+			FScreenshotRequest::RequestScreenshot(DevShot, !FParse::Param(FCommandLine::Get(), TEXT("ISNoHUD")), false);   // -ISNoHUD: scene only
 			bDevShotTaken = true;
 		}
 		if (bDevShotTaken && DevShotT > DevShotDelay + 3.f && PC.IsValid()) PC->ConsoleCommand(TEXT("quit"));

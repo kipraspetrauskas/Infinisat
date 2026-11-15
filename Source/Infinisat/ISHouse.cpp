@@ -329,6 +329,8 @@ void AISHomeWorld::BuildHome()
 	Paint(FVector(1125, 905, FZ - 1.f), FVector(250, 290, 2), Aqua, 0.3f);              // bath
 	Paint(FVector(1375, 905, FZ - 1.f), FVector(250, 290, 2), GarageGrey, 0.8f);        // mudroom
 	Paint(FVector(-380, 350, 1.f), FVector(760, 700, 2), GarageGrey * 0.85f, 0.9f);     // garage
+	Interiors.Add(FBox(FVector(-760, 0, -50), FVector(0, 700, 400)));                     // garage + house: indoor exposure
+	Interiors.Add(FBox(FVector(0, 0, -50), FVector(1500, 1050, 700)));
 	// front steps
 	Paint(FVector(610, -45, 5.f), FVector(180, 70, 10), FLinearColor(0.8f, 0.78f, 0.74f));
 	Paint(FVector(610, -20, FZ - 5.f), FVector(200, 40, FZ + 10.f), FLinearColor(0.8f, 0.78f, 0.74f));
@@ -889,6 +891,7 @@ void AISHomeWorld::ApplyLightQuality()
 {
 	for (int32 i = 0; i < RoomLights.Num(); ++i)
 		if (RoomLights[i]) RoomLights[i]->SetCastShadows(ISQuality::Level >= 3 && i < 2);
+	ApplyLook();   // Lumen in the demo looks follows the graphics preset too
 }
 
 // =====================================================================================================
@@ -912,6 +915,7 @@ void AISHomeWorld::BuildSpaceCentre()
 	auto Bldg = [&](const FVector2D& C, float SX, float SY, float H, float DoorW, float DoorH, const TCHAR* Name)
 	{
 		const float T = 30.f, X0 = C.X - SX * 0.5f, X1 = C.X + SX * 0.5f, Y0 = C.Y - SY * 0.5f, Y1 = C.Y + SY * 0.5f;
+		Interiors.Add(FBox(FVector(X0, Y0, -50.f), FVector(X1, Y1, H)));
 		Paint(FVector(C.X, C.Y, 6.f), FVector(SX, SY, 12.f), FloorC, 0.8f);
 		Paint(FVector(C.X, Y1, H * 0.5f), FVector(SX, T, H), WallW, 0.7f);
 		Paint(FVector(X0, C.Y, H * 0.5f), FVector(T, SY, H), WallW, 0.7f);

@@ -67,6 +67,7 @@ public:
 
 	void SetActive(bool bOn);
 	void ApplyLightQuality();     // room-light shadows follow the graphics preset (Epic: 2 main lights only)
+	void ApplyLook();             // demo look preset (ISDemo::Look): sun, sky, fog, clouds, fixed exposure, grade
 	FTransform SpawnPoint() const;
 
 	// --- order / design
@@ -206,6 +207,12 @@ private:
 	UPROPERTY() UExponentialHeightFogComponent* Fog;
 	UPROPERTY() UVolumetricCloudComponent* Clouds;
 	UPROPERTY() APostProcessVolume* PPV = nullptr;
+	UPROPERTY() UDirectionalLightComponent* Rim = nullptr;   // look C: warm low back light
+	// demo looks: fixed exposure outdoors / indoors (lamp-lit rooms need ~2 stops more), blended when the camera crosses a doorway
+	TArray<FBox> Interiors;
+	float LookEV = 0.f, LookEVIn = 0.f, CurEV = 0.f;
+	bool bEVInit = false;
+	void UpdateLookExposure(float Dt);
 	UPROPERTY() ACameraActor* BenchCam = nullptr;
 	UPROPERTY() ACameraActor* ChaseCam = nullptr;
 	UPROPERTY() USceneComponent* CanRoot;

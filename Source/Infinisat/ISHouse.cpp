@@ -64,68 +64,8 @@ UStaticMeshComponent* AISHomeWorld::Slab(const FVector& C, const FVector& S, con
 	return M;
 }
 
-// One art style: every low-poly Kenney model is swapped for a realistic Poly Haven (CC0) model at real-world size.
-// Name -> (Poly Haven id, scale). An empty id means "leave it out" (no realistic equivalent; the room works without it).
-struct FISRealSwap { const TCHAR* Ph; float Scale; float Yaw = 0.f; };   // Yaw: extra turn where the model front differs
-static const FISRealSwap* RealSwap(const FString& KenneyName)
+static UStaticMeshComponent* PlaceMesh(AISHomeWorld* W, USceneComponent* Root, TArray<UPrimitiveComponent*>& All, const FString& Path, const FVector& Center, float FaceYaw, float Scale, bool bCollide, bool bKenney)
 {
-	static const TMap<FString, FISRealSwap> M = {
-		{ TEXT("loungeSofa"), { TEXT("sofa_02"), 1.f } }, { TEXT("tableCoffee"), { TEXT("modern_coffee_table_01"), 1.f } },
-		{ TEXT("loungeChair"), { TEXT("modern_arm_chair_01"), 1.f } }, { TEXT("loungeChairRelax"), { TEXT("mid_century_lounge_chair"), 1.f } },
-		{ TEXT("sideTable"), { TEXT("side_table_01"), 1.f } }, { TEXT("books"), { TEXT("book_encyclopedia_set_01"), 1.f } },
-		{ TEXT("pottedPlant"), { TEXT("potted_plant_01"), 1.f } }, { TEXT("plantSmall2"), { TEXT("potted_plant_04"), 1.f } },
-		{ TEXT("table"), { TEXT("dining_table"), 1.f } }, { TEXT("chair"), { TEXT("dining_chair_02"), 1.f } },
-		{ TEXT("chairModernCushion"), { TEXT("plastic_monobloc_chair_01"), 1.f } }, { TEXT("tableRound"), { TEXT("round_wooden_table_01"), 1.f } },
-		{ TEXT("trashcan"), { TEXT("metal_trash_can"), 0.6f } }, { TEXT("chairDesk"), { TEXT("painted_wooden_chair_01"), 1.f } },
-		{ TEXT("laptop"), { TEXT("classic_laptop"), 1.f, -90.f } }, { TEXT("radio"), { TEXT("vintage_radio_transceiver"), 1.f } },
-		{ TEXT("cardboardBoxOpen"), { TEXT("cardboard_box_01"), 1.f } }, { TEXT("cardboardBoxClosed"), { TEXT("cardboard_box_01"), 1.f } },
-		{ TEXT("lampRoundTable"), { TEXT("desk_lamp_arm_01"), 1.f } }, { TEXT("lampSquareTable"), { TEXT("desk_lamp_arm_01"), 1.f } },
-		{ TEXT("lampSquareCeiling"), { TEXT("modern_ceiling_lamp_01"), 1.f } },
-		{ TEXT("cabinetTelevision"), { TEXT("painted_wooden_cabinet"), 1.f } }, { TEXT("televisionModern"), { TEXT("Television_01"), 1.f } },
-		{ TEXT("speaker"), { TEXT(""), 0.f } }, { TEXT("toaster"), { TEXT(""), 0.f } },
-		{ TEXT("bookcaseOpen"), { TEXT("wooden_display_shelves_01"), 1.f } }, { TEXT("bookcaseOpenLow"), { TEXT("drawer_cabinet"), 1.f } },
-		{ TEXT("bookcaseClosedWide"), { TEXT("wooden_bookshelf_worn"), 1.f } }, { TEXT("bookcaseClosedDoors"), { TEXT("wooden_bookshelf_worn"), 1.f } },
-		{ TEXT("cabinetBedDrawerTable"), { TEXT("painted_wooden_nightstand"), 1.f } }, { TEXT("bedDouble"), { TEXT("GothicBed_01"), 1.f } },
-		{ TEXT("desk"), { TEXT("small_wooden_table_01"), 1.25f, 90.f } }, { TEXT("kitchenMicrowave"), { TEXT("vintage_microwave"), 1.f } },
-		{ TEXT("computerScreen"), { TEXT(""), 0.f } }, { TEXT("computerKeyboard"), { TEXT(""), 0.f } },
-		{ TEXT("lampRoundFloor"), { TEXT(""), 0.f } }, { TEXT("lampSquareFloor"), { TEXT(""), 0.f } },
-		{ TEXT("rugRound"), { TEXT(""), 0.f } }, { TEXT("rugRectangle"), { TEXT(""), 0.f } },
-		// garden and nature
-		{ TEXT("tree_default"), { TEXT("island_tree_01"), 1.1f } }, { TEXT("tree_oak"), { TEXT("tree_small_02"), 1.6f } },
-		{ TEXT("tree_fat"), { TEXT("island_tree_01"), 1.3f } }, { TEXT("tree_small"), { TEXT("tree_small_02"), 1.f } },
-		{ TEXT("tree_pineRoundB"), { TEXT("pine_tree_01"), 1.f } },
-		{ TEXT("plant_bushDetailed"), { TEXT("shrub_02"), 1.f } }, { TEXT("plant_bushLarge"), { TEXT("shrub_01"), 1.2f } },
-		{ TEXT("flower_redA"), { TEXT("shrub_04"), 0.35f } }, { TEXT("flower_yellowB"), { TEXT("dandelion_01"), 1.f } },
-		{ TEXT("flower_purpleA"), { TEXT("shrub_04"), 0.35f } }, { TEXT("flower_redC"), { TEXT("shrub_04"), 0.3f } },
-		{ TEXT("flower_yellowA"), { TEXT("dandelion_01"), 1.f } }, { TEXT("flower_purpleC"), { TEXT("shrub_04"), 0.3f } },
-		{ TEXT("sedan"), { TEXT("covered_car"), 1.f } },
-		{ TEXT("plant_bush"), { TEXT("shrub_03"), 1.f } }, { TEXT("rock_largeA"), { TEXT("boulder_01"), 1.f } },
-		{ TEXT("grass_large"), { TEXT("grass_medium_01"), 1.f } }, { TEXT("grass"), { TEXT("grass_medium_02"), 1.f } },
-		{ TEXT("flower_purpleB"), { TEXT("shrub_04"), 0.3f } },
-	};
-	return M.Find(KenneyName);
-}
-
-static UStaticMeshComponent* PlaceMesh(AISHomeWorld* W, USceneComponent* Root, TArray<UPrimitiveComponent*>& All, const FString& InPath, const FVector& Center, float FaceYaw, float InScale, bool bCollide, bool bInKenney)
-{
-	FString Path = InPath;
-	float Scale = InScale;
-	bool bKenney = bInKenney;
-	if (bKenney)
-	{
-		// "/Game/Infinisat/K/<kit>/<name>/SM_<name>..." -> realistic model if there is one
-		FString Name = FPaths::GetBaseFilename(FPaths::GetPath(Path)).Replace(TEXT("_"), TEXT("-"));
-		const FISRealSwap* Sw = RealSwap(Name);
-		if (!Sw) Sw = RealSwap(Name.Replace(TEXT("-"), TEXT("_")));
-		if (Sw)
-		{
-			if (!*Sw->Ph) return nullptr;
-			Path = ISMat::PH(Sw->Ph);
-			Scale = Sw->Scale;
-			FaceYaw += Sw->Yaw;
-			bKenney = false;
-		}
-	}
 	UStaticMesh* Mesh = ISMat::Mesh(Path);
 	if (!Mesh) return nullptr;
 	UStaticMeshComponent* M = NewObject<UStaticMeshComponent>(W);
@@ -175,10 +115,9 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 	auto Piece = [&](float U1, float U2, float Z1, float Z2)
 	{
 		if (U2 - U1 < 0.5f || Z2 - Z1 < 0.5f) return;
-		// real surfaces (one art style): stucco outside, painted plaster inside, tinted with the room colour
-		Block(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), OutSide != 0.f ? TEXT("white_stucco") : TEXT("painted_plaster_wall"), 250.f, CoreCol);
-		if (OutSide != 0.f)   // interior plaster layer on the inside face
-			Block(P((U1 + U2) * 0.5f, -OutSide * (WallT * 0.5f + 0.6f), FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, 1.f, Z2 - Z1), TEXT("painted_plaster_wall"), 250.f, In, false);
+		Paint(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), CoreCol, 0.85f);
+		if (OutSide != 0.f)   // interior paint layer on the inside face
+			Paint(P((U1 + U2) * 0.5f, -OutSide * (WallT * 0.5f + 0.6f), FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, 1.f, Z2 - Z1), In, 0.9f, false);
 	};
 	auto Baseboard = [&](float U1, float U2)
 	{
@@ -314,47 +253,9 @@ void AISHomeWorld::Roof(const FVector& C, float SX, float SY, float Pitch, float
 	AllComps.Add(PM);
 }
 
-// Neighbour house built exactly like ours (stucco walls, plaster inside, trimmed windows, tiled roof), door to the street.
-void AISHomeWorld::HouseShell(const FVector& Origin, float SX, float SY, float Yaw, const FLinearColor& WallCol, const FLinearColor& DoorCol, const TCHAR*, const FLinearColor& RoofCol)
+void AISHomeWorld::HouseShell(const FVector& Origin, float, float, float Yaw, const FLinearColor&, const FLinearColor&, const TCHAR* Type, const FLinearColor&)
 {
-	const float X0 = Origin.X - SX * 0.5f, X1 = Origin.X + SX * 0.5f, Y0 = Origin.Y - SY * 0.5f, Y1 = Origin.Y + SY * 0.5f;
-	const bool bDoorFront = Yaw < 0.f;          // -90: faces -Y (street below), +90: faces +Y
-	Block(FVector(Origin.X, Origin.Y, FZ * 0.5f - 15.f), FVector(SX + 30.f, SY + 30.f, FZ + 30.f), TEXT("brushed_concrete"), 300.f, FLinearColor(0.85f, 0.84f, 0.82f));
-	auto Win = [](float From) { return FISOpening{ From, From + 120.f, 90.f, 210.f, 1 }; };
-	const float Mid = SX * 0.5f;
-	TArray<FISOpening> Front = { Win(120.f), Win(SX - 240.f) }, Back = { Win(150.f), Win(SX - 270.f) };
-	(bDoorFront ? Front : Back).Add(FISOpening{ Mid - 50.f, Mid + 50.f, 0.f, 215.f, 0 });
-	Wall(FVector2D(X0, Y0), FVector2D(X1, Y0), Front, nullptr, Cream, nullptr, WallCol, -1.f);
-	Wall(FVector2D(X0, Y1), FVector2D(X1, Y1), Back, nullptr, Cream, nullptr, WallCol, 1.f);
-	Wall(FVector2D(X0, Y0), FVector2D(X0, Y1), { Win(SY * 0.5f - 60.f) }, nullptr, Cream, nullptr, WallCol, -1.f);
-	Wall(FVector2D(X1, Y0), FVector2D(X1, Y1), { Win(SY * 0.5f - 60.f) }, nullptr, Cream, nullptr, WallCol, 1.f);
-	// closed front door (the neighbours are not home)
-	Paint(FVector(Origin.X, bDoorFront ? Y0 - 2.f : Y1 + 2.f, FZ + 107.f), FVector(98.f, 6.f, 214.f), DoorCol, 0.5f);
-	Paint(FVector(Origin.X, bDoorFront ? Y0 - 60.f : Y1 + 60.f, FZ * 0.5f), FVector(160.f, 100.f, FZ), FLinearColor(0.75f, 0.74f, 0.72f), 0.9f);   // step
-	Roof(FVector(Origin.X, Origin.Y, FZ + WallH + 10.f), SX, SY, 30.f, 50.f, nullptr, RoofCol, nullptr, WallCol);
-}
-
-// Wooden picket-rail fence from A to B: posts every 1.5 m and two rails, real plank texture.
-void AISHomeWorld::WoodFence(const FVector& A, const FVector& B, float GapFrom, float GapTo)
-{
-	const FVector D = B - A;
-	const float Len = D.Size2D();
-	if (Len < 10.f) return;
-	const FVector U = D.GetSafeNormal2D();
-	const float Yaw = U.Rotation().Yaw;
-	auto Plank = [this, Yaw](const FVector& C, const FVector& S) { Slab(C, S, TEXT("brown_planks_05"), 120.f, FLinearColor(0.85f, 0.75f, 0.62f), true, Yaw); };
-	for (float T = 0.f; T <= Len + 1.f; T += 150.f)
-	{
-		if (T > GapFrom && T < GapTo) continue;
-		Plank(A + U * T + FVector(0, 0, 55.f), FVector(10.f, 10.f, 110.f));
-	}
-	auto Rail = [&](float T0, float T1)
-	{
-		if (T1 - T0 < 5.f) return;
-		for (float Z : { 40.f, 88.f }) Plank(A + U * ((T0 + T1) * 0.5f) + FVector(0, 0, Z), FVector(T1 - T0, 3.f, 12.f));
-	};
-	if (GapTo > GapFrom) { Rail(0.f, GapFrom); Rail(GapTo, Len); }
-	else Rail(0.f, Len);
+	PlaceMesh(this, Root, AllComps, KPath(TEXT("sub"), Type), Origin, Yaw, KCity, true, true);
 }
 
 // =====================================================================================================
@@ -378,12 +279,11 @@ void AISHomeWorld::BuildHome()
 
 	// ---- foundations and floors
 	Paint(FVector(750, 525, FZ * 0.5f - 15.f), FVector(1530, 1080, FZ + 30.f), FLinearColor(0.75f, 0.73f, 0.7f));      // plinth
-	// floors: real wood planks / stone (textures instead of flat colour)
-	Block(FVector(400, 300, FZ - 1.f), FVector(800, 600, 2), TEXT("brown_planks_05"), 200.f, FLinearColor(1.f, 0.95f, 0.9f));                // living
-	Block(FVector(1150, 300, FZ - 1.f), FVector(700, 600, 2), TEXT("brushed_concrete"), 150.f, FLinearColor(1.15f, 1.13f, 1.08f));           // kitchen (pale polished concrete)
-	Block(FVector(750, 680, FZ - 1.f), FVector(1500, 160, 2), TEXT("brown_planks_05"), 200.f, FLinearColor(0.95f, 0.9f, 0.85f));          // hall
-	Block(FVector(250, 905, FZ - 1.f), FVector(500, 290, 2), TEXT("brown_planks_05"), 200.f, FLinearColor(1.f, 0.95f, 0.9f));              // office
-	Block(FVector(750, 905, FZ - 1.f), FVector(500, 290, 2), TEXT("brown_planks_05"), 200.f, FLinearColor(1.f, 1.f, 0.95f));               // bedroom
+	Paint(FVector(400, 300, FZ - 1.f), FVector(800, 600, 2), Wood, 0.6f);               // living
+	Paint(FVector(1150, 300, FZ - 1.f), FVector(700, 600, 2), TileCol, 0.4f);              // kitchen
+	Paint(FVector(750, 680, FZ - 1.f), FVector(1500, 160, 2), Wood * 0.95f, 0.6f);      // hall
+	Paint(FVector(250, 905, FZ - 1.f), FVector(500, 290, 2), Wood, 0.6f);               // office
+	Paint(FVector(750, 905, FZ - 1.f), FVector(500, 290, 2), Wood * 1.05f, 0.6f);       // bedroom
 	Paint(FVector(1125, 905, FZ - 1.f), FVector(250, 290, 2), Aqua, 0.3f);              // bath
 	Paint(FVector(1375, 905, FZ - 1.f), FVector(250, 290, 2), GarageGrey, 0.8f);        // mudroom
 	Paint(FVector(-380, 350, 1.f), FVector(760, 700, 2), GarageGrey * 0.85f, 0.9f);     // garage
@@ -522,8 +422,8 @@ void AISHomeWorld::BuildHome()
 	MonitorTop = TopOf(K(TEXT("computerScreen"), FVector(237, DeskY + 15.f, DeskTop), -90.f, KF, false), DeskTop + 40.f);
 	if (Furniture.Num()) Furniture.Last().bOnTop = true;
 	K(TEXT("computerKeyboard"), FVector(237, DeskY - 12.f, DeskTop), -90.f, KF, false);
-	K(TEXT("laptop"), FVector(DeskBox.GetCenter().X - 10.f, DeskY - 10.f, DeskTop), -90.f, KF, false);
-	AddInteract(FVector(DeskBox.GetCenter().X - 10.f, DeskY - 10.f, DeskTop + 15.f), FVector(28, 25, 20), "laptop");
+	K(TEXT("laptop"), FVector(297, DeskY - 17.f, DeskTop), -90.f, KF, false);
+	AddInteract(FVector(297, DeskY - 17.f, DeskTop + 15.f), FVector(28, 25, 20), "laptop");
 	K(TEXT("plantSmall2"), FVector(DeskBox.Min.X + 14.f, DeskY + 14.f, DeskTop), 0.f, KF, false);   // on the desk, at its real left end
 	UStaticMeshComponent* OShelf = KW(TEXT("bookcaseClosedWide"), false, 500, -1, 915);
 	OfficeShelfTop = TopOf(OShelf, FZ + 100.f);
@@ -587,14 +487,19 @@ void AISHomeWorld::BuildNeighbourhood()
 	auto C = [this](const TCHAR* Kit, const TCHAR* Name, const FVector& P, float Face, float Scale, bool bCollide = true)
 	{ return PlaceMesh(this, Root, AllComps, KPath(Kit, Name), P, Face, Scale, bCollide, true); };
 
-	// road along X (asphalt-dark concrete), centre line, concrete sidewalks with kerbs
-	Block(FVector(1000, -1800, 0.6f), FVector(19000, 960, 1.2f), TEXT("brushed_concrete"), 400.f, FLinearColor(0.28f, 0.28f, 0.29f));
-	for (int32 i = -9; i <= 10; ++i) Paint(FVector(i * 1000.f + 250.f, -1800.f, 1.3f), FVector(300.f, 12.f, 0.4f), FLinearColor(0.9f, 0.88f, 0.8f), 0.8f, false);
-	Block(FVector(1000, -1240, 4), FVector(19000, 160, 8), TEXT("brushed_concrete"), 250.f, FLinearColor(0.9f, 0.89f, 0.87f));
-	Block(FVector(1000, -2360, 4), FVector(19000, 160, 8), TEXT("brushed_concrete"), 250.f, FLinearColor(0.9f, 0.89f, 0.87f));
+	// road along X with sidewalks
+	for (int32 i = -8; i <= 10; ++i)
+		C(TEXT("road"), TEXT("road-straight"), FVector(i * 1000.f, -1800.f, 0.5f), 0.f, KCity, false);
+	Paint(FVector(1000, -1240, 4), FVector(19000, 160, 8), FLinearColor(0.82f, 0.81f, 0.79f), 0.9f);
+	Paint(FVector(1000, -2360, 4), FVector(19000, 160, 8), FLinearColor(0.82f, 0.81f, 0.79f), 0.9f);
+	for (int32 i = -3; i <= 4; ++i)
+	{
+		C(TEXT("road"), TEXT("light-square"), FVector(i * 2500.f, -1190.f, 8.f), -90.f, KCity * 0.8f);
+		C(TEXT("road"), TEXT("light-square"), FVector(i * 2500.f + 1250.f, -2410.f, 8.f), 90.f, KCity * 0.8f);
+	}
 	// our front garden: path, driveway, mailbox, flower beds, car
-	Block(FVector(610, -700, 1.f), FVector(140, 1200, 2), TEXT("brushed_concrete"), 200.f, FLinearColor(0.95f, 0.94f, 0.92f));
-	Block(FVector(-380, -650, 1.f), FVector(340, 1300, 2), TEXT("brushed_concrete"), 300.f, FLinearColor(0.85f, 0.84f, 0.82f));
+	for (int32 i = 0; i < 3; ++i) C(TEXT("sub"), TEXT("path-long"), FVector(610, -300.f - i * 400.f, 1.f), 0.f, KCity, false);
+	for (int32 i = 0; i < 3; ++i) C(TEXT("sub"), TEXT("driveway-long"), FVector(-380, -250.f - i * 400.f, 1.f), 0.f, KCity, false);
 	C(TEXT("car"), TEXT("sedan"), FVector(-380, -520, 2.f), -90.f, 1.6f);
 	Paint(FVector(900, -1080, 55), FVector(8, 8, 110), Trim, 0.6f);
 	Paint(FVector(900, -1080, 120), FVector(26, 45, 26), FLinearColor(0.2f, 0.45f, 0.75f), 0.5f);
@@ -612,23 +517,17 @@ void AISHomeWorld::BuildNeighbourhood()
 	C(TEXT("nat"), TEXT("tree_oak"), FVector(1250, -700, 0), 30.f, KNat);
 	C(TEXT("nat"), TEXT("tree_default"), FVector(-1100, 1400, 0), 0.f, KNat);
 
-	// neighbours: built the same way as our house (same walls, windows, roof), each with its own colours
-	struct FN { float X, Y, Face; FLinearColor Wall, Door, RoofC; };
-	const FN Hs[] = {
-		{ -2700, 500, -90, FLinearColor(0.93f, 0.9f, 0.82f), FLinearColor(0.2f, 0.3f, 0.45f), FLinearColor(0.35f, 0.3f, 0.28f) },
-		{ 3600, 500, -90, FLinearColor(0.8f, 0.86f, 0.9f), FLinearColor(0.55f, 0.15f, 0.12f), FLinearColor(0.3f, 0.32f, 0.36f) },
-		{ 6900, 500, -90, FLinearColor(0.95f, 0.93f, 0.9f), FLinearColor(0.15f, 0.35f, 0.2f), FLinearColor(0.5f, 0.28f, 0.22f) },
-		{ -1600, -3700, 90, FLinearColor(0.88f, 0.82f, 0.72f), FLinearColor(0.3f, 0.2f, 0.12f), FLinearColor(0.32f, 0.3f, 0.3f) },
-		{ 1800, -3700, 90, FLinearColor(0.92f, 0.92f, 0.92f), FLinearColor(0.1f, 0.25f, 0.4f), FLinearColor(0.55f, 0.3f, 0.24f) },
-		{ 5200, -3700, 90, FLinearColor(0.85f, 0.88f, 0.8f), FLinearColor(0.5f, 0.35f, 0.15f), FLinearColor(0.3f, 0.3f, 0.33f) },
-		{ -5200, -3700, 90, FLinearColor(0.94f, 0.88f, 0.86f), FLinearColor(0.2f, 0.2f, 0.22f), FLinearColor(0.45f, 0.27f, 0.22f) } };
+	// neighbours (Kenney suburban houses) with their own driveways and trees
+	struct FN { const TCHAR* Type; float X, Y, Face; };
+	const FN Hs[] = { { TEXT("building-type-c"), -2700, 500, -90 }, { TEXT("building-type-k"), 3600, 500, -90 }, { TEXT("building-type-f"), 6900, 500, -90 },
+		{ TEXT("building-type-h"), -1600, -3700, 90 }, { TEXT("building-type-a"), 1800, -3700, 90 }, { TEXT("building-type-m"), 5200, -3700, 90 }, { TEXT("building-type-p"), -5200, -3700, 90 } };
 	for (const FN& H : Hs)
 	{
-		HouseShell(FVector(H.X, H.Y, 0), 1100.f, 850.f, H.Face, H.Wall, H.Door, nullptr, H.RoofC);
+		C(TEXT("sub"), H.Type, FVector(H.X, H.Y, 0), H.Face, KCity);
 		const float Dir = H.Y > 0 ? -1.f : 1.f;
-		Block(FVector(H.X + 750.f, H.Y + Dir * 900.f, 1.f), FVector(320, 900, 2), TEXT("brushed_concrete"), 300.f, FLinearColor(0.85f, 0.84f, 0.82f));
-		C(TEXT("nat"), R.RandRange(0, 1) ? TEXT("tree_default") : TEXT("tree_fat"), FVector(H.X - 800.f, H.Y + Dir * 800.f, 0), R.FRandRange(0.f, 360.f), KNat);
-		WoodFence(FVector(H.X - 600.f, H.Y + Dir * 1150.f, 0), FVector(H.X + 500.f, H.Y + Dir * 1150.f, 0));
+		C(TEXT("sub"), TEXT("driveway-long"), FVector(H.X + 450.f, H.Y + Dir * 900.f, 1.f), 0.f, KCity, false);
+		C(TEXT("nat"), R.RandRange(0, 1) ? TEXT("tree_default") : TEXT("tree_fat"), FVector(H.X - 600.f, H.Y + Dir * 700.f, 0), R.FRandRange(0.f, 360.f), KNat);
+		C(TEXT("sub"), TEXT("fence-1x3"), FVector(H.X - 300.f, H.Y + Dir * 1150.f, 0), 0.f, KCity * 0.7f, false);
 	}
 }
 
@@ -638,10 +537,16 @@ void AISHomeWorld::BuildBackyard()
 	{ return PlaceMesh(this, Root, AllComps, KPath(Kit, Name), P, Face, Scale, bCollide, true); };
 	// wooden fence around the back garden with a gate toward the field
 	const float Y1 = 3400.f, X0 = -900.f, X1 = 2300.f;
-	// one continuous plank fence; the gap lines up with the path to the launch field (gate at x 800)
-	WoodFence(FVector(X0, Y1, 0), FVector(X1, Y1, 0), 800.f - X0 - 110.f, 800.f - X0 + 110.f);
-	WoodFence(FVector(X0, 1100.f, 0), FVector(X0, Y1, 0));
-	WoodFence(FVector(X1, 1100.f, 0), FVector(X1, Y1, 0));
+	for (float X = X0; X < X1 - 10.f; X += 300.f)
+	{
+		if (X > 600.f && X < 1000.f) { if (X < 700.f) C(TEXT("nat"), TEXT("fence_gate"), FVector(X + 150.f, Y1, 0), 0.f, 3.f, false); continue; }
+		C(TEXT("nat"), TEXT("fence_simple"), FVector(X + 150.f, Y1, 0), 0.f, 3.f);
+	}
+	for (float Y = 1100.f; Y < Y1 - 10.f; Y += 300.f)
+	{
+		C(TEXT("nat"), TEXT("fence_simple"), FVector(X0, Y + 150.f, 0), 90.f, 3.f);
+		C(TEXT("nat"), TEXT("fence_simple"), FVector(X1, Y + 150.f, 0), 90.f, 3.f);
+	}
 	// patio + garden furniture
 	Paint(FVector(750, 1350, 4), FVector(900, 500, 8), FLinearColor(0.78f, 0.74f, 0.68f), 0.9f);
 	auto F = [this](const TCHAR* Name, const FVector& Pp, float Face) { return PlaceMesh(this, Root, AllComps, KPath(TEXT("furn"), Name), Pp, Face, KF, true, true); };
@@ -673,11 +578,8 @@ void AISHomeWorld::BuildBackyard()
 	// instanced nature (trees, bushes, grass, flowers), density follows the graphics preset
 	auto Scatter = [&](const TCHAR* Name, int32 N, float MinR, float MaxR, const FVector& Ctr, float MinS, float MaxS, float Cull)
 	{
-		// realistic model at real size (the old Kenney scale range becomes a +-20% size variation)
-		const FISRealSwap* Sw = RealSwap(Name);
-		UStaticMesh* Mesh = ISMat::Mesh(Sw && *Sw->Ph ? ISMat::PH(Sw->Ph) : KPath(TEXT("nat"), Name));
+		UStaticMesh* Mesh = ISMat::Mesh(KPath(TEXT("nat"), Name));
 		if (!Mesh) return;
-		if (Sw && *Sw->Ph) { const float MidS = (MinS + MaxS) * 0.5f; MinS = Sw->Scale * MinS / MidS; MaxS = Sw->Scale * MaxS / MidS; }
 		N = FMath::Max(1, FMath::RoundToInt(N * ISQuality::Density()));
 		UHierarchicalInstancedStaticMeshComponent* H = NewObject<UHierarchicalInstancedStaticMeshComponent>(this);
 		H->SetStaticMesh(Mesh);

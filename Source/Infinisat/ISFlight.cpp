@@ -71,9 +71,32 @@ void AISSpaceScene::RetryFlight()
 			if (P) PadVis.Add(P);
 		};
 		const float Len = RocketLenCm / 100.f, D = (float)Sim.L->Stages[0].DiameterM;
-		Pad(MCyl, FVector(0, 0, -6.0f), FVector(8000.f, 8000.f, 12.f), FLinearColor(0.16f, 0.22f, 0.1f));              // ground (4 km)
-		Pad(MCyl, FVector(0, 0, -0.5f), FVector(90.f, 90.f, 1.f), FLinearColor(0.55f, 0.55f, 0.53f));                  // concrete pad
-		Pad(MCube, FVector(0, 0, -0.9f), FVector(D * 2.2f, 30.f, 0.4f), FLinearColor(0.08f, 0.08f, 0.08f));            // flame trench
+		// real surfaces: the same tiled photo textures the house uses (concrete, grass, gravel)
+		UMaterialInterface* World = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_World.M_IS_World"));
+		auto Tex = [&](const TCHAR* T, float Tile, const FLinearColor& Tint)
+		{
+			UStaticMeshComponent* P = PadVis.Num() ? PadVis.Last() : nullptr;
+			UTexture* Tx = LoadObject<UTexture>(nullptr, *FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T));
+			if (!P || !World || !Tx) return;
+			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(World, P);
+			M->SetTextureParameterValue(TEXT("Tex"), Tx);
+			M->SetScalarParameterValue(TEXT("Tile"), Tile);
+			M->SetVectorParameterValue(TEXT("Tint"), Tint);
+			P->SetMaterial(0, M);
+		};
+		Pad(MCyl, FVector(0, 0, -6.0f), FVector(8000.f, 8000.f, 12.f), FLinearColor(0.2f, 0.3f, 0.13f));              // ground (4 km)
+		// (world-aligned textures break at true planet scale: 6,371 km from the origin is beyond their precision -> plain colours)
+		Pad(MCyl, FVector(0, 0, -0.45f), FVector(160.f, 160.f, 1.f), FLinearColor(0.42f, 0.41f, 0.38f));                 // gravel apron
+		Pad(MCyl, FVector(0, 0, -0.4f), FVector(90.f, 90.f, 1.f), FLinearColor(0.55f, 0.55f, 0.53f));                  // concrete pad
+		Pad(MCube, FVector(0, 0, -0.9f), FVector(D * 2.2f, D * 6.f, 0.4f), FLinearColor(0.08f, 0.08f, 0.08f));            // flame trench
+		Pad(MCube, FVector(-D * 1.2f, 0, 0.6f), FVector(0.6f, D * 6.f, 1.4f), FLinearColor(0.35f, 0.35f, 0.34f));          // trench walls
+		Pad(MCube, FVector(D * 1.2f, 0, 0.6f), FVector(0.6f, D * 6.f, 1.4f), FLinearColor(0.35f, 0.35f, 0.34f));
+		// support area beside the pad: propellant spheres, water tower for the sound-suppression deluge, control bunker
+		Pad(MSphere, FVector(70.f, 45.f, 6.f), FVector(12.f, 12.f, 12.f), FLinearColor(0.92f, 0.92f, 0.9f));            // LOX sphere
+		Pad(MSphere, FVector(70.f, 65.f, 6.f), FVector(12.f, 12.f, 12.f), FLinearColor(0.92f, 0.92f, 0.9f));            // fuel sphere
+		for (int32 k = 0; k < 4; ++k) Pad(MCyl, FVector(-60.f + (k % 2) * 6.f, -60.f + (k / 2) * 6.f, 12.f), FVector(0.5f, 0.5f, 24.f), FLinearColor(0.5f, 0.5f, 0.5f));
+		Pad(MCyl, FVector(-57.f, -57.f, 27.f), FVector(9.f, 9.f, 7.f), FLinearColor(0.85f, 0.85f, 0.82f));             // water tower
+		Pad(MCube, FVector(-80.f, 70.f, 2.f), FVector(14.f, 9.f, 4.f), FLinearColor(0.6f, 0.6f, 0.58f));               // control bunker
 		// launch tower: an open steel lattice (4 legs + cross beams every 4 m), not a solid block
 		{
 			const FVector TC(-D * 2.6f - 2.5f, 0, 0);
@@ -144,16 +167,35 @@ void AISSpaceScene::BuildFlightRocket()
 		const float D = (float)St.DiameterM, Len = (float)St.LengthM;
 		StageBaseZ.Add(Z);
 		Part(MCyl, D, Len, Z + Len * 0.5f, FVector::ZeroVector, St.Color, Parts);
-		Part(MCone, D * 0.62f, D * 0.32f, Z - D * 0.12f, FVector::ZeroVector, EngineGrey, Parts, 0.8f);          // engine bell(s)
-		if (i > 0) Part(MCyl, D * 1.01f, FMath::Min(1.2f, Len * 0.08f), Z + 0.3f, FVector::ZeroVector, Band, Parts); // interstage band
-		Part(MCyl, D * 1.005f, 0.25f, Z + Len * 0.62f, FVector::ZeroVector, Band, Parts);                           // tank ring line
+		// engines: the real count from the stage name ("9 Rutherford", "9 Merlin") - a ring of bells around a centre one
+		int32 NEng = 1;
+		for (int32 c = 0; c < St.Name.Len(); ++c) if (FChar::IsDigit(St.Name[c])) { NEng = FMath::Clamp(FCString::Atoi(*St.Name.Mid(c)), 1, 33); break; }
+		const float Bell = NEng > 1 ? D * 0.24f : D * 0.6f;
+		Part(MCyl, D * 0.92f, 0.12f, Z - 0.06f, FVector::ZeroVector, EngineGrey, Parts, 0.8f);                       // thrust plate
+		for (int32 e = 0; e < NEng; ++e)
+		{
+			const FVector O = (NEng == 1 || e == 0) ? FVector::ZeroVector : FRotator(0, 360.f * (e - 1) / (NEng - 1), 0).Vector() * (D * 0.33f);
+			Part(MCone, Bell, Bell * 1.25f, Z - Bell * 0.62f, O, EngineGrey, Parts, 0.85f);
+		}
+		if (i > 0) Part(MCyl, D * 1.01f, FMath::Min(1.5f, Len * 0.1f), Z + FMath::Min(0.75f, Len * 0.05f), FVector::ZeroVector, Band, Parts); // interstage
+		Part(MCyl, D * 1.006f, 0.12f, Z + Len * 0.62f, FVector::ZeroVector, Band, Parts);                          // tank weld line
+		Part(MCyl, D * 1.006f, 0.12f, Z + Len * 0.25f, FVector::ZeroVector, Band, Parts);
+		Part(MCube, D * 0.12f, Len * 0.86f, Z + Len * 0.5f, FVector(0, D * 0.51f, 0), Band, Parts);                   // cable raceway
+		if (i == 0 && L.Name.Contains(TEXT("Falcon")))
+			for (int32 g = 0; g < 4; ++g)   // grid fins at the top of the first stage
+				Part(MCube, D * 0.32f, D * 0.32f, Z + Len - D * 0.4f, FRotator(0, 90.f * g, 0).Vector() * (D * 0.6f), EngineGrey, Parts, 0.6f)->SetRelativeScale3D(FVector(D * 0.32f, 0.06f, D * 0.32f) / 1.f);
 		StageVis.Add(Parts);
 		Z += Len;
 	}
 	// payload fairing (or a capsule-like nose)
 	const float FD = (float)FMath::Max(L.FairingDiameterM, L.Stages.Last().DiameterM), FL = (float)L.FairingLengthM;
-	Part(MCyl, FD, FL * 0.55f, Z + FL * 0.275f, FVector::ZeroVector, FLinearColor(0.95f, 0.95f, 0.96f), FairingVis);
-	Part(MCone, FD, FL * 0.45f, Z + FL * 0.55f + FL * 0.225f, FVector::ZeroVector, FLinearColor(0.95f, 0.95f, 0.96f), FairingVis);
+	// ogive fairing: cylinder, two tapering cone sections and a rounded tip, with the split line visible
+	const FLinearColor FairC(0.95f, 0.95f, 0.96f);
+	Part(MCyl, FD, FL * 0.5f, Z + FL * 0.25f, FVector::ZeroVector, FairC, FairingVis);
+	Part(MCone, FD, FL * 0.32f, Z + FL * 0.5f + FL * 0.16f, FVector::ZeroVector, FairC, FairingVis);
+	Part(MCone, FD * 0.55f, FL * 0.3f, Z + FL * 0.82f - FL * 0.04f, FVector::ZeroVector, FairC, FairingVis);
+	Part(MSphere, FD * 0.16f, FD * 0.16f, Z + FL * 0.93f, FVector::ZeroVector, FairC, FairingVis);
+	Part(MCube, 0.06f, FL * 0.82f, Z + FL * 0.41f, FVector(FD * 0.5f, 0, 0), Band, FairingVis)->SetRelativeScale3D(FVector(0.06f, FD * 0.02f, FL * 0.82f));
 	RocketLenCm = (Z + FL) * 100.f;
 	// strap-on boosters around the first stage
 	const FISEngineStage& S0 = L.Stages[0];

@@ -3,6 +3,7 @@
 // explorer costs no downloads and no licences. Distances are compressed so everything fits in one flyable scene;
 // periods, tilts and spin directions are real for solar-system bodies.
 #include "ISScene.h"
+#include "Engine/Engine.h"
 #include "ISSim.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -377,6 +378,8 @@ void AISSpaceScene::ShowCosmos(const FISDesign& D)
 {
 	ClearView();
 	View = EISView::Cosmos;
+	// close-ups of planet surfaces and spacecraft: the default 10 cm near plane would cut them away at this scale
+	if (GEngine && GetWorld()) GEngine->Exec(GetWorld(), TEXT("r.SetNearClipPlane 0.5"));
 	if (!MatGlow) MatGlow = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Glow.M_IS_Glow"));
 	if (!MatRing) MatRing = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Ring.M_IS_Ring"));
 	SunLight->SetVisibility(false);
@@ -384,7 +387,7 @@ void AISSpaceScene::ShowCosmos(const FISDesign& D)
 	if (UMaterialInstanceDynamic* SkyM = UMaterialInstanceDynamic::Create(MatSky, Sky))
 	{
 		if (UTexture* MW = LoadObject<UTexture>(nullptr, TEXT("/Game/Infinisat/Textures/T_MilkyWay.T_MilkyWay"))) SkyM->SetTextureParameterValue(TEXT("Tex"), MW);
-		SkyM->SetScalarParameterValue(TEXT("Brightness"), 0.55f);
+		SkyM->SetScalarParameterValue(TEXT("Brightness"), 0.9f);
 		Sky->SetMaterial(0, SkyM);
 	}
 	CosmosLines = NewObject<ULineBatchComponent>(this);
@@ -413,7 +416,7 @@ void AISSpaceScene::FocusCosmos(int32 Idx)
 	const FCosmosBody& B = CosmosBodies[Idx];
 	const bool bStar = B.Parent < 0;
 	CamDistGoal = B.Radius * (bStar ? 9.f : 5.f);
-	CamMin = B.Radius * 1.25f;
+	CamMin = B.Radius * 1.02f;   // close enough to see the surface (zoom works on the height above it, see ZoomCamera)
 	CamMax = 1.4e6f;
 }
 
@@ -684,9 +687,9 @@ void AISSpaceScene::BuildCosmosBackdrop()
 {
 	CosmosBackdrop = CosmosNode(SceneRoot);
 	// stars at "infinity" (the backdrop follows the camera): spectral classes with real colours, few bright, many faint
-	struct FCls { FLinearColor C; float Share, Glow; } Cls[] = {
-		{ FLinearColor(0.62f, 0.72f, 1.f), 0.08f, 5.f }, { FLinearColor(0.85f, 0.88f, 1.f), 0.17f, 4.f }, { FLinearColor(1.f, 0.97f, 0.9f), 0.25f, 3.5f },
-		{ FLinearColor(1.f, 0.85f, 0.6f), 0.25f, 3.f }, { FLinearColor(1.f, 0.62f, 0.38f), 0.25f, 2.6f } };
+	struct FCls { FLinearColor C; float Share, Glow; } Cls[] = {   // real star colours are pale: only a hint of blue or orange
+		{ FLinearColor(0.82f, 0.88f, 1.f), 0.08f, 5.f }, { FLinearColor(0.93f, 0.95f, 1.f), 0.17f, 4.f }, { FLinearColor(1.f, 0.99f, 0.95f), 0.25f, 3.5f },
+		{ FLinearColor(1.f, 0.93f, 0.8f), 0.25f, 3.f }, { FLinearColor(1.f, 0.82f, 0.66f), 0.25f, 2.6f } };
 	FRandomStream R(5);
 	const FQuat Plane(FVector::ForwardVector, FMath::DegreesToRadians(60.f));   // Milky Way band, matches the sky texture tilt
 	for (const FCls& C : Cls)
@@ -699,55 +702,10 @@ void AISSpaceScene::BuildCosmosBackdrop()
 			FVector D = R.VRand();
 			if (R.FRand() < 0.45f) { D.Z *= 0.12f; D = Plane.RotateVector(D.GetSafeNormal()); }
 			const float Mag = FMath::Pow(R.FRand(), 7.f);
-			I->AddInstance(FTransform(FRotator::ZeroRotator, D * 1.6e6f, FVector(6.f + 34.f * Mag)));
+			I->AddInstance(FTransform(FRotator::ZeroRotator, D * 1.6e6f, FVector(2.2f + 9.f * Mag)));   // points, not blobs
 		}
 	}
-	// nebulae: warped fbm clouds with dust lanes
-	struct FNeb { FVector Dir; float Size; FLinearColor A, B; uint32 S; float I; } Nebs[] = {
-		{ FVector(0.6f, 0.7f, 0.25f), 420000.f, L(1.f, 0.25f, 0.35f), L(0.25f, 0.5f, 1.f), 3, 0.9f },
-		{ FVector(-0.8f, 0.1f, -0.3f), 360000.f, L(0.2f, 0.9f, 0.7f), L(0.6f, 0.3f, 1.f), 7, 0.8f },
-		{ FVector(0.1f, -0.85f, 0.45f), 300000.f, L(1.f, 0.55f, 0.2f), L(1.f, 0.2f, 0.5f), 13, 0.7f },
-		{ FVector(-0.3f, -0.5f, -0.8f), 380000.f, L(0.35f, 0.45f, 1.f), L(0.9f, 0.4f, 0.9f), 19, 0.6f },
-	};
-	for (const FNeb& N : Nebs)
-	{
-		const FLinearColor A = N.A, B = N.B; const uint32 S = N.S;
-		UTexture2D* T = CosmosTex(FString::Printf(TEXT("nebula_%u"), S), 512, 512, [A, B, S](float U, float V)
-		{
-			const float X = U * 2.f - 1.f, Y = V * 2.f - 1.f, Rr = FMath::Sqrt(X * X + Y * Y);
-			const FVector3f P(X * 2.2f, Y * 2.2f, S * 1.7f);
-			const FVector3f W(Fbm(P, S, 4), Fbm(P + FVector3f(5.2f, 1.3f, 0), S + 1, 4), 0.f);
-			const float N1 = Fbm(P + W * 2.2f, S + 2, 7);
-			float Dn = FMath::Pow(FMath::Clamp((N1 - 0.38f) * 2.4f, 0.f, 1.f), 1.7f) * (1.f - Smooth(0.25f, 1.f, Rr));
-			Dn *= 1.f - 0.75f * Smooth(0.55f, 0.72f, Fbm(P * 2.5f, S + 9, 5));
-			const FLinearColor C = FMath::Lerp(A, B, Smooth(0.35f, 0.65f, Fbm(P * 0.8f, S + 5, 4)));
-			const float Core = 0.6f * FMath::Exp(-Rr * 5.f) * N1;
-			return C * Dn + FLinearColor(Core, Core, Core * 1.1f);
-		});
-		CosmosSprite(CosmosBackdrop, N.Dir.GetSafeNormal() * 1.4e6f, N.Size, T, FLinearColor::White, N.I, false);
-	}
-	// galaxies: two spirals (one face-on, one tilted) and an elliptical
-	UTexture2D* Spiral = CosmosTex(TEXT("galaxy_spiral"), 512, 512, [](float U, float V)
-	{
-		const float X = U * 2.f - 1.f, Y = V * 2.f - 1.f, Rr = FMath::Sqrt(X * X + Y * Y), A = FMath::Atan2(Y, X);
-		const float Arm = FMath::Pow(0.5f + 0.5f * FMath::Cos(2.f * (A - FMath::Loge(Rr + 0.03f) * 2.6f)), 3.f);
-		const float N = Fbm(FVector3f(X * 7.f, Y * 7.f, 0.5f), 61, 5);
-		const float Disk = FMath::Exp(-Rr * 3.4f) * (0.25f + Arm * (0.5f + 0.9f * N)) * (1.f - Smooth(0.85f, 1.f, Rr));
-		const float Core = 1.6f * FMath::Exp(-Rr * 16.f);
-		FLinearColor C = L(0.55f, 0.7f, 1.f) * Disk + L(1.f, 0.82f, 0.55f) * Core;
-		if (Arm > 0.6f && N > 0.62f) C += L(1.f, 0.35f, 0.55f) * Disk * 0.8f;
-		return C;
-	});
-	UTexture2D* Ellip = CosmosTex(TEXT("galaxy_elliptical"), 256, 256, [](float U, float V)
-	{
-		const float X = (U * 2.f - 1.f), Y = (V * 2.f - 1.f) * 1.6f, Rr = FMath::Sqrt(X * X + Y * Y);
-		const float I = FMath::Exp(-Rr * 4.5f) * (1.f - Smooth(0.8f, 1.f, Rr));
-		return L(1.f, 0.85f, 0.65f) * I;
-	});
-	UStaticMeshComponent* G1 = CosmosSprite(CosmosBackdrop, FVector(-0.2f, 0.95f, 0.2f).GetSafeNormal() * 1.45e6f, 130000.f, Spiral, FLinearColor::White, 1.4f, false);
-	G1->AddLocalRotation(FRotator(55.f, 0.f, 20.f));
-	CosmosSprite(CosmosBackdrop, FVector(0.9f, -0.2f, -0.35f).GetSafeNormal() * 1.45e6f, 70000.f, Spiral, FLinearColor::White, 1.2f, false);
-	CosmosSprite(CosmosBackdrop, FVector(-0.6f, -0.6f, 0.5f).GetSafeNormal() * 1.45e6f, 50000.f, Ellip, FLinearColor::White, 1.2f, false);
+	// no painted nebulae or cartoon galaxies: the real Milky Way panorama (sky texture) is the background, like Universe Sandbox
 }
 
 void AISSpaceScene::ClearCosmos()
@@ -758,6 +716,7 @@ void AISSpaceScene::ClearCosmos()
 	CosmosBillboards.Reset();
 	CosmosBodies.Reset();
 	CosmosBackdrop = nullptr;
+	if (GEngine && GetWorld() && View == EISView::Cosmos) GEngine->Exec(GetWorld(), TEXT("r.SetNearClipPlane 10"));
 	if (SunLight) SunLight->SetVisibility(true);
 	if (FillLight) FillLight->SetIntensity(1.2f);
 }

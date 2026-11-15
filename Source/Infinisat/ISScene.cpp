@@ -312,7 +312,15 @@ void AISSpaceScene::ZoomCamera(float Steps)
 	const float Old = CamDistGoal;
 	// cosmos zooms in bigger steps so the whole Solar System is a few wheel notches away (Universe Sandbox feel)
 	const float Rate = bTrueScale ? 0.75f : (View == EISView::Cosmos ? 0.7f : 0.88f);
-	CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(Rate, Steps), CamMin, CamMax);
+	if (View == EISView::Cosmos && CosmosBodies.IsValidIndex(CosmosSel))
+	{
+		// zoom on the height above the surface, not the distance to the centre: every notch halves the gap, so the
+		// camera can skim a planet's surface (or a spacecraft) and still reach the whole system in a few notches
+		const float R = CosmosBodies[CosmosSel].Radius;
+		const float H = FMath::Max(CamDistGoal - R, R * 0.02f) * FMath::Pow(Rate, Steps);
+		CamDistGoal = FMath::Clamp(R + H, CamMin, CamMax);
+	}
+	else CamDistGoal = FMath::Clamp(CamDistGoal * FMath::Pow(Rate, Steps), CamMin, CamMax);
 	// pushing on against a limit (2 notches) asks the UI to move to the next scale: mission <-> solar system
 	const bool bAtMax = Steps < 0 && Old >= CamMax * 0.995f, bAtMin = Steps > 0 && Old <= CamMin * 1.005f;
 	if (bAtMax || bAtMin)

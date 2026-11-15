@@ -176,7 +176,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); }
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
-		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } }
+		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosZoom="), Zm)) Scene->ZoomCamera(Zm); }
 		else if (DevScreen == TEXT("missions")) Go(EScreen::Missions);
 		else if (DevScreen == TEXT("help")) Go(EScreen::Help);
 	}

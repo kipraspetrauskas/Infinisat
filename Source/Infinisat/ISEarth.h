@@ -51,6 +51,10 @@ public:
 
 private:
 	bool bEarthOrigin = false;
+	UPROPERTY() UMaterialInterface* StyleMat = nullptr;      // stylised terrain for the walking world (flat colours, faceted)
+	UPROPERTY() UMaterialInterface* PhotoMat = nullptr;      // Cesium's default (real imagery) for the views from space
+	bool bStyled = false;
+	void SetStyled(bool bOn);
 	bool bHeightFixed = false;
 	float FixT = 0.f;
 	FString Token() const;

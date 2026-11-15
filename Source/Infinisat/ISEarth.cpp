@@ -45,6 +45,7 @@ void AISEarth::BeginPlay()
 	Terrain->SetIonAssetID(1);                                  // Cesium World Terrain
 	Terrain->SetCreatePhysicsMeshes(true);                      // walk on the real hills beyond the site
 	Terrain->SetMaximumScreenSpaceError(ISQuality::Level <= 0 ? 32.0 : ISQuality::Level == 1 ? 20.0 : 12.0);
+	if (AISEarth::Enabled()) { StyleMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Terrain.M_IS_Terrain")); PhotoMat = Terrain->GetMaterial(); if (StyleMat) { Terrain->SetMaterial(StyleMat); bStyled = true; } }
 	UCesiumIonRasterOverlay* Img = NewObject<UCesiumIonRasterOverlay>(Terrain, TEXT("Imagery"));
 	Img->IonAssetID = 2;                                         // Bing Maps aerial imagery
 	Img->IonAccessToken = T;
@@ -81,6 +82,7 @@ void AISEarth::UseSiteOrigin()
 	bEarthOrigin = false;
 	Geo->SetOriginPlacement(EOriginPlacement::CartographicOrigin);
 	Geo->SetOriginLongitudeLatitudeHeight(FVector(SiteLon, SiteLat, SiteHeight));
+	SetStyled(true);    // walking: the real land in the site's flat colours
 }
 
 void AISEarth::UseEarthOrigin()
@@ -88,6 +90,7 @@ void AISEarth::UseEarthOrigin()
 	if (!Geo) return;
 	bEarthOrigin = true;
 	Geo->SetOriginPlacement(EOriginPlacement::TrueOrigin);
+	SetStyled(false);   // from space: the real photographs
 }
 
 void AISEarth::SetVisible(bool bOn)
@@ -168,4 +171,14 @@ FVector AISEarth::SiteNorthEarthFrame() const
 {
 	const double La = FMath::DegreesToRadians(SiteLat), Lo = FMath::DegreesToRadians(SiteLon);
 	return EcefToEarthFrame(FVector(-FMath::Sin(La) * FMath::Cos(Lo), -FMath::Sin(La) * FMath::Sin(Lo), FMath::Cos(La))).GetSafeNormal();
+}
+
+void AISEarth::SetStyled(bool bOn)
+{
+	if (!Terrain || bStyled == bOn) return;
+	if (!StyleMat) StyleMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Terrain.M_IS_Terrain"));
+	if (!StyleMat) return;
+	if (!PhotoMat) PhotoMat = Terrain->GetMaterial();
+	bStyled = bOn;
+	Terrain->SetMaterial(bOn ? StyleMat : PhotoMat);
 }

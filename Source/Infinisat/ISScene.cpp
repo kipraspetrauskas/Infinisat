@@ -1,4 +1,5 @@
 #include "ISScene.h"
+#include "ISEarth.h"
 #include "ISSim.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -127,12 +128,17 @@ void AISSpaceScene::BeginPlay()
 	// physical sky (Rayleigh + Mie) around the true-scale Earth: blue at the pad, black in orbit, glowing limb from space
 	SkyAtmo = NewObject<USkyAtmosphereComponent>(this);
 	SkyAtmo->TransformMode = ESkyAtmosphereTransformMode::PlanetCenterAtComponentTransform;
-	SkyAtmo->BottomRadius = 6371.f;
+	SkyAtmo->BottomRadius = 6368.f;   // the real Earth is flattened: at Mahia (39 S) sea level is 6,369.5 km out; a 6,371 km sphere would bury the pad, a much smaller one gives a thin high-altitude sky at the pad
 	SkyAtmo->AtmosphereHeight = 100.f;
 	SkyAtmo->SetupAttachment(SceneRoot);
 	SkyAtmo->RegisterComponent();
 	SkyAtmo->SetVisibility(false);
 	SunLight->SetAtmosphereSunLight(true);
+	FillLight->SetAtmosphereSunLight(false);   // only the real sun lights the sky (two "suns" gave a twilight sky and dimmed the sunlight)
+	// the sky dims sunlight by the air it passes through; measure that at each pixel, not at the world origin
+	// (in the Earth-centred views the world origin is the centre of the Earth, under 6,370 km of rock: no light)
+	SunLight->bPerPixelAtmosphereTransmittance = true;
+	SunLight->MarkRenderStateDirty();
 
 	Lines = NewObject<ULineBatchComponent>(this);
 	Lines->SetupAttachment(SceneRoot);
@@ -255,6 +261,7 @@ void AISSpaceScene::SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVec
 	{
 		if (UStaticMesh* Hi = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) CloudShell->SetStaticMesh(Hi);
 		if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Clouds.M_IS_Clouds"))) CloudShell->SetMaterial(0, CM);
+		CloudShell->SetCastShadow(false);   // a shell around the whole planet would put everything under it in shadow
 		CloudShell->SetWorldScale3D(FVector(RadiusUU * 1.004f / 50.f));
 		CloudShell->SetWorldLocation(Pos);
 		CloudShell->SetVisibility(true);
@@ -268,6 +275,10 @@ void AISSpaceScene::ClearView()
 	if (RocketRoot) RocketRoot->SetVisibility(false, true);
 	StageVis.Reset(); BoosterVis.Reset(); FairingVis.Reset(); PlumeCore.Reset(); PlumeBoost.Reset();
 	bTrueScale = false;
+	bRealEarth = false;
+	bGlobe = false;
+	if (SunLight) SunLight->SetCastShadows(true);
+	if (Earth) Earth->SetVisible(false);
 	TruePts.Reset();
 	if (Lines) Lines->Flush();
 	if (CloudShell) CloudShell->SetVisibility(false);
@@ -324,6 +335,41 @@ void AISSpaceScene::ZoomCamera(float Steps)
 {
 	if (RevealT >= 0.f) return;
 	const float Old = CamDistGoal;
+	// one continuous zoom: spacecraft close-up -> whole Earth with the orbit -> (at the far limit) the solar system
+	if (View == EISView::Orbit && bTrueScale && bGlobe)
+	{
+		// globe: zoom on the height above the ground; close enough and you are back on the ground at the site
+		const float R = PlanetRUU;
+		const float H = FMath::Max(CamDistGoal - R, 1000.f) * FMath::Pow(0.7f, Steps);
+		if (Steps > 0 && H < 150000.f * 100.f) { bLand = true; return; }
+		CamDistGoal = FMath::Clamp(R + H, CamMin, CamMax);
+		const bool bAtMax = Steps < 0 && Old >= CamMax * 0.995f;
+		if (bAtMax) { if (++ZoomPastCount >= 2) { ZoomPast = -1; ZoomPastCount = 0; } } else ZoomPastCount = 0;
+		return;
+	}
+	if (View == EISView::Orbit && bTrueScale && !bFlight)
+	{
+		const float Alt = FMath::Max(1.f, OrbitRadiusUU - PlanetRUU);
+		if (bFollow && Steps < 0 && CamDistGoal * FMath::Pow(0.75f, Steps) > FMath::Max(Alt * 0.3f, 5.0e6f))
+		{
+			bFollow = false;
+			CamMin = PlanetRUU * 0.2f;
+			CamPitch = -20.f;
+			CamYaw = (SatRoot->GetComponentLocation().Rotation().Yaw) + 180.f;   // look at Earth from the satellite's side
+			CamDistGoal = OrbitRadiusUU * 1.6f;
+			ZoomPastCount = 0;
+			return;
+		}
+		if (!bFollow && Steps > 0 && CamDistGoal * FMath::Pow(0.75f, Steps) < OrbitRadiusUU * 1.12f)
+		{
+			bFollow = true;
+			CamMin = LastSatSize * 1.2f;
+			CamDistGoal = LastSatSize * 40.f;
+			FollowPitch = -28.f;
+			ZoomPastCount = 0;
+			return;
+		}
+	}
 	// cosmos zooms in bigger steps so the whole Solar System is a few wheel notches away (Universe Sandbox feel)
 	const float Rate = bTrueScale ? 0.75f : (View == EISView::Cosmos ? 0.7f : 0.88f);
 	if (View == EISView::Cosmos && CosmosBodies.IsValidIndex(CosmosSel))
@@ -513,7 +559,7 @@ void AISSpaceScene::ShowWorkshop(const FISDesign& D)
 	BuildCleanRoom();
 	BuildSatellite(SatRoot, D, SatParts);
 	BitRoot->SetVisibility(false, true);   // you are BIT: no robot in your own view
-	SetCameraTarget(FVector(0, 0, 40), 900.f, 205.f, -14.f, 220.f, 2400.f);
+	SetCameraTarget(FVector(0, -60, 30), 640.f, 215.f, -16.f, 220.f, 2400.f);   // close: the satellite fills the space right of the catalogue
 }
 
 void AISSpaceScene::ShowCompare(const FISDesign& D, const FString& RealMesh, const FString& RealName)
@@ -654,7 +700,24 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 		Sky->SetWorldScale3D(FVector(bVoyage ? 1.0e10f : 1.0e9f));   // star sphere follows the camera: radius 500,000 km (5 million on voyages, the Moon must fit inside)
 		{
 			SetEarth(Planet, (float)(Rb * K), FVector::ZeroVector, true);
+			if (Earth && Earth->IsReady())
+			{
+				// the real globe (terrain + imagery) replaces the textured sphere: same size, same place, real surface
+				Earth->UseEarthOrigin();
+				Earth->SetVisible(true);
+				bRealEarth = true;
+			}
 			PlanetAtmo->SetWorldScale3D(FVector((float)(Rb * 1.015 * K / 50.0))); PlanetAtmo->SetWorldLocation(FVector::ZeroVector); PlanetAtmo->SetVisibility(true);
+			if (bRealEarth)
+			{
+				Planet->SetVisibility(false); PlanetAtmo->SetVisibility(false);
+				if (CloudShell) CloudShell->SetVisibility(false);   // the real imagery; a painted cloud sphere would cover it
+				// 6,371 km from the origin the sun's shadow maps lose precision and put everything in shadow: no sun shadows here
+				SunLight->SetCastShadows(false);
+				// the same time of day as the walking world: mid-morning at Mahia, the sun 50 deg up in the north-east
+				const FVector ToSun = (Earth->SiteUpEarthFrame() * 0.77f + Earth->SiteEastEarthFrame() * 0.5f + Earth->SiteNorthEarthFrame() * 0.4f).GetSafeNormal();
+				SunLight->SetWorldRotation((-ToSun).Rotation());
+			}
 			SetPlanet(Moon, TEX_MOON, (float)(1737.4 * K), FVector(0, 384400.0 * K, 0));
 			if (UStaticMesh* Hi = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Infinisat/Meshes/SM_SphereHi.SM_SphereHi"))) Moon->SetStaticMesh(Hi);   // seen up close on lunar missions
 			// real populations as screen-size points: GPS + Galileo (MEO), GEO belt, Starlink-like LEO shells, ISS
@@ -708,7 +771,7 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	if (!bTrueScale) PlanetRUU = Dest == EISDest::Moon ? 1737.4f : 6371.f;
 	const bool bNear = Dest != EISDest::Backyard;
 	bFollow = bNear;
-	if (bFollow) { CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
+	if (bFollow) { FollowPitch = -28.f; FollowYaw = 25.f; CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
 }
 
 void AISSpaceScene::ToggleMap()
@@ -810,7 +873,7 @@ void AISSpaceScene::SetMissionTime(double Day, double EndDay, double PeriodMin, 
 	}
 	default:
 	{
-		const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+		const FQuat Q = OrbitQuat();
 		const float A2 = bTrueScale ? (float)(2.0 * PI * FMath::Fmod(Day * 86400.0 / FMath::Max(1.0, PeriodS), 1.0)) : Ang;
 		Pos = Q.RotateVector(FVector(FMath::Cos(A2), FMath::Sin(A2), 0) * OrbitRadiusUU);
 		break;
@@ -852,13 +915,13 @@ void AISSpaceScene::Tick(float Dt)
 			LaunchT = -1.f;
 			RocketRoot->SetVisibility(false, true);
 			SatRoot->SetVisibility(true, true);
-			CamDistGoal = LastSatSize * 5.f;
+			CamDistGoal = LastSatSize * 5.f; FollowPitch = -28.f; FollowYaw = 25.f;
 		}
 	}
 	else if (bVoyage && !bFollow) CamFocusGoal = VoyFocus;   // voyage map: Earth, Moon and the path in one frame
 	else if (View == EISView::Orbit && bFollow && ViewDest != EISDest::Backyard)
 		CamFocusGoal = SatRoot->GetComponentLocation();
-	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard && CamDistGoal < OrbitRadiusUU * 0.9f)
+	else if (View == EISView::Orbit && !bGlobe && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter && CamDistGoal < OrbitRadiusUU * 0.9f)
 		CamFocusGoal = SatRoot->GetComponentLocation();
 	else if (View == EISView::Orbit && ViewDest != EISDest::Backyard) CamFocusGoal = FVector::ZeroVector;
 	FRotator CR(CamPitch, CamYaw, 0.f);
@@ -870,7 +933,7 @@ void AISSpaceScene::Tick(float Dt)
 			: LaunchT >= 0.f && RocketRoot ? RocketRoot->GetComponentLocation() + (bFlight ? RocketRoot->GetUpVector() * RocketLenCm * 0.45f : FVector::ZeroVector) : SatRoot->GetComponentLocation();
 		SatPos += bVoyage ? VoyCamOff : FVector::ZeroVector;   // the stack shot frames stage + satellite
 		const FVector Up = (SatPos - BodyC).GetSafeNormal();   // "down" is the body it orbits now (Earth, or the Moon on arrival)
-		const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+		const FQuat Q = OrbitQuat();
 		const FVector N = FollowN.IsNearlyZero() ? Q.RotateVector(FVector::UpVector) : FollowN;
 		const FVector Fwd = FVector::CrossProduct(N, Up).GetSafeNormal();
 		const FVector Right = FVector::CrossProduct(Up, Fwd);
@@ -908,6 +971,14 @@ void AISSpaceScene::Tick(float Dt)
 			}
 		}
 	}
+	if (bFlight && FlightShake > 0.01f)
+	{
+		// camera shake: felt strongest close to the rocket
+		const float T = (float)FPlatformTime::Seconds(), K = FlightShake * FMath::Clamp(3000.f / FMath::Max(300.f, CamDist), 0.15f, 1.f);
+		CR.Pitch += K * 0.6f * (FMath::Sin(T * 31.f) * 0.6f + FMath::Sin(T * 17.f) * 0.4f);
+		CR.Yaw += K * 0.6f * (FMath::Sin(T * 27.f + 2.f) * 0.6f + FMath::Sin(T * 13.f) * 0.4f);
+	}
+	TickStarField(CamLoc);
 	if (Camera) Camera->SetActorLocationAndRotation(CamLoc, CR);
 
 	if (SkyAtmo)
@@ -983,6 +1054,7 @@ void AISSpaceScene::Tick(float Dt)
 void AISSpaceScene::TickTrueScale(float Dt)
 {
 	if (!Lines || View != EISView::Orbit) return;
+	if (bRealEarth && Earth) Earth->SetVisible(true);   // the real globe stays on in every true-scale Earth view
 	Lines->Flush();
 	const double T = MissionDay * 86400.0;
 	// Earth turns once per sidereal day
@@ -990,25 +1062,75 @@ void AISSpaceScene::TickTrueScale(float Dt)
 	if (Planet->IsVisible()) Planet->SetWorldRotation(FRotator(0, 200.f + (float)FMath::Fmod(T / Spin * 360.0, 360.0), 0));
 	if (CloudShell && CloudShell->IsVisible()) CloudShell->SetWorldRotation(FRotator(0, 200.f + (float)FMath::Fmod(T / 80000.0 * 360.0, 360.0), 0));
 	// your orbit (a voyage draws its real trajectory instead, in TickVoyage)
-	const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+	const FQuat Q = OrbitQuat();
 	const int32 N = bVoyage ? 0 : 256;
 	FVector Prev = Q.RotateVector(FVector(OrbitRadiusUU, 0, 0));
 	for (int32 i = 1; i <= N; ++i)
 	{
 		const float A = 2.f * PI * i / N;
 		const FVector P = Q.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * OrbitRadiusUU);
-		Lines->DrawLine(Prev, P, FLinearColor(1.f, 0.55f, 0.15f), SDPG_World, 0.f, 0.f);
+		if (!bGlobe) Lines->DrawLine(Prev, P, FLinearColor(1.f, 0.55f, 0.15f), SDPG_World, 0.f, 0.f);
 		Prev = P;
 	}
 	// everyone else: points that keep a constant size on screen
 	const bool bMap = !bFollow;
+	const bool bDaySky = bFlight && Sim.AltM < 60000.0;   // other satellites are invisible against a blue daytime sky
 	for (const FTruePt& P : TruePts)
 	{
 		const double A = P.Phase + P.Rate * T;
 		const FQuat Qp = FQuat(FVector::UpVector, FMath::DegreesToRadians((float)P.Raan)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians((float)P.Inc));
 		const FVector Pos = Qp.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * P.R);
-		Lines->DrawPoint(Pos, FLinearColor(P.C), bMap ? P.Size : P.Size * 0.6f, SDPG_World, 0.f);
+		if (!bDaySky) Lines->DrawPoint(Pos, FLinearColor(P.C), bMap ? P.Size : P.Size * 0.6f, SDPG_World, 0.f);
 	}
 	// your spacecraft marker in the map
-	if (bMap) Lines->DrawPoint(SatRoot->GetComponentLocation(), FLinearColor(1.f, 0.55f, 0.15f), 10.f, SDPG_Foreground, 0.f);
+	if (bGlobe && bRealEarth && Earth) Lines->DrawPoint(Earth->SiteToEarth(FVector::ZeroVector), FLinearColor(1.f, 0.55f, 0.15f), 10.f, SDPG_Foreground, 0.f);   // your space centre
+	// your spacecraft marker whenever it is too small to see (map, or zoomed far out)
+	if ((bMap || CamDist > LastSatSize * 30.f) && !bFlight && !bGlobe && LaunchT < 0.f) Lines->DrawPoint(SatRoot->GetComponentLocation(), FLinearColor(1.f, 0.55f, 0.15f), 8.f, SDPG_Foreground, 0.f);
+}
+
+FQuat AISSpaceScene::OrbitQuat() const
+{
+	if (!bRealEarth || !Earth)
+		return FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+	// the real orbital plane: it passes over Mahia, heading where a launch to this inclination must go
+	// (sin(azimuth) = cos(inclination) / cos(latitude); sun-synchronous and polar orbits leave toward the south)
+	const FVector U = Earth->SiteUpEarthFrame(), E = Earth->SiteEastEarthFrame(), N = Earth->SiteNorthEarthFrame();
+	const double CosLat = FMath::Cos(FMath::DegreesToRadians(FMath::Abs(AISEarth::SiteLat)));
+	double Az = FMath::Asin(FMath::Clamp(FMath::Cos(FMath::DegreesToRadians((double)OrbitInc)) / CosLat, -1.0, 1.0));
+	if (OrbitInc > 80.f) Az = PI - Az;
+	const FVector Dn = (N * (float)FMath::Cos(Az) + E * (float)FMath::Sin(Az)).GetSafeNormal();
+	return FQuat(FMatrix(U, Dn, FVector::CrossProduct(U, Dn), FVector::ZeroVector));
+}
+
+void AISSpaceScene::ShowGlobe(float AltM)
+{
+	FISDesign Empty;
+	ShowOrbit(EISDest::LEO, 500.f, 39.f, Empty, 1);
+	bGlobe = true;
+	SatRoot->SetVisibility(false, true);
+	bFollow = false;
+	const FVector Up = bRealEarth && Earth ? Earth->SiteUpEarthFrame() : FVector::UpVector;
+	const float R = bRealEarth && Earth ? (float)Earth->SiteToEarth(FVector::ZeroVector).Size() : PlanetRUU;
+	// the same view the overview camera had: straight down onto the site from AltM
+	const FRotator CR = (-Up).Rotation();
+	CamPitch = CR.Pitch; CamYaw = CR.Yaw;
+	CamFocus = CamFocusGoal = FVector::ZeroVector;
+	CamDist = CamDistGoal = R + AltM * 100.f;
+	CamMin = R + 100000.f * 100.f;
+	CamMax = R * 60.f;
+}
+
+FVector AISSpaceScene::SatMountWorld(int32 M) const
+{
+	FVector L = FVector::ZeroVector;
+	switch (M)
+	{
+	case 1: L = FVector(SatHalf.X * 1.35f, 0, 0); break;                    // nadir
+	case 2: L = FVector(-SatHalf.X * 1.35f, 0, 0); break;                   // zenith
+	case 3: L = FVector(0, SatHalf.Y + FMath::Max(60.f, SatHalf.Y * 1.6f), SatHalf.Z * 0.3f); break;   // wings
+	case 4: L = FVector(0, 0, -SatHalf.Z * 1.3f); break;                    // base
+	case 5: L = FVector(0, -SatHalf.Y * 1.35f, SatHalf.Z * 0.4f); break;     // side panels
+	default: L = FVector(0, 0, SatHalf.Z * 0.15f); break;                   // inside
+	}
+	return SatRoot ? SatRoot->GetComponentTransform().TransformPosition(L) : L;
 }

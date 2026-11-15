@@ -16,6 +16,7 @@ class SBox;
 
 class SISGameUI : public SCompoundWidget
 {
+	friend class SISSatOverlay;   // the satellite stand's mount markers read the design and the drag state
 public:
 	SLATE_BEGIN_ARGS(SISGameUI) {}
 		SLATE_ARGUMENT(TWeakObjectPtr<AISSpaceScene>, Scene)
@@ -24,6 +25,11 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	void ShowOrders();
+	void OpenBuilding(FName Action);   // a console in the space centre: assembly hall / lab / tracking station
+	void OpenGlobe(double AltM);       // zoomed out from the ground: the real Earth with your space centre
+	void DevStartJob(int32 Idx);
+	double GlobeAlt = 150000.0;
+	bool bHaveDesign = false;          // an orbital mission is in progress (the assembly hall continues it)
 	void ShowTitle();
 	void ShowCanSatDebrief();
 	void ShowPause();
@@ -32,7 +38,7 @@ public:
 	virtual FReply OnMouseButtonUp(const FGeometry& G, const FPointerEvent& E) override;
 
 private:
-	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos };
+	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos, Globe };
 
 	// navigation / state changes (deferred rebuild)
 	void Go(EScreen S);
@@ -49,12 +55,27 @@ private:
 	// screens
 	TSharedRef<SWidget> BuildTitle();
 	TSharedRef<SWidget> BuildMissions();
-	TSharedRef<SWidget> BuildDesign();
+	TSharedRef<SWidget> BuildDesign();      // the satellite stand: drag parts onto the real mounting places (like the CanSat bench)
+	TSharedRef<SWidget> BuildDesignOld();
+	// satellite stand state
+	bool bSatDrag = false;
+	FName SatDragId;
+	FVector2D SatDragPos = FVector2D::ZeroVector;
+	int32 SatHover = -1;
+	int32 SatCat = 0;
+	bool bShowBudgets = false;
+	double SatDragStart = 0.0;
+	void SatPlace(FName Id, int32 Mount);
+	void SatRemove(FName Id);
+	bool SatMountScreen(int32 M, FVector2D& Out) const;   // a mounting place in this widget's local coordinates
+	int32 SatMountAt(const FVector2D& Local) const;
 	TSharedRef<SWidget> BuildLaunch();
 	TSharedRef<SWidget> BuildOps();
 	TSharedRef<SWidget> BuildDebrief();
 	TSharedRef<SWidget> BuildPedia();
 	TSharedRef<SWidget> BuildCosmos();
+	TSharedRef<SWidget> BuildGlobe();
+	bool bGlobeInCosmos = false;   // the solar system was reached by zooming out from the globe
 	TSharedPtr<SScrollBox> CosmosBox;
 	float CosmosScroll = 0.f;
 	TSharedRef<SWidget> BuildHelp();

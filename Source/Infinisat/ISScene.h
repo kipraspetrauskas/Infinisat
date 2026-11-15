@@ -29,6 +29,7 @@ class AISSpaceScene : public AActor
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY() class AISEarth* Earth = nullptr;   // the real globe (set by the player controller)
 	AISSpaceScene();
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -74,6 +75,11 @@ public:
 	int32 CosmosFind(const FString& Name) const { for (int32 i = 0; i < CosmosBodies.Num(); ++i) if (CosmosBodies[i].Name == Name) return i; return -1; }
 	// the player pushed the wheel past the zoom limit (-1 out, +1 in): the UI moves between the mission view and the solar system
 	int32 TakeZoomPast() { const int32 Z = ZoomPast; ZoomPast = 0; return Z; }
+	// the globe view: the real Earth with your space centre, reached by zooming out from the ground
+	void ShowGlobe(float AltM);
+	FVector SatMountWorld(int32 Mount) const;  // where a mounting place of the satellite on the stand is, for the build UI
+	bool bGlobe = false, bLand = false;
+	bool TakeLand() { const bool B = bLand; bLand = false; return B; }
 	int32 ZoomPast = 0, ZoomPastCount = 0;
 	FVector CosmosPos(int32 I) const;
 	int32 CosmosParent(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Parent : -1; }
@@ -168,6 +174,10 @@ private:
 	EISView View = EISView::Title;
 	bool bFollow = true;
 	bool bTrueScale = false;            // Earth/Moon views: real sizes and distances (cm)
+	bool bRealEarth = false;            // the true-scale Earth is the real Cesium globe (Earth-centred origin)
+	FQuat OrbitQuat() const;            // the orbital plane: through the real launch site at the real launch heading
+	FVector FlightBase = FVector::ZeroVector;   // shifts the flight (which starts at radius Re) onto the real pad
+	FVector SatHalf = FVector(50.f);           // half size of the bus being built (model units)
 	float RealSatCm = 200.f;
 	double PeriodS = 5600.0;
 	UPROPERTY() ULineBatchComponent* Lines = nullptr;
@@ -235,6 +245,7 @@ private:
 	FVector BitHome = FVector::ZeroVector;
 	double MissionDay = 0.0;
 	float FollowYaw = 25.f, FollowPitch = -18.f;
+	float FlightShake = 0.f;      // 0..1 vibration from the engines and the air (lift-off rumble, max-Q buffeting)
 	bool bFlightCamUser = false;   // the player turned the launch camera: stop steering it automatically
 
 	// ---- cosmos explorer
@@ -260,6 +271,12 @@ private:
 	UPROPERTY() TArray<USceneComponent*> CosmosBillboards;
 	UPROPERTY() TMap<FString, UTexture2D*> CosmosTexCache;
 	UPROPERTY() USceneComponent* CosmosBackdrop = nullptr;
+	UPROPERTY() USceneComponent* StarField = nullptr;   // 3D star field used by every space view (replaces the flat sky picture)
+	void BuildStarField();
+	void TickStarField(const FVector& CamLoc);
+	void BuildCosmosBackdropOld();
+	UPROPERTY() USceneComponent* SkyPlanets = nullptr;
+	UPROPERTY() TArray<UTextRenderComponent*> SkyPlanetLabels;
 	UPROPERTY() ULineBatchComponent* CosmosLines = nullptr;
 	UPROPERTY() ULineBatchComponent* FlightLines = nullptr;   // flown path (orange) + predicted path (cyan)
 	TArray<FVector2D> FlightPred;

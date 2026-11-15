@@ -61,6 +61,7 @@ class AISHomeWorld : public AActor
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY() class AISEarth* Earth = nullptr;   // the real globe around the site (set by the player controller)
 	AISHomeWorld();
 	virtual void BeginPlay() override;
 	virtual void Tick(float Dt) override;
@@ -82,6 +83,15 @@ public:
 	FString PromptFor(FName Action) const;
 	void Interact(FName Action, AISBitCharacter* Bit);
 	FString Objective() const;
+	// an orbital job runs in the world too: accepted at Mission Control, built at the Assembly Hall stand, launched,
+	// flown, reported back at Mission Control. JobPhase: 0 none, 1 build it, 2 launch + mission, 3 report
+	int32 JobPhase = 0;
+	void Toast(const FString& S) { Toasts.Add(S); }
+	FString JobTitle;
+	void BeginJob(const FString& Title) { JobTitle = Title; JobPhase = 1; Toast(FString::Printf(TEXT("Order accepted: %s. The satellite is built at the Assembly Hall stand."), *Title)); }
+	bool HasWaypoint() const { return JobPhase == 1 || JobPhase == 3; }
+	FVector Waypoint() const { return JobPhase == 1 ? FVector(18300, 1100, 150) : FVector(14200, 1200, 150); }
+	FString WaypointLabel() const { return JobPhase == 1 ? TEXT("ASSEMBLY HALL - satellite stand") : TEXT("MISSION CONTROL - file the report"); }
 	FString ModeTag() const;            // short orange tag for the HUD ("FIND PARTS 3/7", "WORKBENCH", "FLIGHT")
 	// outline the real object behind an interaction volume (CMS-style highlight)
 	void SetHighlight(FName Action, UPrimitiveComponent* Hit);
@@ -160,6 +170,7 @@ private:
 	void BuildHome();
 	void BuildNeighbourhood();
 	void BuildBackyard();
+	void BuildSpaceCentre();
 	void SpawnHunt();
 	void Wall(const FVector2D& A, const FVector2D& B, const TArray<FISOpening>& Ops, const TCHAR* InTex, const FLinearColor& InTint,
 		const TCHAR* OutTex = nullptr, const FLinearColor& OutTint = FLinearColor::White, float OutSide = 0.f, bool bBaseboard = true);
@@ -193,7 +204,6 @@ private:
 	UStaticMeshComponent* Place(const TCHAR* Id, const FVector& Pos, float Yaw, float Scale = 1.f, bool bCollide = false);
 	UBoxComponent* AddInteract(const FVector& Center, const FVector& Extent, FName Action);
 	UTextRenderComponent* AddSign(const FString& Text, const FVector& Pos, float Yaw, float Size, const FColor& Color);
-	void Toast(const FString& S) { Toasts.Add(S); }
 	void StepFlight(float Dt);
 	void UpdateTracker(float Dt);
 	FVector MToWorld(const FVector& M) const { return PadPos + M * 100.f; }

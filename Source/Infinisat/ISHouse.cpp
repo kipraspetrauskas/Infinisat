@@ -7,6 +7,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "ISEarth.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -609,9 +610,9 @@ void AISHomeWorld::BuildBackyard()
 	UStaticMeshComponent* Path = Paint((Gate + PadPos) * 0.5f + FVector(0, 0, 0.6f), FVector(Seg.Size2D(), 160, 1.2f), FLinearColor(0.55f, 0.42f, 0.3f), 0.95f, false);
 	Path->SetRelativeRotation(FRotator(0, Seg.Rotation().Yaw, 0));
 
-	// rolling hills on the horizon (soft Astroneer-like silhouettes)
+	// rolling hills on the horizon (soft Astroneer-like silhouettes); on the real Earth the real hills are there instead
 	FRandomStream R(11);
-	for (int32 i = 0; i < 14; ++i)
+	for (int32 i = 0; i < (AISEarth::Enabled() ? 0 : 14); ++i)
 	{
 		const float A = R.FRandRange(0.f, 2.f * PI);
 		const float D = R.FRandRange(60000.f, 110000.f);
@@ -642,6 +643,14 @@ void AISHomeWorld::BuildBackyard()
 			if (P.X > -1200 && P.X < 2600 && P.Y > -2600 && P.Y < 3500) continue;
 			if (FMath::Abs(P.Y + 1800.f) < 900.f) continue;
 			if (FVector::Dist2D(P, PadPos) < 4000.f) continue;
+			if (P.X > 12200.f && P.X < 23900.f && P.Y > -1300.f && P.Y < 4400.f) continue;   // space centre grounds
+			if (AISEarth::Enabled() && !AISEarth::InSite(P)) continue;   // beyond the site plate the real ground has its own trees
+			{
+				static const FVector2D Nb[] = { { -2700, 500 }, { 3600, 500 }, { 6900, 500 }, { -1600, -3700 }, { 1800, -3700 }, { 5200, -3700 }, { -5200, -3700 } };
+				bool bIn = false;
+				for (const FVector2D& Nn : Nb) if (FMath::Abs(P.X - Nn.X) < 750.f && FMath::Abs(P.Y - Nn.Y) < 650.f) { bIn = true; break; }
+				if (bIn) continue;
+			}
 			const float S = R.FRandRange(MinS, MaxS);
 			H->AddInstance(FTransform(FRotator(0, R.FRandRange(0.f, 360.f), 0), P - FVector(0, 0, 4.f), FVector(S)));
 			++Added;
@@ -747,6 +756,15 @@ bool AISHomeWorld::IsFound(FName Part) const
 
 void AISHomeWorld::BuildGround2()
 {
+	if (AISEarth::Enabled())
+	{
+		// on the real Earth: only the site itself is our ground, a levelled plate on the real coast at Mahia (a deep
+		// block, so wherever the real ground dips at its edge there is an embankment, not a hole); beyond it the
+		// real terrain and imagery take over
+		Paint(FVector(7500, 750, -2000), FVector(35000, 13500, 4000), FLinearColor(0.35f, 0.55f, 0.215f), 0.95f);   // the colour of the real pasture around it
+		Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);
+		return;
+	}
 	UStaticMeshComponent* G = NewObject<UStaticMeshComponent>(this);
 	G->SetStaticMesh(ISMat::Cube());
 	G->SetupAttachment(Root);
@@ -882,4 +900,94 @@ void AISHomeWorld::ApplyLightQuality()
 {
 	for (int32 i = 0; i < RoomLights.Num(); ++i)
 		if (RoomLights[i]) RoomLights[i]->SetCastShadows(ISQuality::Level >= 3 && i < 2);
+}
+
+// =====================================================================================================
+//  the space centre at the end of the street (Kerbal Space Center idea: one place, a building per job)
+//  Same flat style as the houses. Each building has a console: walk in and press E.
+void AISHomeWorld::BuildSpaceCentre()
+{
+	auto F = [this](const TCHAR* Name, const FVector& P, float Face) { return PlaceMesh(this, Root, AllComps, KPath(TEXT("furn"), Name), P, Face, KF, true, true); };
+	const FLinearColor WallW(0.9f, 0.91f, 0.92f), Blue(0.18f, 0.3f, 0.48f), Orange(1.f, 0.56f, 0.12f), Glass(0.25f, 0.4f, 0.55f), FloorC(0.78f, 0.79f, 0.8f), Concrete(0.68f, 0.68f, 0.66f);
+	// the street carries on east to the centre's gate; concrete grounds; fence with a gate on the road
+	Paint(FVector(17500, -1800, 0.6f), FVector(14000, 960, 1.2f), FLinearColor(0.2f, 0.2f, 0.21f), 0.9f, false);
+	for (int32 i = 11; i <= 24; ++i) Paint(FVector(i * 1000.f + 250.f, -1800.f, 1.3f), FVector(300.f, 12.f, 0.4f), FLinearColor(0.92f, 0.9f, 0.82f), 0.8f, false);
+	Paint(FVector(18000, 1500, 2.f), FVector(11000, 5200, 4.f), Concrete, 0.9f, false);
+	WoodFence(FVector(12400, -1150, 0), FVector(23600, -1150, 0), 600.f, 1400.f);
+	AddSign(TEXT("INFINISAT SPACE CENTRE"), FVector(13400, -1185, 245), -90.f, 70.f, FColor(255, 145, 30));
+	Paint(FVector(13400, -1170, 245), FVector(1400, 12, 90), Blue, 0.5f);
+	Paint(FVector(12820, -1170, 100), FVector(14, 14, 200), Blue, 0.5f);
+	Paint(FVector(13980, -1170, 100), FVector(14, 14, 200), Blue, 0.5f);
+
+	// one building: floor, walls (door on the road side), window bands, flat roof, orange band, sign, lights
+	auto Bldg = [&](const FVector2D& C, float SX, float SY, float H, float DoorW, float DoorH, const TCHAR* Name)
+	{
+		const float T = 30.f, X0 = C.X - SX * 0.5f, X1 = C.X + SX * 0.5f, Y0 = C.Y - SY * 0.5f, Y1 = C.Y + SY * 0.5f;
+		Paint(FVector(C.X, C.Y, 6.f), FVector(SX, SY, 12.f), FloorC, 0.8f);
+		Paint(FVector(C.X, Y1, H * 0.5f), FVector(SX, T, H), WallW, 0.7f);
+		Paint(FVector(X0, C.Y, H * 0.5f), FVector(T, SY, H), WallW, 0.7f);
+		Paint(FVector(X1, C.Y, H * 0.5f), FVector(T, SY, H), WallW, 0.7f);
+		const float Side = (SX - DoorW) * 0.5f;
+		Paint(FVector(X0 + Side * 0.5f, Y0, H * 0.5f), FVector(Side, T, H), WallW, 0.7f);
+		Paint(FVector(X1 - Side * 0.5f, Y0, H * 0.5f), FVector(Side, T, H), WallW, 0.7f);
+		Paint(FVector(C.X, Y0, DoorH + (H - DoorH) * 0.5f), FVector(DoorW, T, H - DoorH), WallW, 0.7f);
+		for (float S : { -1.f, 1.f })   // window bands on the long sides
+		{
+			Paint(FVector(S < 0 ? X0 - 16.f : X1 + 16.f, C.Y, H * 0.58f), FVector(4.f, SY * 0.8f, H * 0.22f), Glass, 0.15f, false, 0.f, 0.3f);
+			Paint(FVector(C.X + S * (Side * 0.5f + DoorW * 0.5f), Y0 - 16.f, H * 0.58f), FVector(Side * 0.6f, 4.f, H * 0.22f), Glass, 0.15f, false, 0.f, 0.3f);
+		}
+		Paint(FVector(C.X, C.Y, H + 15.f), FVector(SX + 60.f, SY + 60.f, 30.f), Blue, 0.7f);
+		Paint(FVector(C.X, Y0 - 32.f, H - 20.f), FVector(SX + 60.f, 4.f, 26.f), Orange, 0.5f, false);
+		AddSign(Name, FVector(C.X, Y0 - 40.f, H - 90.f), -90.f, FMath::Clamp(SX / 18.f, 40.f, 120.f), FColor(30, 50, 80));
+		for (float Lx = X0 + 300.f; Lx < X1 - 100.f; Lx += 500.f)
+			for (float Ly = Y0 + 300.f; Ly < Y1 - 100.f; Ly += 500.f)
+				RoomLight(FVector(Lx, Ly, H - 60.f), 2500.f, false);
+	};
+	auto Console = [&](const FVector& P, float Face, FName Action, const TCHAR* Label)
+	{
+		F(TEXT("desk"), P, Face);
+		F(TEXT("computerScreen"), P + FVector(0, 0, 78.f), Face + 180.f);   // on the desk top, facing the chair
+		F(TEXT("chairDesk"), P + FRotator(0, Face, 0).RotateVector(FVector(-90.f, 0, 0)), Face);
+		AddSign(Label, P + FVector(0, 0, 175.f), Face - 90.f, 18.f, FColor(255, 145, 30));
+		AddInteract(P + FVector(0, 0, 120.f), FVector(80, 80, 80), Action);
+	};
+
+	// MISSION CONTROL: the customers' orders and the big screens
+	Bldg(FVector2D(14200, 900), 1500, 1100, 520, 260, 300, TEXT("MISSION CONTROL"));
+	Console(FVector(14200, 1200, 12), 270.f, "sc_orders", TEXT("ORDERS"));
+	for (int32 k = -1; k <= 1; k += 2) { F(TEXT("desk"), FVector(14200 + k * 420.f, 900, 12), 270.f); F(TEXT("computerScreen"), FVector(14200 + k * 420.f, 900, 172), 270.f); F(TEXT("chairDesk"), FVector(14200 + k * 420.f, 810, 12), 270.f); }
+	Paint(FVector(14200, 1425, 330), FVector(1100, 10, 260), FLinearColor(0.02f, 0.05f, 0.1f), 0.3f, false);   // wall of screens
+	Paint(FVector(14200, 1418, 330), FVector(500, 6, 200), FLinearColor(0.1f, 0.35f, 0.8f) * 1.4f, 0.2f, false);
+
+	// LAB: test sensors and radios, read about every part (the part library)
+	Bldg(FVector2D(16300, 900), 1500, 1100, 520, 260, 300, TEXT("LAB"));
+	Console(FVector(16300, 1200, 12), 270.f, "sc_lab", TEXT("PART LIBRARY"));
+	for (int32 k = 0; k < 3; ++k) { F(TEXT("desk"), FVector(15800 + k * 500.f, 700, 12), 0.f); F(TEXT("bookcaseOpen"), FVector(15750 + k * 500.f, 1380, 12), 180.f); }
+	F(TEXT("pottedPlant"), FVector(15650, 520, 12), 0.f);
+
+	// ASSEMBLY HALL: the clean room where satellites are designed and built
+	Bldg(FVector2D(19300, 1600), 2800, 2400, 1500, 900, 1100, TEXT("ASSEMBLY HALL"));
+	Paint(FVector(19300, 1600, 14), FVector(1800, 1600, 4), FLinearColor(0.93f, 0.94f, 0.95f), 0.4f, false);   // clean-room floor
+	Paint(FVector(19300, 1600, 60), FVector(260, 260, 100), FLinearColor(0.3f, 0.32f, 0.35f), 0.5f);            // build stand
+	Paint(FVector(19300, 1600, 170), FVector(140, 140, 120), FLinearColor(0.85f, 0.7f, 0.25f), 0.3f, true, 0.f, 0.8f);   // satellite under construction (gold MLI)
+	Paint(FVector(19300, 1600, 170), FVector(400, 8, 100), FLinearColor(0.05f, 0.08f, 0.2f), 0.2f, false);       // folded solar wings
+	for (int32 k = 0; k < 4; ++k) Paint(FVector(18500 + k * 530.f, 2700, 500), FVector(14, 14, 1000), FLinearColor(0.85f, 0.7f, 0.15f), 0.5f);   // crane rail posts
+	Paint(FVector(19300, 2700, 1000), FVector(1700, 30, 30), FLinearColor(0.85f, 0.7f, 0.15f), 0.5f);
+	Console(FVector(18300, 1100, 12), 0.f, "sc_design", TEXT("DESIGN A SATELLITE"));
+
+	// TRACKING STATION: the dish and the map of space
+	Bldg(FVector2D(22500, 700), 1000, 900, 450, 240, 300, TEXT("TRACKING"));
+	Console(FVector(22500, 950, 12), 270.f, "sc_track", TEXT("MAP OF SPACE"));
+	Paint(FVector(22500, 2200, 400), FVector(120, 120, 800), Concrete, 0.8f);                                       // dish pedestal
+	if (UStaticMeshComponent* D = Paint(FVector(22500, 2200, 950), FVector(1100, 1100, 120), FLinearColor(0.92f, 0.93f, 0.94f), 0.5f))
+	{
+		D->SetStaticMesh(ISMat::Cyl());
+		D->SetRelativeRotation(FRotator(-35.f, 90.f, 0.f));
+	}
+	Paint(FVector(22500, 2000, 1250), FVector(20, 20, 500), FLinearColor(0.6f, 0.6f, 0.62f), 0.5f, false);       // feed
+
+	// parked cars and trees make it feel lived in
+	PlaceMesh(this, Root, AllComps, KPath(TEXT("car"), TEXT("sedan")), FVector(15200, -500, 2), 0.f, 1.6f, true, true);
+	PlaceMesh(this, Root, AllComps, KPath(TEXT("car"), TEXT("sedan")), FVector(15700, -500, 2), 0.f, 1.6f, true, true);
+	for (int32 k = 0; k < 6; ++k) PlaceMesh(this, Root, AllComps, KPath(TEXT("nat"), k % 2 ? TEXT("tree_default") : TEXT("tree_oak")), FVector(12800 + k * 1900.f, -900, 0), k * 50.f, KNat, true, true);
 }

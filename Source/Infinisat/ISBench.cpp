@@ -216,7 +216,12 @@ void AISHomeWorld::RebuildCan()
 // ------------------------------------------------------------------------------------------------ aim highlight
 void AISHomeWorld::SetHighlight(FName Action, UPrimitiveComponent* Hit)
 {
-	if (Action == HighlightAction) return;
+	// steady outline: a one-frame miss of the view trace must not switch it off and on (that read as flashing)
+	static double LastSeen = 0.0;
+	const double Now = FPlatformTime::Seconds();
+	if (Action == HighlightAction) { LastSeen = Now; return; }
+	if (Action.IsNone() && !HighlightAction.IsNone() && Now - LastSeen < 0.25) return;
+	LastSeen = Now;
 	for (const TWeakObjectPtr<UPrimitiveComponent>& C : Highlighted) if (C.IsValid()) C->SetRenderCustomDepth(false);
 	Highlighted.Reset();
 	HighlightAction = Action;
@@ -248,7 +253,7 @@ FString AISHomeWorld::ModeTag() const
 {
 	switch (Stage)
 	{
-	case EISStage::NoOrder: return TEXT("NEW ORDER WAITING");
+	case EISStage::NoOrder: return JobPhase == 1 ? TEXT("BUILD THE SATELLITE") : JobPhase == 3 ? TEXT("REPORT") : TEXT("NEW ORDER WAITING");
 	case EISStage::Build: return UsesHunt() && FoundCount(true) < RequiredCount() ? FString::Printf(TEXT("FIND PARTS  %d/%d"), FoundCount(true), RequiredCount()) : FString(TEXT("BUILD THE CANSAT"));
 	case EISStage::Sealed: case EISStage::Carry: return TEXT("CARRY TO THE PAD");
 	case EISStage::OnPad: case EISStage::Countdown: return TEXT("LAUNCH");

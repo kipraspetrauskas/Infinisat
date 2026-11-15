@@ -3,6 +3,7 @@
 // explorer costs no downloads and no licences. Distances are compressed so everything fits in one flyable scene;
 // periods, tilts and spin directions are real for solar-system bodies.
 #include "ISScene.h"
+#include "ISEarth.h"
 #include "Engine/Engine.h"
 #include "ISSim.h"
 #include "Components/StaticMeshComponent.h"
@@ -687,7 +688,118 @@ void AISSpaceScene::BuildBlackHole(const FVector& Center)
 	CosmosComps.Add(PL);
 }
 
+// One 3D star field for every space view: the Milky Way is made of real points (a dense band with a bright bulge toward
+// the galactic centre and a dark dust lane through it), not a painted picture. It sits beyond everything and follows the camera.
+void AISSpaceScene::BuildStarField()
+{
+	if (StarField) return;
+	StarField = NewObject<USceneComponent>(this);
+	StarField->SetupAttachment(SceneRoot);
+	StarField->RegisterComponent();
+	UStaticMesh* Dot = MCube ? MCube : MSphere;   // a few triangles per star: tens of thousands stay cheap on a laptop
+	auto Set = [&](const FLinearColor& C, float Glow)
+	{
+		UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);
+		I->SetStaticMesh(Dot);
+		I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		I->CastShadow = false;
+		I->SetupAttachment(StarField);
+		I->RegisterComponent();
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(MatUnlit, I);
+		MID->SetVectorParameterValue(TEXT("Color"), C);
+		MID->SetScalarParameterValue(TEXT("Intensity"), Glow);
+		I->SetMaterial(0, MID);
+		return I;
+	};
+	const FQuat Gal = FQuat(FVector::ForwardVector, FMath::DegreesToRadians(60.f)) * FQuat(FVector::UpVector, FMath::DegreesToRadians(35.f));
+	auto GalDir = [&](float LonDeg, float LatDeg)
+	{
+		const float Lo = FMath::DegreesToRadians(LonDeg), La = FMath::DegreesToRadians(LatDeg);
+		return Gal.RotateVector(FVector(FMath::Cos(La) * FMath::Cos(Lo), FMath::Cos(La) * FMath::Sin(Lo), FMath::Sin(La)));
+	};
+	FRandomStream R(5);
+	struct FCls { FLinearColor C; float Share, Glow; } Cls[] = {
+		{ FLinearColor(0.82f, 0.88f, 1.f), 0.1f, 5.f }, { FLinearColor(0.93f, 0.95f, 1.f), 0.2f, 4.f }, { FLinearColor(1.f, 0.99f, 0.95f), 0.25f, 3.5f },
+		{ FLinearColor(1.f, 0.93f, 0.8f), 0.25f, 3.f }, { FLinearColor(1.f, 0.82f, 0.66f), 0.2f, 2.6f } };
+	for (const FCls& C : Cls)
+	{
+		UInstancedStaticMeshComponent* I = Set(C.C, C.Glow);
+		// field stars all over the sky: few bright, many faint
+		for (int32 k = 0, N = FMath::RoundToInt(7000 * C.Share); k < N; ++k)
+		{
+			const float Mag = FMath::Pow(R.FRand(), 7.f);
+			I->AddInstance(FTransform(FRotator::ZeroRotator, R.VRand() * 1.6e6f, FVector(1.6f + 8.f * Mag)));
+		}
+	}
+	// the Milky Way: unresolved faint stars, densest in the plane and toward the centre (longitude 0), split by dust
+	UInstancedStaticMeshComponent* Band = Set(FLinearColor(0.85f, 0.85f, 0.9f), 1.1f);
+	UInstancedStaticMeshComponent* Bulge = Set(FLinearColor(1.f, 0.88f, 0.7f), 1.3f);
+	for (int32 k = 0; k < 34000; ++k)
+	{
+		const float Lon = R.FRandRange(-180.f, 180.f);
+		const float Centre = FMath::Exp(-FMath::Square(Lon / 70.f));                  // brighter toward the galactic centre
+		if (R.FRand() > 0.35f + 0.65f * Centre) continue;
+		const float Lat = (R.FRand() + R.FRand() + R.FRand() - 1.5f) * (5.f + 9.f * Centre);
+		if (FMath::Abs(Lat - 0.6f * FMath::Sin(FMath::DegreesToRadians(Lon * 3.f))) < 1.4f && FMath::Abs(Lon) < 80.f && R.FRand() < 0.8f) continue;   // dust lane
+		UInstancedStaticMeshComponent* I = (FMath::Abs(Lon) < 25.f && FMath::Abs(Lat) < 9.f && R.FRand() < 0.6f) ? Bulge : Band;
+		I->AddInstance(FTransform(FRotator::ZeroRotator, GalDir(Lon, Lat) * 1.6e6f, FVector(1.1f + 1.4f * R.FRand())));
+	}
+	// bright planets on the ecliptic (seen from Earth they look like steady, coloured stars)
+	SkyPlanets = NewObject<USceneComponent>(this);
+	SkyPlanets->SetupAttachment(StarField);
+	SkyPlanets->RegisterComponent();
+	struct FPl { const TCHAR* N; float Lon; FLinearColor C; float Sz; } Pl[] = {
+		{ TEXT("Venus"), 40.f, FLinearColor(1.f, 0.97f, 0.88f), 16.f }, { TEXT("Mars"), 140.f, FLinearColor(1.f, 0.55f, 0.35f), 10.f },
+		{ TEXT("Jupiter"), 215.f, FLinearColor(1.f, 0.93f, 0.8f), 14.f }, { TEXT("Saturn"), 290.f, FLinearColor(0.95f, 0.88f, 0.65f), 10.f } };
+	const FQuat Ecl(FVector::ForwardVector, FMath::DegreesToRadians(-23.4f));
+	for (const FPl& P : Pl)
+	{
+		const float L = FMath::DegreesToRadians(P.Lon);
+		const FVector D = Ecl.RotateVector(FVector(FMath::Cos(L), FMath::Sin(L), 0.08f).GetSafeNormal());
+		UInstancedStaticMeshComponent* I = Set(P.C, 9.f);
+		I->AttachToComponent(SkyPlanets, FAttachmentTransformRules::KeepRelativeTransform);
+		I->AddInstance(FTransform(FRotator::ZeroRotator, D * 1.6e6f, FVector(P.Sz)));
+		UTextRenderComponent* T = NewObject<UTextRenderComponent>(this);
+		T->SetupAttachment(SkyPlanets);
+		T->RegisterComponent();
+		T->SetText(FText::FromString(P.N));
+		T->SetTextRenderColor(FColor(200, 205, 215));
+		T->SetHorizontalAlignment(EHTA_Center);
+		T->SetWorldSize(1.6e6f * 0.012f);
+		T->SetRelativeLocation(D * 1.6e6f + FVector(0, 0, 1.6e6f * 0.02f));
+		T->SetCastShadow(false);
+		SkyPlanetLabels.Add(T);
+	}
+}
+
+void AISSpaceScene::TickStarField(const FVector& CamLoc)
+{
+	if (!StarField) BuildStarField();
+	if (!StarField) return;
+	// shown wherever the black sky is shown (space views, above the air in flight); the flat sky picture stays hidden
+	const bool bSpaceSky = Sky && Sky->IsVisible() && !(View == EISView::Orbit && ViewDest == EISDest::Backyard);
+	if (Sky) Sky->SetHiddenInGame(bSpaceSky);
+	if (StarField->IsVisible() != bSpaceSky) StarField->SetVisibility(bSpaceSky, true);
+	if (!bSpaceSky) return;
+	// beyond everything in the scene: at true scale the sky must sit past the Moon, in the cosmos past the planets
+	const float S = Sky ? (float)Sky->GetComponentScale().X / 40000.f : 1.f;
+	StarField->SetWorldLocationAndRotation(CamLoc, FRotator::ZeroRotator);
+	StarField->SetWorldScale3D(FVector(FMath::Max(S, 1.f)));
+	if (SkyPlanets)
+	{
+		const bool bPl = View != EISView::Cosmos;   // the solar-system view shows the real planets instead
+		if (SkyPlanets->IsVisible() != bPl) SkyPlanets->SetVisibility(bPl, true);
+		for (UTextRenderComponent* T : SkyPlanetLabels)
+			if (T) T->SetWorldRotation(FRotationMatrix::MakeFromX(CamLoc - T->GetComponentLocation()).Rotator());
+	}
+}
+
 void AISSpaceScene::BuildCosmosBackdrop()
+{
+	// the shared 3D star field (BuildStarField) is the backdrop now
+}
+
+void AISSpaceScene::BuildCosmosBackdropOld()
 {
 	CosmosBackdrop = CosmosNode(SceneRoot);
 	// stars at "infinity" (the backdrop follows the camera): spectral classes with real colours, few bright, many faint

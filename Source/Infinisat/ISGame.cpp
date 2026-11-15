@@ -1,4 +1,5 @@
 #include "ISGame.h"
+#include "ISEarth.h"
 #include "Kismet/GameplayStatics.h"
 #include "Infinisat.h"
 #include "ISScene.h"
@@ -43,6 +44,9 @@ void AISPlayerController::BeginPlay()
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	World = GetWorld()->SpawnActor<AISHomeWorld>(AISHomeWorld::StaticClass(), FTransform::Identity, SP);
 	Scene = GetWorld()->SpawnActor<AISSpaceScene>(AISSpaceScene::StaticClass(), FTransform::Identity, SP);
+	Earth = GetWorld()->SpawnActor<AISEarth>(AISEarth::StaticClass(), FTransform::Identity, SP);
+	if (Scene) Scene->Earth = Earth;
+	if (World) World->Earth = Earth;
 
 	if (GEngine && GEngine->GameViewport)
 	{
@@ -84,6 +88,10 @@ void AISPlayerController::BeginPlay()
 	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld"));
 	UE_LOG(LogInfinisat, Log, TEXT("PC BeginPlay: world=%d scene=%d ui=%d arg=%d"), World != nullptr, Scene != nullptr, UI.IsValid(), bWorldArg);
 	if (bWorldArg) EnterWorld();
+	double OvA = 0.0;   // dev: -ISOverview=metres starts with the camera lifted above the site
+	if (bWorldArg && FParse::Value(FCommandLine::Get(), TEXT("ISOverview="), OvA)) EnterOverview(OvA);
+	int32 DevJob = -1;   // dev: -ISJob=N starts orbital order N as a job in the world
+	if (bWorldArg && UI && FParse::Value(FCommandLine::Get(), TEXT("ISJob="), DevJob)) UI->DevStartJob(DevJob);
 }
 
 void AISPlayerController::EndPlay(const EEndPlayReason::Type Reason)
@@ -116,6 +124,7 @@ void AISPlayerController::EnterMenu()
 	UE_LOG(LogInfinisat, Log, TEXT("EnterMenu"));
 	Mode = EISMode::Menu;
 	if (World) World->SetActive(false);
+	if (Earth) Earth->SetVisible(false);   // the space views switch it back on where the real Earth is in view
 	if (Bit) Bit->SetActorHiddenInGame(true);
 	if (Scene) { Scene->SetActive(true); if (Scene->GetCamera()) SetViewTarget(Scene->GetCamera()); }
 	SetCursorMode(true);
@@ -125,6 +134,7 @@ void AISPlayerController::EnterWorld()
 {
 	if (Scene) Scene->SetActive(false);
 	if (World) World->SetActive(true);
+	if (Earth) { Earth->UseSiteOrigin(); Earth->SetVisible(true); }
 	if (!Bit && World)
 	{
 		FActorSpawnParameters SP;
@@ -272,6 +282,7 @@ void AISPlayerController::PlayerTick(float DeltaTime)
 	{
 	case EISMode::Walk: TickWalk(DeltaTime); break;
 	case EISMode::Bench: TickBench(DeltaTime); break;
+	case EISMode::Overview: TickOverview(DeltaTime); break;
 	case EISMode::Menu:
 	{
 		if (!Scene) break;
@@ -295,11 +306,12 @@ void AISPlayerController::PlayerTick(float DeltaTime)
 			const float Dt = DeltaTime;
 			const bool bThrUp = IsInputKeyDown(EKeys::LeftShift), bThrDn = IsInputKeyDown(EKeys::LeftControl), bCut = WasInputKeyJustPressed(EKeys::X);
 			const float Pitch = (IsInputKeyDown(EKeys::D) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::A) ? 1.f : 0.f);
-			if (bThrUp || bThrDn || bCut || Pitch != 0.f) F->bAutopilot = false;   // touching the controls takes over from the autopilot
+			if (bThrUp || bThrDn || bCut) F->bManualThrottle = true;   // throttle keys take only the throttle
+			if (Pitch != 0.f && F->bAutopilot) { F->bAutopilot = false; F->ManualOffsetDeg = 0.0; }   // steering keys: stability assist keeps the nose near the flight path
 			if (bThrUp) F->Throttle = FMath::Min(1.0, F->Throttle + Dt * 0.6);
 			if (bThrDn) F->Throttle = FMath::Max(0.0, F->Throttle - Dt * 0.6);
 			if (bCut) F->Throttle = 0.0;
-			if (Pitch != 0.f) F->PitchDeg = FMath::Clamp(F->PitchDeg + Pitch * Dt * 6.0, -10.0, 120.0);
+			if (Pitch != 0.f) F->ManualOffsetDeg = FMath::Clamp(F->ManualOffsetDeg + Pitch * Dt * 8.0, -30.0, 30.0);
 			if (WasInputKeyJustPressed(EKeys::Period)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 2.f);
 			if (WasInputKeyJustPressed(EKeys::Comma)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 0.5f);
 		}
@@ -336,9 +348,13 @@ void AISPlayerController::TickWalk(float Dt)
 	}
 	World->SetHighlight(LookAction, LookAction.IsNone() ? nullptr : LookComp);   // yellow outline on the real object
 	if (WasInputKeyJustPressed(EKeys::Q)) World->Scan();
+	// mouse wheel: rise above the site (and on up to orbit)
+	if (WasInputKeyJustPressed(EKeys::MouseScrollDown) && !World->IsTracking()) { EnterOverview(80.0); return; }
 	if (WasInputKeyJustPressed(EKeys::E) && !LookAction.IsNone())
 	{
-		if (LookAction == "laptop") { OpenPanel(); if (UI) UI->ShowOrders(); }
+		if (LookAction == "sc_orders" && World->JobPhase == 3) { World->JobPhase = 0; World->Toast(FString::Printf(TEXT("Report filed for %s. The customer has the data; new orders are on the board."), *World->JobTitle)); }
+		if (LookAction == "laptop" || LookAction == "sc_orders") { OpenPanel(); if (UI) UI->ShowOrders(); }
+		else if (LookAction == "sc_design" || LookAction == "sc_lab" || LookAction == "sc_track") { Bit->Reach(); EnterMenu(); if (UI) UI->OpenBuilding(LookAction); }
 		else if (LookAction == "bench" && World->Stage == EISStage::Build) { Bit->Reach(); EnterBench(); }
 		else World->Interact(LookAction, Bit);
 	}
@@ -449,5 +465,58 @@ void AISPlayerController::TickCanTest(float Dt)
 		ConsoleCommand(TEXT("quit"));
 		CanTestStep = 5; return;
 	default: return;
+	}
+}
+
+// ------------------------------------------------------------------------------------------------ overview
+void AISPlayerController::EnterOverview(double AltM)
+{
+	if (!Bit) return;
+	if (!OverCam)
+	{
+		FActorSpawnParameters SP;
+		SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		OverCam = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), FTransform::Identity, SP);
+		OverCam->GetCameraComponent()->bConstrainAspectRatio = false;
+		OverCam->GetCameraComponent()->SetFieldOfView(60.f);
+	}
+	OverAnchor = Bit->GetActorLocation();
+	OverYaw = GetControlRotation().Yaw;
+	OverAlt = FMath::Max(AltM * 0.5, 20.0);
+	OverAltGoal = AltM;
+	Mode = EISMode::Overview;
+	TickOverview(0.f);
+	SetViewTargetWithBlend(OverCam, AltM > 1000.0 ? 0.f : 0.5f, VTBlend_EaseInOut, 2.f);
+	SetCursorMode(false);
+}
+
+void AISPlayerController::TickOverview(float Dt)
+{
+	if (!OverCam) return;
+	if (WasInputKeyJustPressed(EKeys::MouseScrollDown)) OverAltGoal = FMath::Min(OverAltGoal * 1.8, 400000.0);
+	if (WasInputKeyJustPressed(EKeys::MouseScrollUp)) OverAltGoal = OverAltGoal / 1.8;
+	float MX = 0, MY = 0;
+	GetInputMouseDelta(MX, MY);
+	OverYaw += MX * MouseSens * 0.5f;
+	// smooth in log space: every notch feels the same from 50 m to 150 km
+	OverAlt = FMath::Exp(FMath::FInterpTo(FMath::Loge(FMath::Max(OverAlt, 1.0)), FMath::Loge(FMath::Max(OverAltGoal, 1.0)), (double)Dt, 4.0));
+	// back on the ground
+	if (OverAltGoal < 35.0 || WasInputKeyJustPressed(EKeys::Escape))
+	{
+		Mode = EISMode::Walk;
+		if (Bit) SetViewTargetWithBlend(Bit, 0.5f, VTBlend_EaseInOut, 2.f);
+		return;
+	}
+	// low: looking at the site at an angle; high: straight down, like a satellite
+	const float T = FMath::Clamp((float)FMath::Loge(OverAlt / 60.0) / FMath::Loge(150000.0 / 60.0), 0.f, 1.f);
+	const float Pitch = FMath::Lerp(-35.f, -89.f, FMath::SmoothStep(0.f, 1.f, T));
+	const FRotator R(Pitch, OverYaw, 0.f);
+	const double Dist = OverAlt * 100.0 / FMath::Max(0.05, FMath::Sin(FMath::DegreesToRadians(-Pitch)));
+	OverCam->SetActorLocationAndRotation(OverAnchor - R.Vector() * Dist, R);
+	// above ~150 km the globe view (same real Earth, Earth-centred) takes over; the solar system is further out
+	if (OverAlt > 140000.0 && OverAltGoal > 140000.0)
+	{
+		EnterMenu();
+		if (UI) UI->OpenGlobe(OverAlt);
 	}
 }

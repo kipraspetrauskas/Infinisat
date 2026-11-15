@@ -12,3 +12,5 @@ _downloads/
 Packaged/
 __pycache__/
 Build/
+Plugins/CesiumForUnreal/
+cesium-request-cache.sqlite

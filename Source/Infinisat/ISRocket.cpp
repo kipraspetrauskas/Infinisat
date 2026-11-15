@@ -505,7 +505,23 @@ void FISRocketSim::Step(double Dt)
 		Event(FString::Printf(TEXT("%s: %s. Lift-off mass %.1f t, thrust %.0f kN."), IgnT < 0.0 ? TEXT("Hold-down release") : TEXT("Ignition"), *L->Name, StackMass() / 1000.0,
 			(S0.ThrustSLN + S0.Boosters * S0.BoosterThrustSLN) / 1000.0));
 	}
-	if (bAutopilot && IsFlying()) Guidance(Dt);
+	if (bAutopilot && IsFlying())
+	{
+		const double HeldThrottle = Throttle;
+		Guidance(Dt);
+		if (bManualThrottle) Throttle = HeldThrottle;   // player owns the throttle, the computer still steers
+	}
+	else if (IsFlying() && AltM > 150.0)
+	{
+		// manual flight with stability assist (like KSP's SAS "prograde hold"): the nose follows the direction of travel
+		// (the airflow while in the air), the player's A/D tilt it away from that; it can never be left pointing sideways
+		const FVector2D U = Up(), E = East();
+		const FVector2D Air = E * (OmegaE * R.Size() * FMath::Cos(FMath::DegreesToRadians(L->SiteLatDeg)) * FMath::Sin(FMath::DegreesToRadians(LaunchAzDeg)));
+		const FVector2D Vref = AltM < 60000.0 ? V - Air : V;
+		const double Pro = Vref.Size() > 20.0 ? FMath::RadiansToDegrees(FMath::Atan2(FVector2D::DotProduct(Vref, E), FVector2D::DotProduct(Vref, U))) : 0.0;
+		const double AllowA = FMath::Clamp(15000.0 / FMath::Max(1.0, QPa), 2.0, 180.0);   // the air will not let it lean further
+		PitchDeg = FMath::Clamp(Pro + FMath::Clamp(ManualOffsetDeg, -AllowA, AllowA), -10.0, 120.0);
+	}
 
 	const FISEngineStage& St = L->Stages[StageIdx];
 	const double Pr = PressureRatio(AltM);

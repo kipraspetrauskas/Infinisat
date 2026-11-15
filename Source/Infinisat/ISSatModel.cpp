@@ -3,6 +3,8 @@
 // Local frame: +X = nadir (faces Earth), -X = zenith, +-Y = solar wings, Z = along the bus.
 // The bus is 100 units wide; the scene scales the whole model to the real bus size.
 #include "ISScene.h"
+#include "ISMount.h"
+#include "Misc/ScopeExit.h"
 #include "ISSim.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -38,10 +40,16 @@ namespace
 
 void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TArray<UStaticMeshComponent*>& Track)
 {
+	{
+		TArray<USceneComponent*> Kids;
+		Root->GetChildrenComponents(false, Kids);
+		for (USceneComponent* K : Kids) if (K && K->ComponentHasTag(TEXT("ISPartSub"))) K->DestroyComponent();
+	}
+	USceneComponent* Parent = Root;   // each part is built into its own sub-assembly so it can sit on the face it is mounted on
 	// helper: box / cylinder / sphere / cone with a PBR finish
 	auto Part = [&](UStaticMesh* Mesh, const FVector& Pos, const FVector& Size, const FLinearColor& Col, float Metal, float Rough, const FRotator& Rot = FRotator::ZeroRotator, float Emis = 0.f)
 	{
-		UStaticMeshComponent* C = AddMesh(Root, Mesh, FTransform(Rot, Pos, Size / 100.f), Col, false, Emis, &Track);
+		UStaticMeshComponent* C = AddMesh(Parent, Mesh, FTransform(Rot, Pos, Size / 100.f), Col, false, Emis, &Track);
 		if (C)
 			if (UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(C->GetMaterial(0)))
 			{
@@ -59,6 +67,7 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 	auto HasTag = [&](FName T) { return D.HasTag(T); };
 
 	const FBusShape S = ShapeFor(D);
+	SatHalf = FVector(S.W * 0.5f, S.D * 0.5f, S.H * 0.5f);   // for the mount markers on the stand
 	const float HW = S.W * 0.5f, HD = S.D * 0.5f, HH = S.H * 0.5f;
 	const bool bMain = &Track == &SatParts;   // the player's satellite: remember its deployable panels for the separation animation
 	if (bMain) { SatWings.Reset(); SatHalfH = HH; }
@@ -100,9 +109,31 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 				Box(FVector(0, s * (HD - 2.f), Z), FVector(S.W, 4.f, 5.f), Frame, S.bCube ? 0.4f : 1.f, 0.4f);
 			}
 		}
-		// side panels: two open faces show the inside; the others get skin
-		if (!S.bCube)
+		// closed body: a real satellite has no open sides
+		if (S.bCube)
 		{
+			// CubeSat: body-mounted solar panels on the four long sides (PCB with cell strings), end plates top and bottom
+			const FLinearColor SolarCell(0.05f, 0.08f, 0.2f), Pcb(0.1f, 0.3f, 0.15f);
+			for (int32 s : { -1, 1 })
+			{
+				Box(FVector(s * (HW - 1.5f), 0, 0), FVector(1.6f, S.D - T * 2.f, S.H - 6.f), Pcb, 0.f, 0.6f);
+				Box(FVector(0, s * (HD - 1.5f), 0), FVector(S.W - T * 2.f, 1.6f, S.H - 6.f), Pcb, 0.f, 0.6f);
+				for (int32 u = 0; u < S.Units; ++u)
+				{
+					const float Zc = -HH + (u + 0.5f) * S.H / FMath::Max(1, S.Units);
+					const float Ch = S.H / FMath::Max(1, S.Units) * 0.8f;
+					Box(FVector(s * (HW - 0.4f), 0, Zc), FVector(0.6f, S.D * 0.7f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+					Box(FVector(s * (HW - 0.4f), 0, Zc - Ch * 0.48f + Ch * 0.21f), FVector(0.6f, S.D * 0.7f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+					Box(FVector(0, s * (HD - 0.4f), Zc), FVector(S.W * 0.7f, 0.6f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+				}
+			}
+			for (int32 s : { -1, 1 }) Box(FVector(0, 0, s * (HH - 1.f)), FVector(S.W - T, S.D - T, 2.f), Alu, 1.f, 0.35f);
+		}
+		else
+		{
+			// +X (nadir) skin and end plates, so the bus is closed on every side
+			Box(FVector(HW - 1.f, 0, 0), FVector(1.5f, S.D - 10.f, S.H - 10.f), FLinearColor(0.62f, 0.63f, 0.65f), 1.f, 0.45f);
+			for (int32 s : { -1, 1 }) Box(FVector(0, 0, s * (HH - 1.5f)), FVector(S.W - 6.f, S.D - 6.f, 2.f), FLinearColor(0.6f, 0.61f, 0.63f), 1.f, 0.4f);
 			// -X (zenith): white radiator with stripes; +Y/-Y: honeycomb or gold MLI
 			Box(FVector(-HW + 1.f, 0, 0), FVector(1.5f, S.D - 10.f, S.H - 10.f), Radiator, 0.f, 0.25f);
 			for (int32 k = 0; k < 6; ++k) Box(FVector(-HW + 0.f, 0, -HH + 12.f + k * (S.H - 24.f) / 5.f), FVector(1.f, S.D - 14.f, 1.2f), FLinearColor(0.7f, 0.7f, 0.72f), 0.5f, 0.4f);
@@ -148,8 +179,47 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 		const int32 Col = NadirSlot % 2, Row = NadirSlot / 2; ++NadirSlot;
 		return FVector(HW + Size * 0.5f, (Col ? 1.f : -1.f) * S.D * 0.22f, HH * 0.4f - Row * S.H * 0.3f);
 	};
+	// a part's usual face and where it is mounted now (ISMount): the sub-assembly is turned/moved from one to the other
+	auto FaceCentre = [&](int32 M)
+	{
+		switch (M)
+		{
+		case ISMount::Nadir: return FVector(HW, 0, 0);
+		case ISMount::Zenith: return FVector(-HW, 0, 0);
+		case ISMount::Wings: return FVector(0, HD, 0);
+		case ISMount::Base: return FVector(0, 0, -HH);
+		case ISMount::Body: return FVector(0, -HD, 0);
+		default: return FVector::ZeroVector;
+		}
+	};
 	for (const FISPart* X : P)
 	{
+		USceneComponent* Sub = NewObject<USceneComponent>(this);
+		Sub->SetupAttachment(Root);
+		Sub->ComponentTags.Add(TEXT("ISPartSub"));
+		Sub->RegisterComponent();
+		Parent = Sub;
+		ON_SCOPE_EXIT
+		{
+			Parent = Root;
+			const int32 Want = ISMount::Ideal(X), Now = ISMount::Of(D, X);
+			if (ISMount::Physical(X) && Want != Now)
+			{
+				if (Now == ISMount::Stack)
+				{
+					// tucked inside the bus: shrunk into the middle, hidden behind the panels
+					Sub->SetRelativeScale3D(FVector(0.3f));
+					Sub->SetRelativeLocation(-FaceCentre(Want) * 0.3f);
+				}
+				else
+				{
+					const FVector Nw = ISMount::Info(Want).Normal, Nn = ISMount::Info(Now).Normal;
+					const FQuat Q = Nw.IsNearlyZero() ? FQuat::Identity : FQuat::FindBetweenNormals(Nw, Nn);
+					Sub->SetRelativeRotation(Q);
+					Sub->SetRelativeLocation(FaceCentre(Now) - Q.RotateVector(FaceCentre(Want)));
+				}
+			}
+		};
 		switch (X->Cat)
 		{
 		case EISCat::Power:

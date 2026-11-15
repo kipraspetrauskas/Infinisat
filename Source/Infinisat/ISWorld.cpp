@@ -12,6 +12,7 @@
 #include "Components/VolumetricCloudComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "ISEarth.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -156,7 +157,7 @@ void AISHomeWorld::BuildSky()
 	SkyLight->SetMobility(EComponentMobility::Movable);
 	SkyLight->SourceType = ESkyLightSourceType::SLS_CapturedScene;
 	SkyLight->SetIntensity(1.f);
-	Fog->SetFogDensity(0.006f);
+	Fog->SetFogDensity(AISEarth::Enabled() ? 0.0012f : 0.006f);   // on the real Earth the view reaches the real horizon
 	Fog->SetFogHeightFalloff(0.25f);
 	if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
 		Clouds->SetMaterial(CM);
@@ -361,6 +362,16 @@ void AISHomeWorld::BuildNature()
 			// keep the house, path and launch field clear
 			if (FVector::Dist2D(P, FVector(0, 600, 0)) < 1500.f) continue;
 			if (FVector::Dist2D(P, PadLocation) < 4500.f) continue;
+			// nothing grows on the street, inside the space centre's grounds or in the neighbours' houses
+			if (P.Y > -2450.f && P.Y < -1150.f) continue;
+			if (P.X > 12200.f && P.X < 23900.f && P.Y > -1300.f && P.Y < 4400.f) continue;
+			if (AISEarth::Enabled() && !AISEarth::InSite(P)) continue;
+			{
+				static const FVector2D Nb[] = { { -2700, 500 }, { 3600, 500 }, { 6900, 500 }, { -1600, -3700 }, { 1800, -3700 }, { 5200, -3700 }, { -5200, -3700 } };
+				bool bIn = false;
+				for (const FVector2D& N : Nb) if (FMath::Abs(P.X - N.X) < 700.f && FMath::Abs(P.Y - N.Y) < 600.f) { bIn = true; break; }
+				if (bIn) continue;
+			}
 			const FVector Seg = PadLocation - FVector(450, 0, 0);
 			const float T = FMath::Clamp(FVector::DotProduct(P - FVector(450, 0, 0), Seg) / Seg.SizeSquared(), 0.f, 1.f);
 			if (FVector::Dist2D(P, FVector(450, 0, 0) + Seg * T) < 500.f) continue;
@@ -391,6 +402,7 @@ void AISHomeWorld::BeginPlay()
 	BuildNeighbourhood();
 	BuildField();
 	BuildBackyard();
+	BuildSpaceCentre();
 	SpawnHunt();
 	LoadProgress();
 
@@ -541,7 +553,10 @@ FName AISHomeWorld::ActionFor(UPrimitiveComponent* C) const
 
 FString AISHomeWorld::PromptFor(FName A) const
 {
-	if (A == "laptop") return TEXT("E  Open order board");
+	if (A == "laptop" || A == "sc_orders") return TEXT("E  Open the order board (customers waiting)");
+	if (A == "sc_design") return TEXT("E  Design a satellite (assembly hall)");
+	if (A == "sc_lab") return TEXT("E  Part library: how every part works");
+	if (A == "sc_track") return TEXT("E  Map of space (tracking station)");
 	const FString AS = A.ToString();
 	if (AS.StartsWith(TEXT("door:")))
 	{
@@ -652,7 +667,10 @@ FString AISHomeWorld::Objective() const
 {
 	switch (Stage)
 	{
-	case EISStage::NoOrder: return TEXT("Check the order laptop on the office desk.");
+	case EISStage::NoOrder:
+		if (JobPhase == 1) return FString::Printf(TEXT("%s: build the satellite at the ASSEMBLY HALL stand (walk east along the street, E at the console)."), *JobTitle);
+		if (JobPhase == 3) return FString::Printf(TEXT("%s: the mission is over. File the report at MISSION CONTROL (E at the console)."), *JobTitle);
+		return TEXT("New orders arrive at MISSION CONTROL (the space centre at the end of the street) and on the laptop in the garage.");
 	case EISStage::Build:
 		if (UsesHunt() && FoundCount(true) < RequiredCount())
 			return FString::Printf(TEXT("Find the CanSat parts around the house: %d/%d found.  Press Q to scan for parts nearby."), FoundCount(true), RequiredCount());

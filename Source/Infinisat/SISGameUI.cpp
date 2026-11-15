@@ -1,4 +1,5 @@
 #include "SISGameUI.h"
+#include "ISMount.h"
 #include "ISScene.h"
 #include "ISGame.h"
 #include "ISWorld.h"
@@ -33,6 +34,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "Engine/TextureRenderTarget2D.h"
 
 namespace
@@ -178,6 +180,8 @@ void SISGameUI::Construct(const FArguments& InArgs)
 			StartOps();
 			if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch();
 			if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap();
+			float Zm = 0.f;
+			if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISZoom="), Zm)) for (int32 z = 0; z < FMath::Abs((int32)Zm); ++z) Scene->ZoomCamera(Zm > 0 ? 1.f : -1.f);
 			// dev: jump the mission clock to a day (screenshots of cruise / arrival); choices take the first option
 			double OpsDay = 0.0;
 			if (FParse::Value(FCommandLine::Get(), TEXT("ISOpsDay="), OpsDay))
@@ -193,6 +197,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
 		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosZoom="), Zm)) Scene->ZoomCamera(Zm); }
+		else if (DevScreen == TEXT("globe")) { double GA = 1500000.0; FParse::Value(FCommandLine::Get(), TEXT("ISGlobeAlt="), GA); OpenGlobe(GA); }
 		else if (DevScreen == TEXT("missions")) Go(EScreen::Missions);
 		else if (DevScreen == TEXT("help")) Go(EScreen::Help);
 	}
@@ -208,7 +213,7 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 	if (AISPlayerController* P = IPC())
 	{
 		const EISMode M = P->GetMode();
-		if (M == EISMode::Walk && Screen != EScreen::Play) { Screen = EScreen::Play; bDirty = true; }
+		if ((M == EISMode::Walk || M == EISMode::Overview) && Screen != EScreen::Play) { Screen = EScreen::Play; bDirty = true; }
 		if (M == EISMode::Bench && Screen != EScreen::Bench) { Screen = EScreen::Bench; bDirty = true; }
 	}
 	if (AISHomeWorld* W = HW())
@@ -233,6 +238,25 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 		{
 			bOpsInCosmos = false;
 			Go(EScreen::Ops);
+		}
+		// globe <-> solar system, and globe -> back down to the ground at the site
+		else if (Z < 0 && Screen == EScreen::Globe)
+		{
+			bGlobeInCosmos = true;
+			Go(EScreen::Cosmos);
+			const int32 Earth = Scene->CosmosFind(TEXT("Earth"));
+			if (Earth >= 0) Scene->FocusCosmos(Earth);
+		}
+		else if (Z > 0 && Screen == EScreen::Cosmos && bGlobeInCosmos && Scene->CosmosName(Scene->CosmosFocusIdx()) == TEXT("Earth"))
+		{
+			bGlobeInCosmos = false;
+			GlobeAlt = 5000000.0;
+			Go(EScreen::Globe);
+		}
+		if (Screen == EScreen::Globe && Scene->TakeLand() && IPC())
+		{
+			IPC()->EnterWorld();
+			IPC()->EnterOverview(140000.0);
 		}
 	}
 	if (Scene.IsValid())
@@ -364,6 +388,14 @@ AISPlayerController* SISGameUI::IPC() const { return Cast<AISPlayerController>(P
 AISHomeWorld* SISGameUI::HW() const { AISPlayerController* P = IPC(); return P ? P->World : nullptr; }
 bool SISGameUI::InWorld() const { AISPlayerController* P = IPC(); return P && P->GetMode() != EISMode::Menu; }
 void SISGameUI::ShowOrders() { Screen = EScreen::Missions; bDirty = true; }
+void SISGameUI::OpenGlobe(double AltM) { GlobeAlt = AltM; bGlobeInCosmos = false; Go(EScreen::Globe); }
+
+void SISGameUI::OpenBuilding(FName A)
+{
+	if (A == "sc_track") { bOpsInCosmos = false; Go(EScreen::Cosmos); }
+	else if (A == "sc_lab") Go(EScreen::Pedia);
+	else if (A == "sc_design") { if (bHaveDesign) Go(EScreen::Design); else Go(EScreen::Missions); }
+}
 void SISGameUI::ShowPause() { Screen = EScreen::Pause; bDirty = true; }
 void SISGameUI::ShowTitle() { Go(EScreen::Title); }
 void SISGameUI::ShowCanSatDebrief()
@@ -388,6 +420,7 @@ void SISGameUI::UpdateScene()
 	case EScreen::Debrief: Scene->ShowCompare(Design, Mission().RealMesh, Mission().RealName); break;
 	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: case EScreen::Pause: break;
 	case EScreen::Cosmos: Scene->ShowCosmos(Design); Scene->SetCosmosMission(bOpsInCosmos); Scene->SetBitMood(1); break;
+	case EScreen::Globe: Scene->ShowGlobe((float)GlobeAlt); break;
 	case EScreen::Pedia:
 		Scene->ShowModelOnly(MeshOf(Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Mesh), Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Name);
 		break;
@@ -433,7 +466,12 @@ void SISGameUI::StarterDesign(const FISMission& M)
 void SISGameUI::StartMission(int32 Index)
 {
 	MissionIdx = Index;
+	bHaveDesign = true;
 	StarterDesign(Mission());
+	// start from an empty bus bay: the brief says what the customer needs, the player builds it from nothing
+	if (Mission().Id != "sandbox" && !FParse::Param(FCommandLine::Get(), TEXT("ISStarter"))) Design.Parts.Reset();
+	if (FParse::Param(FCommandLine::Get(), TEXT("ISMisMount")))   // dev: a camera looking at space and panels on the side
+		for (const FName& Id : Design.Parts) if (const FISPart* Pp = ISData::FindPart(Id)) { if (Pp->Cat == EISCat::Payload) Design.Mount.Add(Id, 2); if (Pp->Cat == EISCat::Power) Design.Mount.Add(Id, 5); }
 	Cat = EISCat::Bus;
 	InfoPart = NAME_None;
 	InfoLine.Reset();
@@ -459,6 +497,7 @@ void SISGameUI::StartOps()
 	Eval = ISSim::Evaluate(Design, Mission());
 	Ops.Start(Design, Mission(), Eval, RunSeed++);
 	LastVoyPhase = 0;
+	if (HW() && HW()->JobPhase > 0) HW()->JobPhase = 2;
 	bAckFinish = false; bRecorded = false; LastReportPath.Reset();
 	Warp = 100.f;
 	Warp = 1.f;
@@ -504,6 +543,7 @@ void SISGameUI::Rebuild()
 	case EScreen::Debrief: W = BuildDebrief(); break;
 	case EScreen::Pedia: W = BuildPedia(); break;
 	case EScreen::Cosmos: W = BuildCosmos(); break;
+	case EScreen::Globe: W = BuildGlobe(); break;
 	case EScreen::Help: W = BuildHelp(); break;
 	case EScreen::Play: W = BuildPlay(); break;
 	case EScreen::Bench: W = BuildBench(); break;
@@ -525,7 +565,7 @@ TSharedRef<SWidget> SISGameUI::BuildTopBar(const FString& Title)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Sat-o-pedia"), [this]() { Go(EScreen::Pedia); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? Btn(TEXT("Back to the world"), [this]() { if (IPC()) IPC()->ClosePanel(); }, 1) : SNullWidget::NullWidget]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? SNullWidget::NullWidget : Btn(TEXT("Home"), [this]() { bOpsInCosmos = false; if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight(); if (IPC()) IPC()->EnterWorld(); })]
+		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? SNullWidget::NullWidget : Btn(TEXT("Walk out"), [this]() { bOpsInCosmos = false; if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight(); if (IPC()) IPC()->EnterWorld(); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Menu"), [this]() { if (IPC() && InWorld()) IPC()->EnterMenu(); Go(EScreen::Title); })],
 		10.f);
 }
@@ -692,7 +732,13 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 						]
 						+ SScrollBox::Slot().Padding(0, 14, 0, 0)[Btn(TEXT("Accept order  >"), [this]() {
 							if (Mission().Id == "m0" && HW() && IPC()) { HW()->StartCanSatOrder(MissionIdx); IPC()->EnterWorld(); }
-							else { if (IPC() && InWorld()) IPC()->EnterMenu(); StartMission(MissionIdx); }
+							else
+							{
+								// an orbital order is a job in the world: walk to the Assembly Hall and build it on the stand
+								StartMission(MissionIdx);
+								if (HW()) HW()->BeginJob(Mission().Title);
+								if (IPC()) { if (InWorld()) IPC()->ClosePanel(); else IPC()->EnterWorld(); }
+							}
 						}, 1, 16)]
 						+ SScrollBox::Slot().Padding(0, 6)[Txt(M.Id == "m0" ? TEXT("Hands-on: you build it on the garage workbench, launch it in the field and track it down.") : TEXT("Engineering view: design in the satellite workshop (clean room + spaceport scenes are next in development)."), 12, CDim)],
 						18.f)
@@ -743,7 +789,7 @@ TSharedRef<SWidget> SISGameUI::BuildObjectives(const TArray<FISObjective>& Objs)
 	return V;
 }
 
-TSharedRef<SWidget> SISGameUI::BuildDesign()
+TSharedRef<SWidget> SISGameUI::BuildDesignOld()
 {
 	const FISMission& M = Mission();
 	const bool bMulti = Cat == EISCat::Payload || Cat == EISCat::Extra;
@@ -1176,7 +1222,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 				+ SHorizontalBox::Slot().AutoWidth()[Btn(TEXT(">>  STAGE  (Space)"), [this]() { if (Scene.IsValid() && Scene->Flight()) Scene->Flight()->Stage(); }, 1, 14)]
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[Warps]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(CGold).Text(Val([](const FISRocketSim& S) { return S.bAutopilot ? FString(TEXT("AUTOPILOT FLYING")) : FString(TEXT("YOU ARE FLYING")); }))]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(CGold).Text(Val([](const FISRocketSim& S) { return S.bAutopilot ? FString(S.bManualThrottle ? TEXT("AUTOPILOT STEERING, YOU ON THROTTLE") : TEXT("AUTOPILOT FLYING")) : FString::Printf(TEXT("YOU ARE FLYING  -  STABILITY ASSIST: %+.0f deg from prograde"), S.ManualOffsetDeg); }))]
 		];
 		// failure: centred card
 		O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -1330,13 +1376,15 @@ TSharedRef<SWidget> SISGameUI::BuildDebrief()
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(LastReportPath.IsEmpty() ? TEXT("Save mission report") : TEXT("Report saved - open folder"), [this, Sc]() { if (LastReportPath.IsEmpty()) LastReportPath = WriteReport(Sc); FPlatformProcess::ExploreFolder(*FPaths::GetPath(LastReportPath)); bDirty = true; }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Improve the design"), [this]() { Go(EScreen::Design); }, 0, 13)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Fly the same design again"), [this]() { StartOps(); }, 0, 13)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Back home  >  (new contracts wait on the laptop)"), [this, bHasNext]()
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)[Btn(TEXT("Back to the space centre  >  (report at Mission Control)"), [this, bHasNext]()
 							{
 								// one connected game: every mission starts and ends at the house; the next contract opens up there
 								if (bHasNext && (bJudgeMode || Ops.Stars >= 2)) MaxChapter = FMath::Max(MaxChapter, Mission().Chapter + 1);
 								if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight();
 								bOpsInCosmos = false;
 								if (IPC()) IPC()->EnterWorld();
+								if (HW()) { HW()->JobPhase = 3; HW()->Toast(FString::Printf(TEXT("%s: %d of 3 stars. Walk into Mission Control and file the report."), *Mission().Title, Ops.Stars)); }
+								if (IPC() && IPC()->Bit) IPC()->Bit->SetActorLocation(FVector(14200, -300, 120), false, nullptr, ETeleportType::TeleportPhysics);   // back at the space centre, at Mission Control
 							}, 1, 14)])
 				]
 			]
@@ -1421,12 +1469,44 @@ namespace
 			APlayerController* P = PC.Get();
 			// the landed (or falling) CanSat: marker while its beacon is heard
 			const bool bTrack = W && W->IsTracking() && W->Stage >= EISStage::Descent && W->bTrackSignal;
-			if (!W || !P || (W->ScanT <= 0.f && !bTrack) || !GEngine || !GEngine->GameViewport) return Layer;
+			const bool bWay = W && W->HasWaypoint() && W->Stage == EISStage::NoOrder;
+			if (!W || !P || (W->ScanT <= 0.f && !bTrack && !bWay) || !GEngine || !GEngine->GameViewport) return Layer;
 			FVector2D VP; GEngine->GameViewport->GetViewportSize(VP);
 			if (VP.X < 1) return Layer;
 			const FVector2f Size = FVector2f(G.GetLocalSize()), K = Size / FVector2f(VP), Mid = Size * 0.5f;
 			FVector CamLoc; FRotator CamRot;
 			P->GetPlayerViewPoint(CamLoc, CamRot);
+			if (bWay)
+			{
+				// the job's next place (Assembly Hall stand / Mission Control console): marker on screen, arrow at the edge
+				const FVector Pos = W->Waypoint();
+				const float Dm = FVector::Dist(CamLoc, Pos) / 100.f;
+				const FLinearColor WC(1.f, 0.62f, 0.15f, 0.95f);
+				const FString Label = FString::Printf(TEXT("%s  %.0f m"), *W->WaypointLabel(), Dm);
+				FVector2D Px;
+				const bool bFront = FVector::DotProduct(CamRot.Vector(), (Pos - CamLoc).GetSafeNormal()) > 0.f;
+				if (Dm > 4.f)
+				{
+					if (bFront && P->ProjectWorldLocationToScreen(Pos, Px, true) && Px.X > 0 && Px.Y > 0 && Px.X < VP.X && Px.Y < VP.Y)
+					{
+						const FVector2f At = FVector2f(Px) * K;
+						TArray<FVector2f> D = { At + FVector2f(0, -14), At + FVector2f(14, 0), At + FVector2f(0, 14), At + FVector2f(-14, 0), At + FVector2f(0, -14) };
+						FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), D, ESlateDrawEffect::None, WC, true, 3.f);
+						FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(460, 22), FSlateLayoutTransform(At + FVector2f(18, -10))), Label, ISFont("Bold", 14), ESlateDrawEffect::None, WC);
+					}
+					else
+					{
+						const FVector L = CamRot.UnrotateVector(Pos - CamLoc);
+						FVector2f Dir = FVector2f((float)L.Y, (float)-L.Z).GetSafeNormal();
+						if (Dir.IsNearlyZero()) Dir = FVector2f(0, 1);
+						const FVector2f At = Mid + Dir * (Size.Y * 0.4f), Nrm(-Dir.Y, Dir.X);
+						TArray<FVector2f> A = { At - Dir * 14.f + Nrm * 11.f, At + Dir * 14.f, At - Dir * 14.f - Nrm * 11.f };
+						FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), A, ESlateDrawEffect::None, WC, true, 3.5f);
+						FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(460, 22), FSlateLayoutTransform(At + FVector2f(18, -10))), Label, ISFont("Bold", 14), ESlateDrawEffect::None, WC);
+					}
+				}
+				if (!bTrack && W->ScanT <= 0.f) return Layer + 2;
+			}
 			const float Pulse = 0.6f + 0.4f * FMath::Sin(W->ScanT * 6.f);
 			const FLinearColor C(0.25f, 0.95f, 1.f, FMath::Min(1.f, W->ScanT) * Pulse);
 			const FSlateFontInfo Font = ISFont("Bold", 12);
@@ -1573,11 +1653,24 @@ void SISGameUI::CardDragRay(const FPointerEvent& E)
 FReply SISGameUI::OnMouseMove(const FGeometry& G, const FPointerEvent& E)
 {
 	if (bCardDrag) { CardDragRay(E); return FReply::Handled(); }
+	if (bSatDrag) { SatDragPos = RootGeo.AbsoluteToLocal(E.GetScreenSpacePosition()); SatHover = SatMountAt(SatDragPos); return FReply::Handled(); }
 	return SCompoundWidget::OnMouseMove(G, E);
 }
 
 FReply SISGameUI::OnMouseButtonUp(const FGeometry& G, const FPointerEvent& E)
 {
+	if (bSatDrag && E.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		bSatDrag = false;
+		SatDragPos = RootGeo.AbsoluteToLocal(E.GetScreenSpacePosition());
+		const int32 Hit = SatMountAt(SatDragPos);
+		const FISPart* P = ISData::FindPart(SatDragId);
+		if (FPlatformTime::Seconds() - SatDragStart < 0.25 && Hit < 0) SatPlace(SatDragId, ISMount::Ideal(P));   // a click: where it usually goes
+		else if (Hit >= 0) SatPlace(SatDragId, Hit);
+		SatHover = -1;
+		bDirty = true;
+		return FReply::Handled().ReleaseMouseCapture();
+	}
 	if (!bCardDrag || E.GetEffectingButton() != EKeys::LeftMouseButton) return SCompoundWidget::OnMouseButtonUp(G, E);
 	bCardDrag = false;
 	if (AISHomeWorld* W = HW())
@@ -1672,7 +1765,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 			// controls fade out after the first half minute
 			SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity_Lambda([this]() { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(1.f - (float)(UITime - 30.0) / 5.f, 0.f, 0.75f))); })
 			.ShadowOffset(FVector2D(1, 1)).Justification(ETextJustify::Right)
-			.Text(FText::FromString(TEXT("WASD move   SHIFT faster   SPACE hover   E use   Q scan for parts   F chase camera   , / . time   ESC menu")))
+			.Text_Lambda([this]() { AISPlayerController* P = IPC(); if (P && P->GetMode() == EISMode::Overview) return FText::FromString(FString::Printf(TEXT("ALTITUDE %s   -   wheel out: higher (on up to orbit)   wheel in: back down   mouse: turn   ESC: land"), *(P->OverviewAltM() >= 1000.0 ? FString::Printf(TEXT("%.1f km"), P->OverviewAltM() / 1000.0) : FString::Printf(TEXT("%.0f m"), P->OverviewAltM())))); return FText::FromString(TEXT("WASD move   SHIFT faster   SPACE hover   E use   Q scan for parts   F chase camera   , / . time   WHEEL rise above the site   ESC menu")); })
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(22, 18)
 		[
@@ -2416,6 +2509,8 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	TSharedRef<SVerticalBox> Tools = SNew(SVerticalBox);
 	if (bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to your satellite"), [this]() { bOpsInCosmos = false; Go(EScreen::Ops); }, 1, 12)];
 	Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels on") : TEXT("Labels off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 11)];
+	if (bGlobeInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to Earth"), [this]() { bGlobeInCosmos = false; GlobeAlt = 5000000.0; Go(EScreen::Globe); }, 1, 12)];
+	else if (!bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Walk out"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 12)];
 	Tools->AddSlot().AutoHeight()[Btn(TEXT("Menu"), [this]() { bOpsInCosmos = false; Go(EScreen::Title); }, 0, 11)];
 	// sandbox: the Solar System runs on real gravity (ISNBody), so the player can break it
 	TSharedRef<SVerticalBox> Sandbox = SNew(SVerticalBox);
@@ -2468,7 +2563,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 		// bottom bar: time | bodies | tools
 		+ SOverlay::Slot().VAlign(VAlign_Bottom)
 		[
-			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 10))
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 8))
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 18, 0)
@@ -2478,8 +2573,367 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 						.Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? FString::Printf(TEXT("Day %.1f"), Scene->GetCosmosDays()) : FString()); })]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[Speeds]
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SScrollBox).Orientation(Orient_Horizontal).ScrollBarVisibility(EVisibility::Collapsed) + SScrollBox::Slot()[Strip]]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SSpacer)]   // no planet strip: click a world (or its label) in space to fly there
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18, 0, 0, 0)[SNew(SBox).WidthOverride(190)[Tools]]
 			]
 		];
+}
+
+// The real Earth, reached by zooming out from the ground: only a small caption and two ways on; the planet is the screen.
+TSharedRef<SWidget> SISGameUI::BuildGlobe()
+{
+	const FLinearColor Bar(0.02f, 0.025f, 0.03f, 0.82f);
+	return SNew(SOverlay)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(20)
+		[
+			SNew(SBox).WidthOverride(400)
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(14, 10))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(FLinearColor::White).Text(FText::FromString(TEXT("Earth")))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.75f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("The orange dot is your space centre on the Mahia Peninsula, New Zealand, 1.2 km from Rocket Lab's real Launch Complex 1. The blue and gold dots are real satellite families: Starlink, GPS, Galileo, the geostationary belt.")))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.45f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("Wheel in: land back at the site.  Wheel out: the solar system.  Drag: turn the globe.")))]
+				]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(20)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Back to the ground"), [this]() { if (IPC()) { IPC()->EnterWorld(); IPC()->EnterOverview(140000.0); } }, 1, 12)]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Solar system"), [this]() { bGlobeInCosmos = true; Go(EScreen::Cosmos); if (Scene.IsValid()) { const int32 Ea = Scene->CosmosFind(TEXT("Earth")); if (Ea >= 0) Scene->FocusCosmos(Ea); } }, 0, 12)]
+		];
+}
+
+// =====================================================================================================
+//  SATELLITE STAND - the CanSat bench idea for real spacecraft. The satellite stands in the assembly hall's clean room;
+//  part cards are dragged onto six real mounting places (or clicked: they go where they usually go). Where a part is
+//  mounted changes how it works in orbit (ISMount): a camera on the zenith face sees only space.
+// =====================================================================================================
+void SISGameUI::SatPlace(FName Id, int32 Mount)
+{
+	const FISPart* P = ISData::FindPart(Id);
+	if (!P || !IsUnlocked(*P) || !OwnsCat(P->Cat)) return;
+	const bool bMulti = P->Cat == EISCat::Payload || P->Cat == EISCat::Extra;
+	if (bMulti) { if (!Design.Has(Id)) Design.Toggle(Id); }
+	else
+	{
+		const FName Old = Design.GetSingle(P->Cat);
+		if (!Old.IsNone() && Old != Id) Design.Mount.Remove(Old);
+		Design.SetSingle(P->Cat, Id);
+	}
+	if (ISMount::Physical(P)) Design.Mount.Add(Id, (uint8)FMath::Clamp(Mount, 0, ISMount::Count - 1));
+	InfoPart = Id;
+	if (ISMount::Physical(P) && Mount != ISMount::Ideal(P))
+		Notice = FString::Printf(TEXT("%s mounted on the %s. The usual place is the %s: %s"), *P->Name, ISMount::Info(Mount).Name, ISMount::Info(ISMount::Ideal(P)).Name, ISMount::Info(ISMount::Ideal(P)).Why);
+	else Notice = FString::Printf(TEXT("%s mounted: %s"), *P->Name, ISMount::Physical(P) ? ISMount::Info(Mount).Name : TEXT("chosen"));
+	Recompute(true);
+}
+
+void SISGameUI::SatRemove(FName Id)
+{
+	if (!Design.Has(Id)) return;
+	Design.Parts.Remove(Id);
+	Design.Mount.Remove(Id);
+	InfoPart = Id;
+	Recompute(true);
+}
+
+bool SISGameUI::SatMountScreen(int32 M, FVector2D& Out) const
+{
+	APlayerController* P = PC.Get();
+	if (!Scene.IsValid() || !P || !GEngine || !GEngine->GameViewport) return false;
+	FVector2D VP; GEngine->GameViewport->GetViewportSize(VP);
+	FVector2D Px;
+	if (VP.X < 1 || !P->ProjectWorldLocationToScreen(Scene->SatMountWorld(M), Px, true)) return false;
+	const FVector2D Size = RootGeo.GetLocalSize();
+	Out = Px / VP * Size;
+	return true;
+}
+
+int32 SISGameUI::SatMountAt(const FVector2D& Local) const
+{
+	int32 Best = -1; float BestD = 130.f;
+	for (int32 m = 0; m < ISMount::Count; ++m)
+	{
+		FVector2D S;
+		if (!SatMountScreen(m, S)) continue;
+		const float D = FVector2D::Distance(S, Local);
+		if (D < BestD) { BestD = D; Best = m; }
+	}
+	return Best;
+}
+
+// the six mounting places drawn over the 3D satellite: a marker, the place's name, what is mounted there
+class SISSatOverlay : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SISSatOverlay) {}
+	SLATE_END_ARGS()
+	SISGameUI* UI = nullptr;
+	void Construct(const FArguments&, SISGameUI* InUI) { UI = InUI; }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(100, 100); }
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+	{
+		if (!UI) return Layer;
+		const FSlateFontInfo F = ISFont("Bold", 12), FS = ISFont("Regular", 11);
+		const TSharedRef<FSlateFontMeasure> Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		// labels sit outward from the satellite (left of it: right-aligned), each in its own lane so they never overlap
+		FVector2D Cen2(0, 0); int32 NC = 0;
+		for (int32 m = 0; m < ISMount::Count; ++m) { FVector2D S2; if (UI->SatMountScreen(m, S2)) { Cen2 += S2; ++NC; } }
+		if (NC == 0) return Layer;
+		const FVector2f Cen(Cen2 / NC);
+		TArray<FBox2f> Taken;   // label boxes already placed
+		for (int32 m = 0; m < ISMount::Count; ++m)
+		{
+			FVector2D S2;
+			if (!UI->SatMountScreen(m, S2)) continue;
+			const FVector2f S(S2);
+			const ISMount::FInfo& I = ISMount::Info(m);
+			const bool bHot = UI->bSatDrag && UI->SatHover == m;
+			FLinearColor C = I.Color; C.A = UI->bSatDrag ? (bHot ? 1.f : 0.75f) : 0.9f;
+			const float R = bHot ? 18.f : 11.f;
+			TArray<FVector2f> D = { S + FVector2f(0, -R), S + FVector2f(R, 0), S + FVector2f(0, R), S + FVector2f(-R, 0), S + FVector2f(0, -R) };
+			FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), D, ESlateDrawEffect::None, C, true, bHot ? 3.f : 2.f);
+			// the lines of this label: the place, then what is mounted there
+			TArray<TPair<FString, FLinearColor>> Lines;
+			Lines.Add({ FString(I.Name), C });
+			for (const FName& Id : UI->Design.Parts)
+			{
+				const FISPart* P = ISData::FindPart(Id);
+				if (!ISMount::Physical(P) || ISMount::Of(UI->Design, P) != m) continue;
+				const bool bWrong = m != ISMount::Ideal(P);
+				Lines.Add({ (bWrong ? TEXT("! ") : TEXT("- ")) + P->Name, bWrong ? FLinearColor(1.f, 0.6f, 0.3f) : FLinearColor(1, 1, 1, 0.85f) });
+			}
+			float W = 0.f;
+			for (const auto& L : Lines) W = FMath::Max(W, (float)Measure->Measure(L.Key, F).X);
+			bool bLeft = S.X < Cen.X;
+			if (bLeft && S.X - 150.f - W < 340.f) bLeft = false;   // would run under the catalogue: put it on the right
+			FVector2f At(bLeft ? S.X - 150.f - W : S.X + 150.f, S.Y - 10.f);
+			for (int32 k = 0; k < 20; ++k)   // move down past labels already placed
+			{
+				bool bHit = false;
+				const float Hh = 19.f + 16.f * (Lines.Num() - 1) + 10.f;
+				const FBox2f Me(At - FVector2f(8.f, 4.f), At + FVector2f(W + 12.f, Hh));
+				for (const FBox2f& T : Taken) if (T.Intersect(Me)) { bHit = true; break; }
+				if (!bHit) break;
+				At.Y += 24.f;
+			}
+			Taken.Add(FBox2f(At - FVector2f(8.f, 4.f), At + FVector2f(W + 12.f, 19.f + 16.f * (Lines.Num() - 1) + 10.f)));
+			// leader line from the marker to the label
+			TArray<FVector2f> Leader = { S + FVector2f(bLeft ? -R : R, 0), FVector2f(bLeft ? At.X + W + 6.f : At.X - 6.f, At.Y + 10.f) };
+			FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), Leader, ESlateDrawEffect::None, C * FLinearColor(1, 1, 1, 0.6f), true, 1.f);
+			// dark backing so the label reads on the white clean room
+			const float H = 19.f + 16.f * (Lines.Num() - 1) + 6.f;
+			FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(FVector2f(W + 16.f, H), FSlateLayoutTransform(At - FVector2f(6.f, 3.f))), FCoreStyle::Get().GetBrush("WhiteBrush"), ESlateDrawEffect::None, FLinearColor(0.02f, 0.03f, 0.05f, 0.78f));
+			float Y = 0.f;
+			for (int32 l = 0; l < Lines.Num(); ++l)
+			{
+				FSlateDrawElement::MakeText(Out, Layer + 1, G.ToPaintGeometry(FVector2f(W + 40.f, 20), FSlateLayoutTransform(At + FVector2f(0, Y))), Lines[l].Key, l == 0 ? F : FS, ESlateDrawEffect::None, Lines[l].Value);
+				Y += l == 0 ? 19.f : 16.f;
+			}
+		}
+		// the card being dragged follows the cursor
+		if (UI->bSatDrag)
+			if (const FISPart* P = ISData::FindPart(UI->SatDragId))
+				FSlateDrawElement::MakeText(Out, Layer + 2, G.ToPaintGeometry(FVector2f(400, 22), FSlateLayoutTransform(FVector2f(UI->SatDragPos) + FVector2f(14, -8))),
+					P->Name + (UI->SatHover >= 0 ? FString(TEXT("  ->  ")) + ISMount::Info(UI->SatHover).Name : FString(TEXT("  (drop on a marker)"))), ISFont("Bold", 13), ESlateDrawEffect::None, FLinearColor(1.f, 0.85f, 0.4f));
+		return Layer + 3;
+	}
+};
+
+TSharedRef<SWidget> SISGameUI::BuildDesign()
+{
+	const FISMission& M = Mission();
+	const FLinearColor Dark(0.035f, 0.04f, 0.05f, 0.94f), Dark2(0.06f, 0.07f, 0.085f, 0.96f), Faint(1, 1, 1, 0.55f);
+
+	// catalogue tabs: the bus first, then the systems
+	struct FTab { const TCHAR* Short; const TCHAR* Name; TArray<EISCat> Cats; };
+	const TArray<FTab> Tabs = {
+		{ TEXT("BUS"), TEXT("Structure: the frame everything is mounted on (start here)"), { EISCat::Bus } },
+		{ TEXT("PWR"), TEXT("Power: solar panels, RTGs, batteries"), { EISCat::Power, EISCat::Battery } },
+		{ TEXT("AVI"), TEXT("Avionics: computer, attitude control, thermal"), { EISCat::Computer, EISCat::ADCS, EISCat::Thermal } },
+		{ TEXT("COM"), TEXT("Radio and the ground stations that listen"), { EISCat::Comms, EISCat::Ground } },
+		{ TEXT("PRP"), TEXT("Propulsion"), { EISCat::Propulsion } },
+		{ TEXT("PAY"), TEXT("Payload: the instruments the customer pays for"), { EISCat::Payload } },
+		{ TEXT("EXT"), TEXT("Extras"), { EISCat::Extra } } };
+	SatCat = FMath::Clamp(SatCat, 0, Tabs.Num() - 1);
+	if (Design.GetSingle(EISCat::Bus).IsNone()) SatCat = 0;   // nothing to mount on yet: choose the frame first
+	TSharedRef<SVerticalBox> TabCol = SNew(SVerticalBox);
+	for (int32 t = 0; t < Tabs.Num(); ++t)
+	{
+		bool bMissing = false;
+		for (EISCat C : Tabs[t].Cats) if (!(C == EISCat::Payload || C == EISCat::Extra || C == EISCat::Propulsion || C == EISCat::Thermal) && Design.GetSingle(C).IsNone()) bMissing = true;
+		const bool bOn = SatCat == t;
+		TabCol->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(SButton).ButtonStyle(FCoreStyle::Get(), "NoBorder").ContentPadding(0).ToolTipText(FText::FromString(Tabs[t].Name))
+			.OnClicked_Lambda([this, t]() { SatCat = t; bDirty = true; return FReply::Handled(); })
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(bOn ? FLinearColor(0.25f, 0.33f, 0.9f, 0.9f) : bMissing ? FLinearColor(0.45f, 0.1f, 0.08f, 0.8f) : FLinearColor(1, 1, 1, 0.05f)).Padding(FMargin(4, 9))
+				[SNew(SBox).WidthOverride(36)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, bOn ? 1.f : 0.75f)).Justification(ETextJustify::Center).Text(FText::FromString(Tabs[t].Short))]]
+			]
+		];
+	}
+
+	// part cards (2 across)
+	TSharedRef<SVerticalBox> Grid = SNew(SVerticalBox);
+	Grid->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[Txt(Tabs[SatCat].Name, 11, CAccent, true)];
+	TSharedPtr<SHorizontalBox> Row;
+	int32 Col = 0;
+	for (const FISPart& P : ISData::Parts())
+	{
+		if (!Tabs[SatCat].Cats.Contains(P.Cat)) continue;
+		if (M.Dest == EISDest::Backyard && P.CostM > 0.0001f && !Design.Has(P.Id)) continue;
+		const bool bOpen = IsUnlocked(P) && OwnsCat(P.Cat);
+		const bool bIn = Design.Has(P.Id);
+		if (Col == 0) Grid->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SAssignNew(Row, SHorizontalBox)];
+		// the one number that matters most for this part
+		FString Key = ISSim::FmtMass(P.MassKg) + TEXT("  ") + ISSim::FmtMoney(P.CostM);
+		if (P.SolarW > 0) Key += FString::Printf(TEXT("\n+%s W solar"), *ISSim::Fmt(P.SolarW, 0));
+		else if (P.RtgW > 0) Key += FString::Printf(TEXT("\n+%s W nuclear"), *ISSim::Fmt(P.RtgW, 0));
+		else if (P.BatteryWh > 0) Key += FString::Printf(TEXT("\n%s Wh"), *ISSim::Fmt(P.BatteryWh, 0));
+		else if (P.MaxTotalKg > 0) Key += FString::Printf(TEXT("\nholds %s"), *ISSim::FmtMass(P.MaxTotalKg));
+		else if (P.RadioMbps > 0) Key += FString::Printf(TEXT("\n%s Mbps"), *ISSim::Fmt(P.RadioMbps, 2));
+		else if (P.ResolutionM > 0) Key += FString::Printf(TEXT("\n%s m pixels"), *ISSim::Fmt(P.ResolutionM, 1));
+		else if (P.PointingDeg > 0) Key += FString::Printf(TEXT("\n%s deg pointing"), *ISSim::Fmt(P.PointingDeg, 2));
+		else if (P.PropKg > 0) Key += FString::Printf(TEXT("\n%s fuel"), *ISSim::FmtMass(P.PropKg));
+		if (P.PowerW > 0) Key += FString::Printf(TEXT("  uses %s W"), *ISSim::Fmt(P.PowerW, 1));
+		const FName Id = P.Id;
+		const FLinearColor Strip = ISMount::Physical(&P) ? ISMount::Info(ISMount::Ideal(&P)).Color : FLinearColor(0.6f, 0.6f, 0.65f);
+		Row->AddSlot().AutoWidth().Padding(Col == 0 ? 0 : 6, 0, 0, 0)
+		[
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(!bOpen ? FLinearColor(1, 1, 1, 0.015f) : bIn ? FLinearColor(0.2f, 0.45f, 0.25f, 0.6f) : InfoPart == Id ? FLinearColor(0.2f, 0.3f, 0.75f, 0.5f) : FLinearColor(1, 1, 1, 0.05f))
+			.Padding(0)
+			.OnMouseButtonDown_Lambda([this, Id, bOpen, bIn](const FGeometry&, const FPointerEvent& E)
+			{
+				InfoPart = Id;
+				if (!bOpen) { bDirty = true; return FReply::Handled(); }
+				if (E.GetEffectingButton() == EKeys::RightMouseButton) { if (bIn) SatRemove(Id); return FReply::Handled(); }
+				if (E.GetEffectingButton() != EKeys::LeftMouseButton) return FReply::Handled();
+				const FISPart* Pp = ISData::FindPart(Id);
+				if (!ISMount::Physical(Pp)) { SatPlace(Id, 0); return FReply::Handled(); }   // the frame / the ground network: a choice, not a place
+				bSatDrag = true; SatDragId = Id; SatDragStart = FPlatformTime::Seconds(); SatHover = -1;
+				SatDragPos = RootGeo.AbsoluteToLocal(E.GetScreenSpacePosition());
+				return FReply::Handled().CaptureMouse(SharedThis(this));
+			})
+			[
+				SNew(SBox).WidthOverride(150)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(4)[SNew(SImage).Image(FCoreStyle::Get().GetBrush("WhiteBrush")).ColorAndOpacity(Strip * (bOpen ? 1.f : 0.3f))]]
+					+ SVerticalBox::Slot().AutoHeight().Padding(8, 6, 8, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, bOpen ? 1.f : 0.4f)).AutoWrapText(true).Text(FText::FromString((bIn ? TEXT("[x] ") : TEXT("")) + P.Name))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(8, 3, 8, 7)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, bOpen ? 0.6f : 0.3f)).AutoWrapText(true)
+						.Text(FText::FromString(bOpen ? Key : (!OwnsCat(P.Cat) ? FString(TEXT("another player decides")) : FString::Printf(TEXT("unlocks in chapter %d"), P.Unlock))))]
+				]
+			]
+		];
+		Col = (Col + 1) % 2;
+	}
+
+	// what fails (red) and what is mounted badly (amber)
+	TArray<FString> Fails;
+	if (Design.GetSingle(EISCat::Bus).IsNone()) Fails.Add(TEXT("No frame yet: pick a bus (BUS tab). Everything else is mounted on it."));
+	for (const FString& B : Eval.Blockers) Fails.Add(B);
+	const int32 MustFix = Fails.Num();
+	for (const FString& I : ISMount::Issues(Design)) Fails.Add(TEXT("! ") + I);
+	for (const FISObjective& O : Eval.Objectives) if (!O.bMet) Fails.Add(TEXT("! Customer: ") + O.Text);
+	TSharedRef<SVerticalBox> FailBox = SNew(SVerticalBox);
+	for (int32 i = 0; i < FMath::Min(Fails.Num(), 9); ++i)
+	{
+		const bool bWarn = Fails[i].StartsWith(TEXT("!"));
+		FailBox->AddSlot().AutoHeight().Padding(0, 2)
+		[
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(bWarn ? FLinearColor(0.35f, 0.25f, 0.05f, 0.85f) : FLinearColor(0.4f, 0.08f, 0.06f, 0.85f)).Padding(FMargin(8, 4))
+			[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1)).AutoWrapText(true).Text(FText::FromString(bWarn ? Fails[i].RightChop(2) : Fails[i]))]
+		];
+	}
+	if (Fails.Num() == 0)
+		FailBox->AddSlot().AutoHeight()[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.08f, 0.35f, 0.15f, 0.85f)).Padding(FMargin(8, 4))
+			[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1)).AutoWrapText(true).Text(FText::FromString(TEXT("Everything checks out. Ship it to the pad.")))]];
+
+	auto Big = [](const FString& L, const FString& V, bool bOk) -> TSharedRef<SWidget>
+	{
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.6f)).Text(FText::FromString(L))]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 0, 0, 8)[SNew(STextBlock).Font(ISFont("Bold", 24)).ColorAndOpacity(bOk ? FLinearColor(1, 1, 1) : FLinearColor(1.f, 0.45f, 0.35f)).ShadowOffset(FVector2D(1, 1)).Text(FText::FromString(V))];
+	};
+	const bool bHasBus = !Design.GetSingle(EISCat::Bus).IsNone();
+
+	// info about the part under the cursor: numbers, where it goes and why, what it is
+	const FISPart* Info = ISData::FindPart(InfoPart);
+	FString InfoText;
+	if (Info)
+	{
+		InfoText = FString::Printf(TEXT("%s\n\nMass   %s\nCost   %s\nPower  %s W"), *Info->Name.ToUpper(), *ISSim::FmtMass(Info->MassKg), *ISSim::FmtMoney(Info->CostM), *ISSim::Fmt(Info->PowerW, 1));
+		if (ISMount::Physical(Info)) InfoText += FString::Printf(TEXT("\nGoes on  %s\n\n%s"), ISMount::Info(ISMount::Ideal(Info)).Name, ISMount::Info(ISMount::Ideal(Info)).Why);
+		InfoText += TEXT("\n\n") + Info->Edu;
+	}
+
+	return SNew(SOverlay)
+		+ SOverlay::Slot()[SNew(SISSatOverlay, this).Visibility(EVisibility::HitTestInvisible)]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Fill)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark).Padding(FMargin(8, 12))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(2, 0, 0, 2)[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(Faint).Text(FText::FromString(TEXT("SATELLITE STAND  -  ") + M.Title.ToUpper()))]
+					+ SVerticalBox::Slot().FillHeight(1.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)[TabCol]
+						+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(312)[SAssignNew(PartsBox, SScrollBox) + SScrollBox::Slot()[Grid]]]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(2, 8, 0, 0)[SNew(SBox).WidthOverride(360)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.45f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("Drag a card onto a marker on the satellite, or click it to mount it where it usually goes. Right-click a mounted card to take it off. Mouse wheel / drag: look around.")))]]
+				]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)   // only as tall as its text: the satellite stays visible
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark2).Padding(FMargin(14, 12)).Visibility(Info ? EVisibility::Visible : EVisibility::Collapsed)
+				[SNew(SBox).WidthOverride(260).MaxDesiredHeight(560)[SNew(SScrollBox) + SScrollBox::Slot()[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f)).AutoWrapText(true).Text(FText::FromString(InfoText))]]]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(20)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Walk out"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 0, 13)]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(TEXT("Brief"), [this]() { Go(EScreen::Missions); }, 0, 13)]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 6, 0)[Btn(bShowBudgets ? TEXT("Budgets: on") : TEXT("Budgets"), [this]() { bShowBudgets = !bShowBudgets; bDirty = true; }, 0, 13)]
+				+ SHorizontalBox::Slot().AutoWidth()[Btn(MustFix ? FString::Printf(TEXT("Ship to the pad  (%d to fix)"), MustFix) : FString(TEXT(">>  Ship to the pad  >>")), [this, MustFix]() { if (MustFix == 0) Go(EScreen::Launch); else { Notice = TEXT("Fix the red items first: the launch provider will not take a satellite that cannot work."); bDirty = true; } }, MustFix ? 0 : 1, 15)]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 10, 0, 0)[SNew(SBox).WidthOverride(400)[FailBox]]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 8, 0, 0)
+			[
+				SNew(SBox).WidthOverride(400).MaxDesiredHeight(380).Visibility(bShowBudgets ? EVisibility::Visible : EVisibility::Collapsed)
+				[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.02f, 0.025f, 0.03f, 0.85f)).Padding(10)[SAssignNew(BudgetBox, SScrollBox) + SScrollBox::Slot()[BuildBudgets(false)]]]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(420, 0, 420, 24)   // between the catalogue and the numbers
+		[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.02f, 0.03f, 0.05f, Notice.IsEmpty() ? 0.f : 0.8f)).Padding(FMargin(12, 6))[SNew(STextBlock).Font(ISFont("Regular", 13)).ColorAndOpacity(CGold).AutoWrapText(true).Justification(ETextJustify::Center).Text(FText::FromString(Notice))]]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(24)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Mass"), bHasBus ? ISSim::FmtMass(Eval.TotalKg) + TEXT(" / ") + ISSim::FmtMass(Eval.BusMaxKg) : FString(TEXT("-")), !bHasBus || Eval.TotalKg <= Eval.BusMaxKg)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Power made / used"), FString::Printf(TEXT("%s / %s W"), *ISSim::Fmt(Eval.AvgGenW, 0), *ISSim::Fmt(Eval.LoadW, 0)), Eval.AvgGenW >= Eval.LoadW)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Data to the ground / day"), ISSim::Fmt(Eval.DataDownGb, 1) + TEXT(" Gb"), Eval.DataDownGb > 0.f)]
+			+ SVerticalBox::Slot().AutoHeight()[Big(TEXT("Cost"), ISSim::FmtMoney(Eval.TotalCostM) + TEXT(" / ") + ISSim::FmtMoney(M.BudgetM), Eval.TotalCostM <= M.BudgetM)]
+		];
+}
+
+void SISGameUI::DevStartJob(int32 Idx)
+{
+	StartMission(FMath::Clamp(Idx, 0, ISData::Missions().Num() - 1));
+	if (HW()) HW()->BeginJob(Mission().Title);
+	Screen = EScreen::Play;
+	bDirty = true;
 }

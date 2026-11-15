@@ -1,4 +1,5 @@
 #include "ISSim.h"
+#include "ISMount.h"
 
 // =====================================================================================
 //  Design helpers
@@ -353,9 +354,12 @@ namespace ISSim
 		// ---------------------------------------------------------------- power
 		const double AU2 = E.SunAU * E.SunAU;
 		E.SolarEolW = bBackyard ? SolarBol : SolarBol * FMath::Pow(0.975, Life) / AU2;
+		// where the panels are mounted on the bus (wings follow the Sun; body cells, faces or inside make less or none)
+		if (!bBackyard) for (const FName& Id : D.Parts) if (const FISPart* Pw = ISData::FindPart(Id)) if (Pw->Cat == EISCat::Power && Pw->SolarW > 0) E.SolarEolW *= ISMount::SolarFactor(Pw, ISMount::Of(D, Pw));
 		E.RtgEolW = Rtg * FMath::Pow(0.984, Life);
 		E.AvgGenW = E.SolarEolW * (1.0 - EclFrac) + E.RtgEolW;
 		E.LoadW = Load; E.BatteryWh = Bat;
+		if (!bBackyard) if (const FISPart* Bt = Single(EISCat::Battery)) if (ISMount::Of(D, Bt) != ISMount::Stack) E.BatteryWh *= 0.7f;   // cold outside the stack
 		const float NeedW = SolarBol > 0 ? Load / 0.85f : Load;
 		if (!bBackyard)
 		{
@@ -422,6 +426,7 @@ namespace ISSim
 					if (Best == 0 || R < Best) { Best = R; BestName = X->Name; }
 				}
 			E.ResolutionM = Best;
+			if (!bBackyard) for (const FName& Id : D.Parts) if (const FISPart* Pl = ISData::FindPart(Id)) if (ISMount::LooksDown(Pl) && ISMount::Of(D, Pl) != ISMount::Nadir) E.ResolutionM = 0.f;   // it looks at space
 			const bool bOk = Best > 0 && Best <= M.MaxResolutionM;
 			AddLine(E, TEXT("Image resolution"), Best > 0 ? Fmt(Best, 1) + TEXT(" m") : TEXT("no imager"), Fmt(M.MaxResolutionM, 1) + TEXT(" m"), bOk ? EISStatus::Ok : EISStatus::Fail,
 				Best > 0 ? FString::Printf(TEXT("Resolution scales with distance: %s gives its rated pixel size at its design altitude.\nAt %s km: %s m per pixel.\nTo see smaller things: fly lower or use a bigger telescope."), *BestName, *Fmt(E.AltKm, 0), *Fmt(Best, 2))
@@ -457,6 +462,8 @@ namespace ISSim
 					LinkWhy = FString::Printf(TEXT("%s only reaches ~%s km, but you are ~%s km away. Signal strength falls with distance^2."), *Radio->Name, *Fmt(Radio->RadioRangeKm, 0), *Fmt(Dist, 0));
 				}
 			}
+			if (!bBackyard && Radio && ISMount::Of(D, Radio) != ISMount::Nadir) RateMbps *= 0.15;   // antenna not pointing at Earth
+			if (!bBackyard) for (const FName& Id : D.Parts) if (const FISPart* Pl = ISData::FindPart(Id)) if (ISMount::LooksDown(Pl) && ISMount::Of(D, Pl) != ISMount::Nadir) Gen *= 0.1f;
 			E.LinkKbps = RateMbps * 1000.0;
 			E.DataGenGb = Gen;
 			const double Capacity = RateMbps * E.ContactMin * 60.0 / 1000.0; // Gb/day
@@ -501,6 +508,7 @@ namespace ISSim
 		E.DvNeed = DvCore + DvPerYear * Life + DvDeorbit;
 		if (Prop > 0 && Isp > 0 && E.TotalKg > Prop)
 			E.DvAvail = Isp * ISData::G0 * FMath::Loge(E.TotalKg / (E.TotalKg - Prop));
+		if (!bBackyard) if (const FISPart* Pr = Single(EISCat::Propulsion)) if (Pr->PropKg > 0 && ISMount::Of(D, Pr) != ISMount::Base) E.DvAvail *= 0.5f;   // pushing off-centre
 		if (!bBackyard)
 		{
 			const bool bCoreOk = E.DvAvail >= DvCore;
@@ -532,6 +540,7 @@ namespace ISSim
 			const bool bVault = D.HasTag(ISTag::Vault);
 			const double DoseYr = RadDosePerYear(E.Dest) / (bVault ? 50.0 : 1.0);
 			E.RadDose = DoseYr * Life; E.RadTol = Cpu ? Cpu->RadTolKrad : 0.f;
+			if (Cpu && ISMount::Of(D, Cpu) != ISMount::Stack) E.RadTol *= 0.5f;   // unshielded
 			if (!bBackyard)
 			{
 				const bool bOk = E.RadTol >= E.RadDose;

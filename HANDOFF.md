@@ -1,5 +1,12 @@
 # Handoff - continue on the main PC (Claude Code: "read HANDOFF.md and do it")
 
+## 2026-11-15 coherence pass (branch dev, commit a1d92b5+)
+Career spine added (Source/Infinisat/ISCareer.*): funds / reputation / science / tech tiers saved in
+GameUserSettings [InfinisatCareer]. Title = Continue / New career / Sandbox / Settings / Quit. R&D Lab researches
+tiers; stand only offers researched parts; debriefs pay. Rockets launch from their real pads. Design rules, research
+and next steps: Docs/DESIGN.md. Verify: `Tools/shots.sh out x:"-ISFresh -ISCareer=30,40,40,1 -ISScreen=lab"`,
+CanSat chain with payout: `-ISFresh -ISWorld -ISCanTest -ISCanTestStay -ISShotDelay=75`.
+
 State (commit 43160ca): packaged Shipping build v0.2 succeeded on the laptop and smoke-tested OK (title, home, orbit).
 Source now also has (UNBUILT, unverified): ESA clean-room integration hall for the design view (ISScene.cpp BuildCleanRoom),
 modern UI fonts/panels (SISGameUI.cpp ISFont, Content/Slate/Fonts), Docs/PLAY.md.

@@ -1,0 +1,127 @@
+#include "ksp_plugin/part_subsets.hpp"
+
+#include <list>
+#include <utility>
+
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "base/not_null.hpp"
+#include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/part.hpp"
+#include "ksp_plugin/pile_up.hpp"
+#include "physics/ephemeris.hpp"
+
+namespace principia {
+namespace base {
+namespace _disjoint_sets {
+namespace internal {
+
+using namespace principia::base::_not_null;
+using namespace principia::ksp_plugin::_frames;
+using namespace principia::ksp_plugin::_part;
+using namespace principia::ksp_plugin::_pile_up;
+using namespace principia::physics::_ephemeris;
+
+Subset<Part>::Properties::Properties(not_null<Part*> const part) {
+  if (part->is_piled_up()) {
+    missing_ = part->containing_pile_up()->parts().size() - 1;
+  }
+  parts_.emplace_back(part);
+}
+
+void Subset<Part>::Properties::MergeWith(Properties& other) {
+  if (SubsetsOfSamePileUp(*this, other)) {
+    // The subsets `*this` and `other` are disjoint.
+    CHECK_EQ(missing_ - other.parts_.size(),
+             other.missing_ - parts_.size());
+    missing_ -= other.parts_.size();
+    CHECK_GE(missing_, 0);
+  } else {
+    for (auto const part : parts_) {
+      part->reset_containing_pile_up();
+    }
+    for (auto const part : other.parts_) {
+      part->reset_containing_pile_up();
+    }
+  }
+  parts_.splice(parts_.end(), other.parts_);
+  grounded_ |= other.grounded_;
+}
+
+void Subset<Part>::Properties::Ground() {
+  grounded_ = true;
+}
+
+bool Subset<Part>::Properties::grounded() const {
+  return grounded_;
+}
+
+void Subset<Part>::Properties::Collect(
+    PileUps& pile_ups,
+    Instant const& t,
+    Ephemeris<Barycentric>::AdaptiveStepParameters const&
+        adaptive_step_parameters,
+    Ephemeris<Barycentric>::FixedStepParameters const& fixed_step_parameters,
+    not_null<Ephemeris<Barycentric>*> ephemeris) {
+  if (collected_) {
+    return;
+  }
+  collected_ = true;
+  if (EqualsExistingPileUp()) {
+    PileUp& pile_up = *parts_.front()->containing_pile_up();
+    pile_up.RecomputeFromParts();
+  } else {
+    if (StrictSubsetOfExistingPileUp()) {
+      for (auto const part : parts_) {
+        part->reset_containing_pile_up();
+      }
+    }
+    CHECK(!parts_.empty());
+
+    // First push a nullptr to be able to capture an iterator to the new
+    // location in the list in the deletion callback.
+    pile_ups.push_front(nullptr);
+    auto deletion_callback = [it = pile_ups.begin(), &pile_ups]() {
+      pile_ups.erase(it);
+    };
+    auto const pile_up =
+        make_not_null_shared<PileUp>(std::move(parts_),
+                                     t,
+                                     adaptive_step_parameters,
+                                     fixed_step_parameters,
+                                     ephemeris,
+                                     std::move(deletion_callback));
+    *pile_ups.begin() = pile_up.get();
+
+    // The pile-up is now co-owned by all its parts.
+    for (not_null<Part*> const part : pile_up->parts()) {
+      part->set_containing_pile_up(pile_up);
+    }
+  }
+}
+
+bool Subset<Part>::Properties::SubsetsOfSamePileUp(
+    Properties const& left,
+    Properties const& right) {
+  return left.SubsetOfExistingPileUp() && right.SubsetOfExistingPileUp() &&
+         left.parts_.front()->containing_pile_up() ==
+             right.parts_.front()->containing_pile_up();
+}
+
+bool Subset<Part>::Properties::EqualsExistingPileUp() const {
+  return SubsetOfExistingPileUp() && missing_ == 0;
+}
+
+bool Subset<Part>::Properties::SubsetOfExistingPileUp() const {
+  return parts_.front()->is_piled_up();
+}
+
+bool Subset<Part>::Properties::StrictSubsetOfExistingPileUp()
+    const {
+  return SubsetOfExistingPileUp() && missing_ > 0;
+}
+
+}  // namespace internal
+}  // namespace _disjoint_sets
+}  // namespace base
+}  // namespace principia

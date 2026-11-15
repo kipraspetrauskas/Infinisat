@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Rocket_01",
+    "path": "Prefabs/SpaceCraft/Rocket_01",
+    "type": "Generic Rocket",
+    "category": "rockets"
+  },
+  {
+    "name": "S-IVB-3",
+    "path": "Prefabs/SpaceCraft/S-IVB-3",
+    "type": "Saturn V Third Stage (Rocket)",
+    "category": "rockets"
+  },
+  {
+    "name": "soyuz_complete",
+    "path": "Prefabs/SpaceCraft/soyuz_complete",
+    "type": "Soyuz Spacecraft",
+    "category": "spacecraft"
+  },
+  {
+    "name": "Orion",
+    "path": "Prefabs/Spacecraft/Orion",
+    "type": "Orion Capsule",
+    "category": "spacecraft"
+  },
+  {
+    "name": "Sputnik_1",
+    "path": "Prefabs/Spacecraft/Sputnik_1",
+    "type": "Sputnik 1 Satellite",
+    "category": "spacecraft"
+  },
+  {
+    "name": "JWST",
+    "path": "Prefabs/SpaceCraft/JWST",
+    "type": "James Webb Space Telescope",
+    "category": "space_probes"
+  },
+  {
+    "name": "Hubble",
+    "path": "Prefabs/SpaceCraft/Hubble",
+    "type": "Hubble Space Telescope",
+    "category": "space_probes"
+  },
+  {
+    "name": "parker",
+    "path": "Prefabs/SpaceCraft/parker",
+    "type": "Parker Solar Probe",
+    "category": "space_probes"
+  },
+  {
+    "name": "voyager_spacecraft",
+    "path": "Prefabs/SpaceCraft/voyager_spacecraft",
+    "type": "Voyager 1 & 2 Spacecraft",
+    "category": "space_probes"
+  },
+  {
+    "name": "CassiniHuygens",
+    "path": "Prefabs/SpaceCraft/CassiniHuygens",
+    "type": "Cassini-Huygens Probe",
+    "category": "space_probes"
+  },
+  {
+    "name": "NewHorizonSpacecraft",
+    "path": "Prefabs/SpaceCraft/NewHorizonSpacecraft",
+    "type": "New Horizons Spacecraft",
+    "category": "space_probes"
+  },
+  {
+    "name": "juno",
+    "path": "Prefabs/SpaceCraft/juno",
+    "type": "Juno Jupiter Orbiter",
+    "category": "space_probes"
+  },
+  {
+    "name": "tesla_roadster",
+    "path": "Prefabs/SpaceCraft/tesla_roadster",
+    "type": "Tesla Roadster (Space)",
+    "category": "other_space_objects"
+  },
+  {
+    "name": "arrival_spacecraft",
+    "path": "Prefabs/SpaceCraft/arrival_spacecraft",
+    "type": "Arrival Movie Monolith Spacecraft",
+    "category": "other_space_objects"
+  },
+  {
+    "name": "GenericSat_1",
+    "path": "Prefabs/SpacecraftParts/GenericSat_1",
+    "type": "Generic Satellite Component",
+    "category": "other_space_objects"
+  }
+]

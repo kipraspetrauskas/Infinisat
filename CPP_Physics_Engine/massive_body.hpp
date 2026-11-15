@@ -1,0 +1,100 @@
+// The files containing the tree of child classes of `Body` must be included in
+// the order of inheritance to avoid circular dependencies.
+#ifndef PRINCIPIA_PHYSICS_BODY_HPP_
+#include "physics/body.hpp"
+#endif  // PRINCIPIA_PHYSICS_BODY_HPP_
+#ifndef PRINCIPIA_PHYSICS_MASSIVE_BODY_HPP_
+#define PRINCIPIA_PHYSICS_MASSIVE_BODY_HPP_
+
+#include <memory>
+#include <string>
+
+#include "base/not_null.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+
+namespace principia {
+namespace physics {
+namespace _massive_body {
+namespace internal {
+
+using namespace principia::base::_not_null;
+using namespace principia::physics::_body;
+using namespace principia::quantities::_named_quantities;
+using namespace principia::quantities::_quantities;
+
+class MassiveBody : public Body {
+ public:
+  // We use the gravitational parameter μ = G M in order not to accumulate
+  // unit roundoffs from repeated multiplications by G.  The parameter must not
+  // be zero.
+  class Parameters final {
+   public:
+    // The constructors are implicit on purpose.
+    Parameters(
+        GravitationalParameter const& gravitational_parameter);  // NOLINT
+    Parameters(std::string name,
+               GravitationalParameter const& gravitational_parameter);
+    Parameters(Mass const& mass);  // NOLINT(runtime/explicit)
+    Parameters(std::string name,
+               Mass const& mass);
+
+    // For pre-Διόφαντος compatibility.
+    GravitationalParameter const& gravitational_parameter() const;
+
+   private:
+    std::string const name_;
+    GravitationalParameter const gravitational_parameter_;
+    Mass const mass_;
+    friend class MassiveBody;
+  };
+
+  explicit MassiveBody(Parameters parameters);
+
+  // Returns the construction parameter.
+  std::string const& name() const;
+  GravitationalParameter const& gravitational_parameter() const;
+  Mass const& mass() const;
+
+  // Return zero.
+  virtual Length min_radius() const;
+  virtual Length mean_radius() const;
+  virtual Length max_radius() const;
+
+  // Returns false.
+  bool is_massless() const override;
+
+  // Returns false.
+  bool is_oblate() const override;
+
+  // Call the following `WriteToMessage`, which dispatches to the proper
+  // subclass.
+  void WriteToMessage(not_null<serialization::Body*> message) const override;
+
+  // Must be overridden by each subclass and first call the same method of the
+  // superclass.
+  virtual void WriteToMessage(
+      not_null<serialization::MassiveBody*> message) const;
+
+  // `message.has_massive_body()` must be true.
+  static not_null<std::unique_ptr<MassiveBody>> ReadFromMessage(
+      serialization::Body const& message);
+
+  static not_null<std::unique_ptr<MassiveBody>> ReadFromMessage(
+      serialization::MassiveBody const& message);
+
+ private:
+  Parameters const parameters_;
+};
+
+}  // namespace internal
+
+using internal::MassiveBody;
+
+}  // namespace _massive_body
+}  // namespace physics
+}  // namespace principia
+
+#include "physics/massive_body_body.hpp"
+
+#endif  // PRINCIPIA_PHYSICS_MASSIVE_BODY_HPP_

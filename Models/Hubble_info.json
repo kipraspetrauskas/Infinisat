@@ -1,0 +1,14 @@
+{
+  "name": "Hubble",
+  "type": "Space Telescope",
+  "asset_offset_decimal": 1348916,
+  "asset_offset_hex": "0x149534",
+  "prefab_path": "Prefabs/SpaceCraft/Hubble",
+  "extraction_status": "pending",
+  "expected_files": [
+    "Hubble.fbx",
+    "Hubble_Material.mat",
+    "Hubble_Texture.png",
+    "Hubble_Normal.png"
+  ]
+}

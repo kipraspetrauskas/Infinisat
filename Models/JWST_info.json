@@ -1,0 +1,14 @@
+{
+  "name": "JWST",
+  "type": "Space Telescope",
+  "asset_offset_decimal": 1403892,
+  "asset_offset_hex": "0x156BF4",
+  "prefab_path": "Prefabs/SpaceCraft/JWST",
+  "extraction_status": "pending",
+  "expected_files": [
+    "JWST.fbx",
+    "JWST_Material.mat",
+    "JWST_Texture.png",
+    "JWST_Normal.png"
+  ]
+}

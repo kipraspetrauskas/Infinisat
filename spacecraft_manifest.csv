@@ -1,0 +1,74 @@
+Name,PrefabString
+James Webb Space Telescope,JWST
+Hubble Space Telescope,Hubble
+Parker Solar Probe,parker
+Cassini Spacecraft,CassiniHuygens
+Voyager 1 Spacecraft,voyager_spacecraft
+Voyager 2 Spacecraft,voyager_spacecraft
+Juno Spacecraft,juno
+Third Stage of Saturn V,S-IVB-3
+New Horizons,NewHorizonSpacecraft
+Orion Spacecraft,Orion
+Satellite,GenericSat_1
+Pigeon,Pigeon
+Sperm Whale,SpermWhale
+Petunias,Petunias
+Spherical Cow,SphericalCow
+Banana,Banana
+Watermelon,Watermelon
+Bowling Ball,BowlingBall
+Baseball,BaseBall
+Basketball,BasketBall
+Tennis Ball,TennisBall
+Soccer Ball,SoccerBall
+Golf Ball,GolfBall
+Pool Ball 1,PoolBall
+Pool Ball 2,PoolBall
+Pool Ball 3,PoolBall
+Pool Ball 4,PoolBall
+Pool Ball 5,PoolBall
+Pool Ball 6,PoolBall
+Pool Ball 7,PoolBall
+Pool Ball 8,PoolBall
+Pool Ball 9,PoolBall
+Pool Ball 10,PoolBall
+Pool Ball 11,PoolBall
+Pool Ball 12,PoolBall
+Pool Ball 13,PoolBall
+Pool Ball 14,PoolBall
+Pool Ball 15,PoolBall
+Cue Ball,PoolBall
+Teapot,Teapot
+Dice,Dice
+4-sided Dice,Dice4
+6-sided Dice,Dice6
+8-sided Dice,Dice8
+10-sided Dice,Dice10
+12-sided Dice,Dice12
+20-sided Dice,Dice20
+Marble,Marble
+Monolith,Monolith
+Mirror Tetrahedron,MirrorTetrahedron
+Pumpkin,pumpkin_01
+Jack-o'-lantern,pumpkin_02
+Jack-o'-lantern Dark,pumpkin_03
+Jack-o'-lantern US²,pumpkin_04
+Phantom Zone,phantomzonemirror
+Police Box,PoliceBox
+Great Pyramid of Giza,KhufuPyramid
+Arrival Spacecraft,arrival_spacecraft
+Tesla Roadster,tesla_roadster
+Longsword,Longsword
+Sledgehammer,Sledgehammer
+Cube,HSO_Cube
+Sphere,HSO_Sphere
+Cone,HSO_Cone
+Cylinder,HSO_Cylinder
+Capsule,HSO_Capsule
+Torus,HSO_Torus
+Pyramid,HSO_Pyramid
+Sputnik 1,Sputnik_1
+Bowling Pin,BowlingPin
+BepiColombo,GenericSat_1
+DART,GenericSat_1
+Lucy,GenericSat_1

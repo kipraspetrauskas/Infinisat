@@ -2592,7 +2592,7 @@ public:
 		for (int32 m = 0; m < ISMount::Count; ++m) { FVector2D S2; if (UI->SatMountScreen(m, S2)) { Cen2 += S2; ++NC; } }
 		if (NC == 0) return Layer;
 		const FVector2f Cen(Cen2 / NC);
-		TArray<FVector2f> Taken;
+		TArray<FBox2f> Taken;   // label boxes already placed
 		for (int32 m = 0; m < ISMount::Count; ++m)
 		{
 			FVector2D S2;
@@ -2622,11 +2622,13 @@ public:
 			for (int32 k = 0; k < 20; ++k)   // move down past labels already placed
 			{
 				bool bHit = false;
-				for (const FVector2f& T : Taken) if (FMath::Abs(T.X - At.X) < 260.f && FMath::Abs(T.Y - At.Y) < 17.f * Lines.Num() + 8.f) { bHit = true; break; }
+				const float Hh = 19.f + 16.f * (Lines.Num() - 1) + 10.f;
+				const FBox2f Me(At - FVector2f(8.f, 4.f), At + FVector2f(W + 12.f, Hh));
+				for (const FBox2f& T : Taken) if (T.Intersect(Me)) { bHit = true; break; }
 				if (!bHit) break;
 				At.Y += 24.f;
 			}
-			Taken.Add(At);
+			Taken.Add(FBox2f(At - FVector2f(8.f, 4.f), At + FVector2f(W + 12.f, 19.f + 16.f * (Lines.Num() - 1) + 10.f)));
 			// leader line from the marker to the label
 			TArray<FVector2f> Leader = { S + FVector2f(bLeft ? -R : R, 0), FVector2f(bLeft ? At.X + W + 6.f : At.X - 6.f, At.Y + 10.f) };
 			FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), Leader, ESlateDrawEffect::None, C * FLinearColor(1, 1, 1, 0.6f), true, 1.f);
@@ -2799,10 +2801,10 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 						.Text(FText::FromString(TEXT("Drag a card onto a marker on the satellite, or click it to mount it where it usually goes. Right-click a mounted card to take it off. Mouse wheel / drag: look around.")))]]
 				]
 			]
-			+ SHorizontalBox::Slot().AutoWidth()
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)   // only as tall as its text: the satellite stays visible
 			[
 				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Dark2).Padding(FMargin(14, 12)).Visibility(Info ? EVisibility::Visible : EVisibility::Collapsed)
-				[SNew(SBox).WidthOverride(260)[SNew(SScrollBox) + SScrollBox::Slot()[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f)).AutoWrapText(true).Text(FText::FromString(InfoText))]]]
+				[SNew(SBox).WidthOverride(260).MaxDesiredHeight(560)[SNew(SScrollBox) + SScrollBox::Slot()[SNew(STextBlock).Font(ISFont("Mono", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.85f)).AutoWrapText(true).Text(FText::FromString(InfoText))]]]
 			]
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(20)
@@ -2823,8 +2825,8 @@ TSharedRef<SWidget> SISGameUI::BuildDesign()
 				[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.02f, 0.025f, 0.03f, 0.85f)).Padding(10)[SAssignNew(BudgetBox, SScrollBox) + SScrollBox::Slot()[BuildBudgets(false)]]]
 			]
 		]
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 24)
-		[SNew(STextBlock).Font(ISFont("Regular", 13)).ColorAndOpacity(CGold).ShadowOffset(FVector2D(1, 1)).Text(FText::FromString(Notice))]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(420, 0, 420, 24)   // between the catalogue and the numbers
+		[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.02f, 0.03f, 0.05f, Notice.IsEmpty() ? 0.f : 0.8f)).Padding(FMargin(12, 6))[SNew(STextBlock).Font(ISFont("Regular", 13)).ColorAndOpacity(CGold).AutoWrapText(true).Justification(ETextJustify::Center).Text(FText::FromString(Notice))]]
 		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(24)
 		[
 			SNew(SVerticalBox)

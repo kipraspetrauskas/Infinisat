@@ -112,7 +112,72 @@ void AISSpaceScene::RetryFlight()
 				Pad(MCube, TC + FVector(W * 0.5f, 0, Z), FVector(0.2f, W, 0.2f), Steel);
 			}
 		}
-		Pad(MCube, FVector(-D * 1.6f, 0, Len * 0.8f), FVector(D * 1.8f, 1.5f, 1.2f), FLinearColor(0.4f, 0.4f, 0.42f));   // crew/umbilical arm
+		{
+			const FVector TC(-D * 2.6f - 2.5f, 0, 0);
+			const float TH = Len * 1.1f, W = 4.f;
+			const FLinearColor Steel(0.5f, 0.17f, 0.1f), Grate(0.3f, 0.3f, 0.32f);
+			// diagonal bracing on the two long faces (each 4 m bay), service platforms every 12 m, crane jib on top
+			for (float Z = 2.f; Z + 4.f < TH; Z += 4.f)
+				for (float S : { -1.f, 1.f })
+				{
+					UStaticMeshComponent* Br = nullptr;
+					Pad(MCube, TC + FVector(0, S * W * 0.5f, Z + 2.f), FVector(5.6f, 0.16f, 0.16f), Steel);
+					Br = PadVis.Last();
+					if (Br) Br->AddLocalRotation(FRotator(((int32)(Z / 4.f) % 2 ? 45.f : -45.f), 0, 0));
+				}
+			for (float Z = 12.f; Z < TH; Z += 12.f) Pad(MCube, TC + FVector(0, 0, Z), FVector(W + 1.2f, W + 1.2f, 0.25f), Grate);
+			Pad(MCube, TC + FVector(0, 0, TH + 1.f), FVector(1.f, 1.f, 2.f), Steel);
+			Pad(MCube, TC + FVector(2.5f, 0, TH + 2.f), FVector(9.f, 0.5f, 0.5f), FLinearColor(0.85f, 0.7f, 0.15f));   // crane jib
+			Pad(MCyl, TC + FVector(0, 0, TH + 6.f), FVector(0.15f, 0.15f, 8.f), FLinearColor(0.6f, 0.6f, 0.62f));    // lightning rod
+			// umbilical arms reaching to each stage (propellant, power, data), with a hose drooping to the rocket
+			const int32 NArm = FMath::Clamp(Sim.L->Stages.Num() + 1, 2, 4);
+			for (int32 a = 0; a < NArm; ++a)
+			{
+				const float Z = Len * (0.18f + 0.62f * a / FMath::Max(1, NArm - 1));
+				const float Reach = FMath::Abs(TC.X) - D * 0.5f - W * 0.5f;
+				Pad(MCube, FVector(TC.X + W * 0.5f + Reach * 0.5f, 0, Z), FVector(Reach, 0.8f, 0.5f), FLinearColor(0.42f, 0.42f, 0.44f));
+				Pad(MCyl, FVector(-D * 0.5f - 0.3f, 0, Z - 0.5f), FVector(0.25f, 0.25f, 1.2f), FLinearColor(0.12f, 0.12f, 0.12f));
+			}
+		}
+		// launch mount: raised table over the trench with hold-down clamps around the first stage
+		Pad(MCyl, FVector(0, 0, -0.3f), FVector(D * 1.9f, D * 1.9f, 0.6f), FLinearColor(0.38f, 0.38f, 0.38f));
+		for (int32 k = 0; k < 4; ++k)
+		{
+			const FVector Dk = FRotator(0, 45.f + 90.f * k, 0).Vector();
+			Pad(MCube, Dk * (D * 0.62f) + FVector(0, 0, 0.6f), FVector(0.5f, 0.5f, 1.2f), FLinearColor(0.25f, 0.25f, 0.27f));
+			Pad(MCube, Dk * (D * 0.85f) + FVector(0, 0, 0.3f), FVector(0.4f, 0.4f, 0.6f), FLinearColor(0.85f, 0.7f, 0.15f));
+		}
+		// flame deflector ramp and deluge water pipes
+		Pad(MCube, FVector(0, D * 2.2f, -1.4f), FVector(D * 2.f, D * 2.f, 0.3f), FLinearColor(0.2f, 0.2f, 0.2f));
+		if (PadVis.Num() && PadVis.Last()) PadVis.Last()->AddLocalRotation(FRotator(0, 0, 25.f));
+		for (float S : { -1.f, 1.f }) Pad(MCyl, FVector(S * D * 1.5f, 0, 0.4f), FVector(0.5f, 0.5f, D * 5.f), FLinearColor(0.3f, 0.45f, 0.6f));
+		if (PadVis.Num() >= 2) { PadVis[PadVis.Num() - 1]->AddLocalRotation(FRotator(0, 0, 90.f)); PadVis[PadVis.Num() - 2]->AddLocalRotation(FRotator(0, 0, 90.f)); }
+		// propellant lines from the tank farm to the pad (on low supports)
+		for (float Y : { 45.f, 65.f })
+		{
+			const FVector From(70.f, Y, 0.8f), To(0, 0, 0.8f);
+			const FVector Mid = (From + To) * 0.5f;
+			Pad(MCyl, Mid, FVector(0.6f, 0.6f, (From - To).Size()), FLinearColor(0.82f, 0.82f, 0.8f));
+			if (PadVis.Last()) PadVis.Last()->SetRelativeRotation((FRotationMatrix::MakeFromZX(FlightU, FlightDn).ToQuat() * FRotationMatrix::MakeFromZ((From - To).GetSafeNormal()).ToQuat()).Rotator());
+		}
+		// assembly hangar, access road, perimeter fence, floodlight towers
+		Pad(MCube, FVector(-130.f, -40.f, 12.f), FVector(60.f, 30.f, 24.f), FLinearColor(0.82f, 0.83f, 0.85f));
+		Pad(MCube, FVector(-130.f, -40.f, 25.f), FVector(62.f, 32.f, 2.f), FLinearColor(0.45f, 0.47f, 0.5f));
+		Pad(MCube, FVector(-99.5f, -40.f, 10.f), FVector(0.4f, 22.f, 20.f), FLinearColor(0.35f, 0.37f, 0.4f));   // hangar door
+		Pad(MCube, FVector(-60.f, -40.f, -0.4f), FVector(80.f, 10.f, 1.f), FLinearColor(0.25f, 0.25f, 0.26f));   // road to the pad
+		Pad(MCube, FVector(-400.f, -40.f, -0.4f), FVector(600.f, 10.f, 1.f), FLinearColor(0.25f, 0.25f, 0.26f));
+		for (int32 k = 0; k < 24; ++k)
+		{
+			const float A = 360.f * k / 24.f;
+			const FVector Pk = FRotator(0, A, 0).Vector() * 190.f;
+			Pad(MCyl, Pk + FVector(0, 0, 1.2f), FVector(0.15f, 0.15f, 2.4f), FLinearColor(0.55f, 0.55f, 0.55f));
+		}
+		for (int32 k = 0; k < 4; ++k)
+		{
+			const FVector Pk = FRotator(0, 20.f + 90.f * k, 0).Vector() * 85.f;
+			Pad(MCyl, Pk + FVector(0, 0, 15.f), FVector(0.5f, 0.5f, 30.f), FLinearColor(0.6f, 0.6f, 0.62f));
+			Pad(MCube, Pk + FVector(0, 0, 30.5f), FVector(3.f, 3.f, 1.5f), FLinearColor(0.95f, 0.95f, 0.85f));
+		}
 		for (int32 k = 0; k < 4; ++k) Pad(MCyl, FVector((k < 2 ? -1.f : 1.f) * 30.f, (k % 2 ? -1.f : 1.f) * 30.f, 25.f), FVector(1.2f, 1.2f, 50.f), FLinearColor(0.6f, 0.6f, 0.62f)); // lightning masts
 	}
 	SatRoot->SetVisibility(false, true);
@@ -234,7 +299,16 @@ void AISSpaceScene::TickFlight(float Dt)
 	const FVector2D Nd = Sim.NoseDir();
 	const FVector Dir = (FlightU * (float)Nd.Y + FlightDn * (float)Nd.X).GetSafeNormal();
 	RocketRoot->SetRelativeLocation(P);
-	RocketRoot->SetRelativeRotation(FRotationMatrix::MakeFromZX(Dir, FlightDn).Rotator());
+	// vibration: engines rumble near the ground (sound reflecting off the pad), the air buffets it through max-Q
+	{
+		const double Q01 = FMath::Clamp(Sim.QPa / FMath::Max(1.0, Sim.L->MaxQPa), 0.0, 1.2);
+		const double Ground = FMath::Clamp(1.0 - Sim.AltM / 1500.0, 0.0, 1.0);
+		const float Goal = Sim.IsFlying() && Sim.ThrustN > 0.0 ? (float)FMath::Clamp(0.15 + 0.6 * Ground + 0.7 * Q01 * Q01 + 0.02 * FMath::Abs(Sim.AoADeg), 0.0, 1.0) : 0.f;
+		FlightShake = FMath::FInterpTo(FlightShake, Goal, Dt, 3.f);
+	}
+	const float Tn = (float)Sim.T;
+	const FRotator Wob(FlightShake * 0.35f * FMath::Sin(Tn * 23.f) * FMath::Sin(Tn * 3.1f), 0.f, FlightShake * 0.35f * FMath::Sin(Tn * 19.f + 1.f) * FMath::Sin(Tn * 2.3f));
+	RocketRoot->SetRelativeRotation((FRotationMatrix::MakeFromZX(Dir, FlightDn).ToQuat() * Wob.Quaternion()).Rotator());
 
 	// trajectory lines: where it has been (history) and where it goes if the engines stopped now (prediction)
 	if (FlightLines)

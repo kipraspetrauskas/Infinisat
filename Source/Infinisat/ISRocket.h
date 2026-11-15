@@ -51,6 +51,8 @@ public:
 	double Throttle = 1.0;          // 0..1 (clamped to the stage's min throttle while burning; 0 = cut-off)
 	double PitchDeg = 0.0;          // thrust angle from local vertical toward downrange
 	bool bAutopilot = true;         // guidance computer flies the ascent (the player can take over)
+	bool bManualThrottle = false;   // the player moved the throttle: autopilot keeps steering but leaves the throttle alone
+	double ManualOffsetDeg = 0.0;   // manual flight: tilt away from the direction of travel (A/D), held by stability assist
 	void Stage();                   // separate the current stage (or start the countdown on the pad)
 	void Abort(const FString& Why);
 

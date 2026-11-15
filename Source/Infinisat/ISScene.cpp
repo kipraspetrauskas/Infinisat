@@ -930,6 +930,13 @@ void AISSpaceScene::Tick(float Dt)
 		CamLoc = SatPos - Dir * CamDist;
 		CR = FRotationMatrix::MakeFromXZ(Dir, Up).Rotator();
 	}
+	if (bFlight && FlightShake > 0.01f)
+	{
+		// camera shake: felt strongest close to the rocket
+		const float T = (float)FPlatformTime::Seconds(), K = FlightShake * FMath::Clamp(3000.f / FMath::Max(300.f, CamDist), 0.15f, 1.f);
+		CR.Pitch += K * 0.6f * (FMath::Sin(T * 31.f) * 0.6f + FMath::Sin(T * 17.f) * 0.4f);
+		CR.Yaw += K * 0.6f * (FMath::Sin(T * 27.f + 2.f) * 0.6f + FMath::Sin(T * 13.f) * 0.4f);
+	}
 	if (Camera) Camera->SetActorLocationAndRotation(CamLoc, CR);
 
 	if (SkyAtmo)

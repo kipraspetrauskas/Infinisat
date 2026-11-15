@@ -172,6 +172,7 @@ private:
 	FVector BitHome = FVector::ZeroVector;
 	double MissionDay = 0.0;
 	float FollowYaw = 25.f, FollowPitch = -18.f;
+	float FlightShake = 0.f;      // 0..1 vibration from the engines and the air (lift-off rumble, max-Q buffeting)
 	bool bFlightCamUser = false;   // the player turned the launch camera: stop steering it automatically
 
 	// ---- cosmos explorer

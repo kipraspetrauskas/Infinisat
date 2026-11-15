@@ -1116,7 +1116,7 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 				+ SHorizontalBox::Slot().AutoWidth()[Btn(TEXT(">>  STAGE  (Space)"), [this]() { if (Scene.IsValid() && Scene->Flight()) Scene->Flight()->Stage(); }, 1, 14)]
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[Warps]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(CGold).Text(Val([](const FISRocketSim& S) { return S.bAutopilot ? FString(TEXT("AUTOPILOT FLYING")) : FString(TEXT("YOU ARE FLYING")); }))]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(CGold).Text(Val([](const FISRocketSim& S) { return S.bAutopilot ? FString(S.bManualThrottle ? TEXT("AUTOPILOT STEERING, YOU ON THROTTLE") : TEXT("AUTOPILOT FLYING")) : FString::Printf(TEXT("YOU ARE FLYING  -  STABILITY ASSIST: %+.0f deg from prograde"), S.ManualOffsetDeg); }))]
 		];
 		// failure: centred card
 		O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Center)

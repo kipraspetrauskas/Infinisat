@@ -295,11 +295,12 @@ void AISPlayerController::PlayerTick(float DeltaTime)
 			const float Dt = DeltaTime;
 			const bool bThrUp = IsInputKeyDown(EKeys::LeftShift), bThrDn = IsInputKeyDown(EKeys::LeftControl), bCut = WasInputKeyJustPressed(EKeys::X);
 			const float Pitch = (IsInputKeyDown(EKeys::D) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::A) ? 1.f : 0.f);
-			if (bThrUp || bThrDn || bCut || Pitch != 0.f) F->bAutopilot = false;   // touching the controls takes over from the autopilot
+			if (bThrUp || bThrDn || bCut) F->bManualThrottle = true;   // throttle keys take only the throttle
+			if (Pitch != 0.f && F->bAutopilot) { F->bAutopilot = false; F->ManualOffsetDeg = 0.0; }   // steering keys: stability assist keeps the nose near the flight path
 			if (bThrUp) F->Throttle = FMath::Min(1.0, F->Throttle + Dt * 0.6);
 			if (bThrDn) F->Throttle = FMath::Max(0.0, F->Throttle - Dt * 0.6);
 			if (bCut) F->Throttle = 0.0;
-			if (Pitch != 0.f) F->PitchDeg = FMath::Clamp(F->PitchDeg + Pitch * Dt * 6.0, -10.0, 120.0);
+			if (Pitch != 0.f) F->ManualOffsetDeg = FMath::Clamp(F->ManualOffsetDeg + Pitch * Dt * 8.0, -30.0, 30.0);
 			if (WasInputKeyJustPressed(EKeys::Period)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 2.f);
 			if (WasInputKeyJustPressed(EKeys::Comma)) Scene->SetFlightWarp(Scene->GetFlightWarp() * 0.5f);
 		}

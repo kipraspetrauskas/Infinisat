@@ -157,6 +157,10 @@ private:
 	void SetEarth(UStaticMeshComponent* C, float RadiusUU, const FVector& Pos, bool bClouds);
 	void TickTrueScale(float Dt);
 	void BuildCleanRoom();
+	// the lab from the Kenney Space Station Kit (ISLab.cpp)
+	static bool LabKitAvailable();
+	void BuildLabKit();
+	UStaticMeshComponent* LabPiece(const TCHAR* Name, const FVector& P, float Yaw, float Scale);
 	float LaunchT = -1.f;
 	float LastSatSize = 400.f, MapDist = 30000.f, PlanetRUU = 6371.f;
 	FVector LaunchSite = FVector::ZeroVector, RocketPrev = FVector::ZeroVector;
@@ -241,6 +245,19 @@ private:
 	TArray<float> StageBaseZ;
 	float RocketLenCm = 7000.f;
 	UPROPERTY() class USkyAtmosphereComponent* SkyAtmo = nullptr;
+	// ---- stylised orbit (ISStylizedOrbit.cpp): satellite at the origin, a 1/100-scale low-poly Earth turning below it
+	bool bStylized = false;
+	float LPRadius = 0.f, LPAlt = 0.f, LPWarp = 1.f;
+	double LPAngle = 0.0, LPCloudAngle = 0.0;
+	UPROPERTY() USceneComponent* LPPivot = nullptr;
+	UPROPERTY() USceneComponent* LPSpin = nullptr;
+	UPROPERTY() USceneComponent* LPCloudSpin = nullptr;
+	UPROPERTY() UStaticMeshComponent* LPEarth = nullptr;
+	UPROPERTY() UInstancedStaticMeshComponent* LPClouds = nullptr;
+	static bool StylizedAvailable();
+	void BuildStylizedEarth(float AltKm, float IncDeg);
+	void TickStylizedEarth(float Dt, const FVector& CamLoc);
+	void HideStylizedEarth();
 	void BuildFlightRocket();
 	void TickFlight(float Dt);
 

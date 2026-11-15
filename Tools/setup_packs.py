@@ -21,6 +21,7 @@ SETS = [
     ("KD", U + "/KayKit_Dungeon_Pack_1.1_FREE/KayKit_Dungeon_Pack_1.1_FREE/Assets/gltf", "gltf", DUNGEON),
     ("KF", U + "/KayKit_Forest_Nature_Pack_1.0_FREE/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf", "gltf", None),
     ("QN", U + "/Ultimate Nature Pack by Quaternius/FBX", "fbx", QUAT),
+    ("KS", "C:/Dev/_downloads/kenney/space-station-kit/Models/GLB format", "glb", None),   # Kenney Space Station Kit (the lab)
     ("VEH", U, "glb", ["hilux"]),
     ("VEH", U + "/Car by Poly by Google - 75h3mi6uHuC", "obj", ["Car"]),
 ]

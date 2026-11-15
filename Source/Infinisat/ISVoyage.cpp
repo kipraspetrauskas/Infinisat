@@ -41,7 +41,7 @@ void AISSpaceScene::PlanVoyage()
 	const double C = FMath::Cos(SpinA), S = FMath::Sin(SpinA);
 	auto Fixed = [C, S](const FVector2D& Q) { return FVector2D(Q.X * C - Q.Y * S, Q.Y * C + Q.X * S); };
 	const FVector2D R2 = Fixed(Sim.R), V2 = Fixed(Sim.V);
-	const FVector3d R = FVector3d(FlightU * R2.Y + FlightDn * R2.X) / 1000.0;   // m -> km
+	const FVector3d R = FVector3d(FlightU * R2.Y + FlightDn * R2.X) / 1000.0 + FVector3d(FlightBase) / 1.0e5;   // m -> km; FlightBase: the real (Cesium) ground offset, cm
 	const FVector3d V = FVector3d(FlightU * V2.Y + FlightDn * V2.X) / 1000.0;
 
 	const double Dep = ISSim::DepartDay(ViewDest);

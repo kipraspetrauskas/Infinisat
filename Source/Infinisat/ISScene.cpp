@@ -954,13 +954,13 @@ void AISSpaceScene::Tick(float Dt)
 			// orbit reached: fly back from the rocket until the whole planet and the new orbit fill the screen (6 s), hold,
 			// turn to the satellite, then hand over to the follow camera at exactly this pose - no cut anywhere
 			RevealT += Dt;
-			const FVector Earth = SceneRoot->GetComponentLocation();
+			const FVector EarthC = SceneRoot->GetComponentLocation();
 			const FVector Out = (Up * 0.75f + N * 0.66f).GetSafeNormal();   // final camera side: above the orbit plane, over the rocket
 			const float S = FMath::SmoothStep(0.f, 1.f, RevealT / 6.f);
 			const float D0 = FMath::Max(CamDist, 1.f), D = FMath::Exp(FMath::Lerp(FMath::Loge(D0), FMath::Loge(FMath::Max(MapDist, D0)), S));   // log zoom: same feel at every scale
 			const float W = FMath::Clamp((D - D0) / FMath::Max(MapDist - D0, 1.f), 0.f, 1.f);   // focus leaves the rocket only once far out
 			const FVector Look = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(Dir, -Out), S).RotateVector(Dir);
-			CamLoc = FMath::Lerp(SatPos, Earth, W) - Look * D;
+			CamLoc = FMath::Lerp(SatPos, EarthC, W) - Look * D;
 			// deep space: the satellite is still on the upper stage, so the shot ends on the stack
 			const FVector SatW = bVoyage && RocketRoot ? RocketRoot->GetComponentLocation() + RocketRoot->GetUpVector() * ((StageBaseZ.Num() ? StageBaseZ.Last() * 100.f : 0.f) + RocketLenCm) * 0.5f : SatRoot->GetComponentLocation();
 			const float Turn = FMath::SmoothStep(7.5f, 9.f, RevealT);
@@ -970,7 +970,7 @@ void AISSpaceScene::Tick(float Dt)
 			{
 				EndFlight();
 				// express the current view in the satellite's follow frame so the next frame starts exactly here
-				const FVector SUp = (SatW - Earth).GetSafeNormal();
+				const FVector SUp = (SatW - EarthC).GetSafeNormal();
 				const FVector SFwd = FVector::CrossProduct(N, SUp).GetSafeNormal(), SRight = FVector::CrossProduct(SUp, SFwd);
 				const FVector V = SatW - CamLoc, VD = V.GetSafeNormal();
 				FollowPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(VD, SUp), -1.0, 1.0)));

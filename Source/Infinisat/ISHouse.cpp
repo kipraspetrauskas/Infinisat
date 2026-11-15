@@ -380,7 +380,7 @@ void AISHomeWorld::BuildHome()
 	RoomLight(FVector(250, 905, FZ + WallH - 20.f), 1100.f);
 	RoomLight(FVector(750, 905, FZ + WallH - 20.f), 1000.f);
 	RoomLight(FVector(1375, 905, FZ + WallH - 20.f), 600.f);
-	RoomLight(FVector(-380, 350, WallH - 20.f), 1800.f);
+	RoomLight(FVector(-380, 350, WallH - 20.f), 1800.f, false);   // garage: fluorescent tubes (DressGarage), no ceiling cube
 
 	// Place a piece with its back flat against a wall (real measured depth), facing into the room.
 	// bAlongX: the wall runs along X (fixed Y). Side: +1 if the room is on the + side of the wall.
@@ -499,7 +499,9 @@ void AISHomeWorld::BuildHome()
 	MudShelfY = CenterOf(Mud, FVector(1290, 905, 0)).Y;
 
 	// ---- garage: workbench on the back wall, shelf on the side wall, junk box by the door
-	UStaticMeshComponent* Bench = KW(TEXT("desk"), true, 700, -1, -380, 2.f, KF * 1.2f);
+	// steel work desk (Poly Haven, 200 x 95 x 79 cm); the bench camera and the CanSat build follow BenchTop
+	UStaticMeshComponent* Bench = PropWall(TEXT("metal_office_desk"), true, 700, -1, -380, 2.f, -90.f);   // -90: long along its X, drawers toward the room
+	if (!Bench) Bench = KW(TEXT("desk"), true, 700, -1, -380, 2.f, KF * 1.2f);
 	if (Bench)
 	{
 		const FBox B = Bench->Bounds.GetBox();
@@ -507,20 +509,23 @@ void AISHomeWorld::BuildHome()
 	}
 	else BenchTop = FVector(-380, 655, 90);
 	AddInteract(BenchTop + FVector(0, 0, 10), FVector(70, 30, 20), "bench");
-	K(TEXT("radio"), BenchTop + FVector(52, 10, 0), -90.f, KF, false);
-	if (Furniture.Num()) Furniture.Last().bOnTop = true;
-	AddInteract(BenchTop + FVector(52, 10, 15), FVector(25, 15, 18), "radio");
-	K(TEXT("lampSquareTable"), BenchTop + FVector(-80, 15, 0), -90.f, KF, false);
-	if (Furniture.Num()) Furniture.Last().bOnTop = true;
-	UStaticMeshComponent* GShelf = KW(TEXT("bookcaseOpen"), false, -760, 1, 330, 2.f);
+	Prop(TEXT("vintage_radio_transceiver"), BenchTop + FVector(52, 22, 1), 180.f);
+	AddInteract(BenchTop + FVector(52, 22, 15), FVector(25, 15, 18), "radio");
+	Prop(TEXT("desk_lamp_arm_01"), BenchTop + FVector(-80, 28, 1), 200.f);
+	// side shelf with the hunt items (radio module, sat-nav): steel unit, boards measured at 14/64/114/166/214 cm
+	UStaticMeshComponent* GShelf = PropWall(TEXT("steel_frame_shelves_02"), false, -760, 1, 330, 2.f, 0.f, 1.f, false);
+	if (!GShelf) GShelf = KW(TEXT("bookcaseOpen"), false, -760, 1, 330, 2.f);
+	else FillShelf(GShelf, { 14.f, 64.f, 114.f, 166.f, 214.f }, {}, 0);   // board colliders only: the hunt items sit here
 	if (GShelf) GarageShelfBox = GShelf->Bounds.GetBox();
 	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] garage shelf %s"), *GarageShelfBox.ToString());
-	GarageShelfTop = TopOf(GShelf, 180.f) - 40.f;
+	GarageShelfTop = GShelf ? GShelf->Bounds.GetBox().Min.Z + 115.f : 140.f;
 	GarageShelfX = CenterOf(GShelf, FVector(-730, 330, 0)).X;
-	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-690, 130, 2.f), 0.f), 40.f);
-	K(TEXT("cardboardBoxClosed"), FVector(-690, 580, 2.f), 15.f);
-	K(TEXT("trashcan"), FVector(-45, 650, 2.f), 0.f);
+	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-650, 240, 2.f), 20.f), 40.f);   // in front of the side shelf (the steel units from DressGarage stand either side)
+
+	Prop(TEXT("metal_trash_can"), FVector(-45, 650, 2.f), 0.f, 1.f, true, false);
 	AddSign(TEXT("WORKBENCH"), BenchTop + FVector(0, 30, 110), -90.f, 14.f, FColor(40, 40, 50));
+	DressHouse();
+	DressGarage();
 }
 
 // =====================================================================================================
@@ -729,7 +734,7 @@ void AISHomeWorld::SpawnHunt()
 	Add("bat_aa", TEXT("18650 battery + holder"), TEXT("Mudroom shelf (old flashlight)"), FVector(MudShelfX, MudShelfY, MudShelfTop), true, TEXT("battery_18650"), 1.f);
 	Add("ex_chute_l", TEXT("Parachute (ripstop nylon)"), TEXT("Folded on the bed"), FVector(BedX, BedY, BedTopZ), true, nullptr, 1.f);
 	Add("ex_wires", TEXT("Jumper wires + pin headers"), TEXT("Garage workbench"), BenchTop + FVector(-30, 10, 0), true, TEXT("header_1x15"), 1.f);
-	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-690, 130, JunkBoxTop), false, TEXT("buzzer"), 1.f);
+	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-650, 240, JunkBoxTop), false, TEXT("buzzer"), 1.f);
 	Add("pl_gnss_mini", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
 	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("Office desk, behind the laptop"), FVector(DeskBox.Max.X - 12.f, DeskTopY + 22.f, DeskTopZ), false, nullptr, 1.f);
 }
@@ -869,7 +874,7 @@ void AISHomeWorld::SettleProps()
 	for (FISPlaced& A : Furniture)
 	{
 		if (!A.C || !A.bOnTop || A.Name.Contains(TEXT("Upper"))) continue;   // wall cabinets hang on the wall on purpose
-		if (DropTo(A.C, A.C->Bounds.GetBox(), { A.C }, 120.f)) ++Moved;
+		if (DropTo(A.C, A.C->Bounds.GetBox(), { A.C }, 200.f)) ++Moved;
 	}
 	for (FISHuntItem& H : Hunt)
 	{

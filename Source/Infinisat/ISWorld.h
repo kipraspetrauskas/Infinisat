@@ -193,6 +193,15 @@ private:
 	void RebuildTray();
 	UStaticMeshComponent* Block(const FVector& Center, const FVector& Size, const TCHAR* Tex, float Tile, const FLinearColor& Tint = FLinearColor::White, bool bCollide = true);
 	UStaticMeshComponent* Place(const TCHAR* Id, const FVector& Pos, float Yaw, float Scale = 1.f, bool bCollide = false);
+	// --- set dressing (ISDress.cpp): lived-in clutter from Poly Haven models
+	UStaticMeshComponent* Prop(const TCHAR* Id, const FVector& Pos, float Yaw, float Scale = 1.f, bool bSolid = false, bool bSettle = true);
+	UStaticMeshComponent* PropWall(const TCHAR* Id, bool bAlongX, float WallC, float Side, float Along, float Z, float YawOffset = 0.f, float Scale = 1.f, bool bSolid = true);
+	UStaticMeshComponent* Hang(const TCHAR* Id, const FVector& Pos, const FRotator& Rot, float Scale = 1.f);
+	int32 FillShelf(UStaticMeshComponent* Shelf, const TArray<float>& Levels, const TArray<const TCHAR*>& Ids, int32 Seed, float Fill = 0.9f);
+	UBoxComponent* Collider(const FBox& WorldBox);   // invisible blocking box (Poly Haven meshes come without collision)
+	int32 Litter(const TArray<const TCHAR*>& Ids, const FBox2D& Area, float Z, int32 Count, int32 Seed, float MinGap = 8.f);
+	void DressGarage();
+	void DressHouse();
 	UBoxComponent* AddInteract(const FVector& Center, const FVector& Extent, FName Action);
 	UTextRenderComponent* AddSign(const FString& Text, const FVector& Pos, float Yaw, float Size, const FColor& Color);
 	void Toast(const FString& S) { Toasts.Add(S); }

@@ -127,8 +127,8 @@ def rebuild_world():
     mel.connect_material_expressions(tint, "", mul, "B")
     mel.connect_material_property(mul, "", MP.MP_BASE_COLOR)
 
-    # roughness: map (white default) * RoughMul
-    rtex = tobj(m, "Rough", "/Engine/EngineResources/WhiteSquareTexture", -1100, 500, unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+    # roughness: map (white mask default: a Masks sampler can't default to a colour texture) * RoughMul
+    rtex = tobj(m, "Rough", ROOT + "/PHTex/T_IS_WhiteMask", -1100, 500, unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
     rs = wa(m, WAT, rtex, size, -700, 500)
     rmul = sparam(m, "RoughMul", 0.85, -700, 700)
     rm = expr(m, unreal.MaterialExpressionMultiply, -350, 550)
@@ -181,7 +181,43 @@ def vary_color_roughness():
     log("M_IS_Color roughness varied")
 
 
-import_maps()
+def white_mask():
+    """4x4 white PNG imported as a linear Masks texture: the default for the Rough slot."""
+    import struct, zlib
+    path = ROOT + "/PHTex/T_IS_WhiteMask"
+    if eal.does_asset_exist(path):
+        return
+    raw = b"".join(b"\x00" + b"\xff\xff\xff" * 4 for _ in range(4))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    f = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), "T_IS_WhiteMask.png")
+    open(f, "wb").write(png)
+    import_tex(f, "T_IS_WhiteMask", False)
+
+
+def fix_nanite_usage():
+    """Imported glTF/CAD materials lack 'Used with Nanite', so cooked builds would draw them with the default material."""
+    n = 0
+    for p in eal.list_assets(ROOT, recursive=True, include_folder=False):
+        if not p.split(".")[0].rsplit("/", 1)[-1]:
+            continue
+        a = eal.find_asset_data(p)
+        if str(a.asset_class_path.asset_name) != "Material":
+            continue
+        m = eal.load_asset(p)
+        if m and not m.get_editor_property("used_with_nanite"):
+            m.set_editor_property("used_with_nanite", True)
+            eal.save_loaded_asset(m)
+            n += 1
+    log("nanite usage set on", n, "materials")
+
+
+ONLY = os.environ.get("IS_ONLY", "")
+if not ONLY or "maps" in ONLY:
+    import_maps()
+white_mask()
 rebuild_world()
 vary_color_roughness()
+if not ONLY or "nanite" in ONLY:
+    fix_nanite_usage()
 log("done")

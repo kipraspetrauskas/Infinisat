@@ -112,17 +112,19 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 	auto P = [&](float U, float N, float Z) { return bAlongX ? FVector(U0 + U, Fixed + N, Z) : FVector(Fixed + N, U0 + U, Z); };
 	auto S = [&](float SU, float SN, float SZ) { return bAlongX ? FVector(SU, SN, SZ) : FVector(SN, SU, SZ); };
 	const FLinearColor CoreCol = OutSide == 0.f ? In : Out;
+	const bool bKit = KitReady();   // handmade Kenney Building Kit pieces draw the wall; the boxes below only collide
 
 	auto Piece = [&](float U1, float U2, float Z1, float Z2)
 	{
 		if (U2 - U1 < 0.5f || Z2 - Z1 < 0.5f) return;
-		Paint(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), CoreCol, 0.85f);
+		UStaticMeshComponent* Core = Paint(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), CoreCol, 0.85f);
+		if (bKit) { if (Core) { Core->SetVisibility(false); Core->SetCastShadow(false); } return; }
 		if (OutSide != 0.f)   // interior paint layer on the inside face
 			Paint(P((U1 + U2) * 0.5f, -OutSide * (WallT * 0.5f + 0.6f), FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, 1.f, Z2 - Z1), In, 0.9f, false);
 	};
 	auto Baseboard = [&](float U1, float U2)
 	{
-		if (!bBaseboard || U2 - U1 < 2.f) return;
+		if (bKit || !bBaseboard || U2 - U1 < 2.f) return;
 		for (float Side : { -1.f, 1.f })
 		{
 			if (OutSide != 0.f && Side == OutSide) continue;   // no baseboard outside
@@ -147,7 +149,7 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 			const FVector A3 = P(O.From, -Depth - WallT * 0.5f, FZ + Z0), B3 = P(O.To, Depth + WallT * 0.5f, FZ + O.Top);
 			Openings.Add(FBox(FVector(FMath::Min(A3.X, B3.X), FMath::Min(A3.Y, B3.Y), A3.Z), FVector(FMath::Max(A3.X, B3.X), FMath::Max(A3.Y, B3.Y), B3.Z)));
 		}
-		// frame trims (both faces)
+		// frame trims (both faces) - the kit pieces bring their own frames
 		const float FT = WallT + 3.f;
 		Paint(P(O.From - 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
 		Paint(P(O.To + 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
@@ -157,9 +159,11 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 			// window: glass, cross mullions, sill
 			UStaticMeshComponent* G = ISBuild::Glass(this, Root, ISMat::Cube(), P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 1.5f, O.Top - O.Bottom), FLinearColor(0.75f, 0.9f, 1.f), 0.18f, nullptr);
 			if (G) { G->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); G->SetCollisionResponseToAllChannels(ECR_Block); AllComps.Add(G); }
-			Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(4.f, 4.f, O.Top - O.Bottom), Trim, 0.5f, false);
-			Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 4.f, 4.f), Trim, 0.5f, false);
-			Paint(P(Mid, 0, FZ + O.Bottom - 2.f), S(W + 16.f, WallT + 12.f, 4.f), Trim, 0.5f, false);
+			{
+				Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(4.f, 4.f, O.Top - O.Bottom), Trim, 0.5f, false);
+				Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 4.f, 4.f), Trim, 0.5f, false);
+				Paint(P(Mid, 0, FZ + O.Bottom - 2.f), S(W + 16.f, WallT + 12.f, 4.f), Trim, 0.5f, false);
+			}
 		}
 		else if (O.Kind == 0 || O.Kind == 3)
 		{
@@ -170,6 +174,61 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 			AddDoor(Hinge, Yaw, W, bExterior ? Teal : Trim, !bExterior);
 		}
 		Cur = O.To;
+	}
+
+	// ---- handmade wall: Kenney Building Kit pieces (200 cm wide, 240 tall; window hole 90 wide at 70..200, door hole
+	// 90 wide 0..220, wide versions 400 / 290). Each framed piece is scaled so its hole matches the opening exactly;
+	// where a frame doesn't fit between neighbours, plain wall pieces surround the opening instead.
+	if (bKit)
+	{
+		const float PieceYaw = bAlongX ? 90.f : 0.f;   // kit pieces run along their local Y
+		auto Slab = [&](float U1, float U2, float Z1, float Z2)
+		{
+			if (U2 - U1 < 1.f || Z2 - Z1 < 1.f) return;
+			KitPiece(TEXT("KB"), TEXT("wall"), P((U1 + U2) * 0.5f, 0, FZ + Z1), PieceYaw, FVector(WallT / 10.f, (U2 - U1) / 200.f, (Z2 - Z1) / 240.f));
+		};
+		auto Run = [&](float U1, float U2)
+		{
+			if (U2 - U1 < 1.f) return;
+			const int32 N = FMath::Max(1, FMath::RoundToInt((U2 - U1) / 200.f));
+			const float L = (U2 - U1) / N;
+			for (int32 k = 0; k < N; ++k) Slab(U1 + k * L, U1 + (k + 1) * L, 0.f, WallH);
+		};
+		float C0 = 0.f;
+		for (int32 i = 0; i < Sorted.Num(); ++i)
+		{
+			const FISOpening& O = Sorted[i];
+			const float Next = i + 1 < Sorted.Num() ? Sorted[i + 1].From : Len;
+			const float W = O.To - O.From, Mid = (O.From + O.To) * 0.5f;
+			bool bFramed = false;
+			if (O.Kind != 2 && false)   // the kit frame holes never lined up with the openings: plain kit wall around every opening + white trims instead
+			{
+				const bool bWide = W > 160.f;
+				const float SU = W / (bWide ? 290.f : 90.f), PL = (bWide ? 400.f : 200.f) * SU;
+				const float HB = O.Kind == 1 ? 70.f : 0.f, HT = O.Kind == 1 ? 200.f : 220.f;
+				const float SZ = (O.Top - O.Bottom) / (HT - HB);
+				const float Z0 = O.Bottom - HB * SZ, Z1 = Z0 + 240.f * SZ;
+				if (Mid - PL * 0.5f >= C0 - 0.5f && Mid + PL * 0.5f <= Next + 0.5f && Z0 > -1.f && Z1 <= WallH + 1.f)
+				{
+					const TCHAR* Name = O.Kind == 1 ? (bWide ? TEXT("wall_window_wide_square") : TEXT("wall_window_square"))
+					                                : (bWide ? TEXT("wall_doorway_wide_square") : TEXT("wall_doorway_square"));
+					KitPiece(TEXT("KB"), Name, P(Mid, 0, FZ + Z0), PieceYaw, FVector(WallT / 14.f, SU, SZ));
+					Run(C0, Mid - PL * 0.5f);
+					Slab(Mid - PL * 0.5f, Mid + PL * 0.5f, 0.f, Z0);
+					Slab(Mid - PL * 0.5f, Mid + PL * 0.5f, Z1, WallH);
+					C0 = Mid + PL * 0.5f;
+					bFramed = true;
+				}
+			}
+			if (!bFramed)
+			{
+				Run(C0, O.From);
+				Slab(O.From, O.To, 0.f, O.Bottom);
+				Slab(O.From, O.To, O.Top, WallH);
+				C0 = O.To;
+			}
+		}
+		Run(C0, Len);
 	}
 	Piece(Cur, Len, 0.f, WallH);
 	Baseboard(Cur, Len);
@@ -271,6 +330,9 @@ void AISHomeWorld::HouseShell(const FVector& Origin, float SX, float SY, float Y
 	Paint(FVector(Origin.X, bDoorFront ? Y0 - 2.f : Y1 + 2.f, FZ + 107.f), FVector(98.f, 6.f, 214.f), DoorCol, 0.5f);           // closed door
 	Paint(FVector(Origin.X, bDoorFront ? Y0 - 60.f : Y1 + 60.f, FZ * 0.5f), FVector(160.f, 100.f, FZ), FLinearColor(0.75f, 0.74f, 0.72f), 0.9f);   // step
 	Roof(FVector(Origin.X, Origin.Y, FZ + WallH + 10.f), SX, SY, 30.f, 50.f, nullptr, RoofCol, nullptr, WallCol);
+	// nobody home: a black, empty interior so the windows read as dark glass (no seeing through the house)
+	if (UStaticMeshComponent* Dark = Paint(FVector(Origin.X, Origin.Y, FZ + WallH * 0.5f), FVector(SX - 40.f, SY - 40.f, WallH - 2.f), FLinearColor(0.004f, 0.004f, 0.005f), 1.f, false))
+		Dark->SetCastShadow(false);
 }
 
 // Picket-rail fence from A to B in the house's wood colour: posts every 1.5 m and two rails; optional gap (a gate opening).
@@ -330,6 +392,8 @@ void AISHomeWorld::BuildHome()
 	Paint(FVector(1125, 905, FZ - 1.f), FVector(250, 290, 2), Aqua, 0.3f);              // bath
 	Paint(FVector(1375, 905, FZ - 1.f), FVector(250, 290, 2), GarageGrey, 0.8f);        // mudroom
 	Paint(FVector(-380, 350, 1.f), FVector(760, 700, 2), GarageGrey * 0.85f, 0.9f);     // garage
+	Interiors.Add(FBox(FVector(-760, 0, -50), FVector(0, 700, 400)));                     // garage + house: indoor exposure
+	Interiors.Add(FBox(FVector(0, 0, -50), FVector(1500, 1050, 700)));
 	// front steps
 	Paint(FVector(610, -45, 5.f), FVector(180, 70, 10), FLinearColor(0.8f, 0.78f, 0.74f));
 	Paint(FVector(610, -20, FZ - 5.f), FVector(200, 40, FZ + 10.f), FLinearColor(0.8f, 0.78f, 0.74f));
@@ -360,12 +424,38 @@ void AISHomeWorld::BuildHome()
 	Wall({ -760, 0 }, { 0, 0 }, { { 80, 680, 0, 235, 2 } }, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), -1.f, false);
 	Wall({ -760, 700 }, { 0, 700 }, { { 60, 200, 140, 220, 1 } }, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), 1.f, false);
 	Wall({ -760, 0 }, { -760, 700 }, {}, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), -1.f, false);
-	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Paint(FVector(-380, 350, FZ + WallH + 22.f), FVector(800, 740, 18), FLinearColor(0.35f, 0.36f, 0.4f), 0.8f);   // garage flat roof
+	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof")) && !KitReady()) Paint(FVector(-380, 350, FZ + WallH + 22.f), FVector(800, 740, 18), FLinearColor(0.35f, 0.36f, 0.4f), 0.8f);   // garage flat roof
 	Paint(FVector(-380, -4, FZ + 255.f), FVector(640, 30, 40), FLinearColor(0.55f, 0.66f, 0.76f), 0.6f);          // rolled-up door box
 
 	// ---- roof + chimney
-	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Roof(FVector(750, 525, FZ + WallH + 10.f), 1500, 1050, 30.f, 55.f, nullptr, Coral, nullptr, Cream);
-	Paint(FVector(1180, 760, FZ + WallH + 260.f), FVector(70, 70, 330), FLinearColor(0.62f, 0.3f, 0.25f), 0.9f);
+	if (KitReady())
+	{
+		// handmade flat roofs (Kenney Building Kit): roof tiles + a border trim all round, house and garage
+		auto KitRoof = [&](const FBox2D& R, float Z)
+		{
+			if (FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) return;
+			KitTile(TEXT("KB"), TEXT("roof_flat_center"), R, Z, 200.f, 200.f);
+			for (int32 Side = 0; Side < 4; ++Side)
+			{
+				const bool bX = Side < 2;   // edges running along X (y = min / max)
+				const float L = bX ? R.GetSize().X : R.GetSize().Y;
+				const int32 N = FMath::Max(1, FMath::RoundToInt(L / 200.f));
+				for (int32 k = 0; k < N; ++k)
+				{
+					const float U = (k + 0.5f) * L / N;
+					const FVector C = bX ? FVector(R.Min.X + U, Side == 0 ? R.Min.Y : R.Max.Y, Z) : FVector(Side == 2 ? R.Min.X : R.Max.X, R.Min.Y + U, Z);
+					KitPiece(TEXT("KB"), TEXT("border"), C, bX ? 90.f : 0.f, FVector(1.f, (L / N) / 200.f, 1.f));
+				}
+			}
+		};
+		KitRoof(FBox2D(FVector2D(-10, -10), FVector2D(1510, 1060)), FZ + WallH + 10.f);
+		KitRoof(FBox2D(FVector2D(-770, -10), FVector2D(-10, 710)), WallH + 13.f);
+	}
+	else
+	{
+		if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Roof(FVector(750, 525, FZ + WallH + 10.f), 1500, 1050, 30.f, 55.f, nullptr, Coral, nullptr, Cream);
+		Paint(FVector(1180, 760, FZ + WallH + 260.f), FVector(70, 70, 330), FLinearColor(0.62f, 0.3f, 0.25f), 0.9f);
+	}
 	// porch canopy + light
 	Paint(FVector(610, -60, FZ + 240.f), FVector(220, 120, 8), Trim, 0.6f, false);
 	for (float X : { 520.f, 700.f }) Paint(FVector(X, -110, FZ + 120.f), FVector(10, 10, 240), Trim, 0.6f);
@@ -517,9 +607,10 @@ void AISHomeWorld::BuildHome()
 	GarageShelfTop = TopOf(GShelf, 180.f) - 40.f;
 	GarageShelfX = CenterOf(GShelf, FVector(-730, 330, 0)).X;
 	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-690, 130, 2.f), 0.f), 40.f);
-	K(TEXT("cardboardBoxClosed"), FVector(-690, 580, 2.f), 15.f);
+	K(TEXT("cardboardBoxClosed"), FVector(-610, 650, 2.f), 15.f);   // clear of the steel shelving (DressGarage)
 	K(TEXT("trashcan"), FVector(-45, 650, 2.f), 0.f);
-	AddSign(TEXT("WORKBENCH"), BenchTop + FVector(0, 30, 110), -90.f, 14.f, FColor(40, 40, 50));
+	AddSign(TEXT("WORKBENCH"), BenchTop + FVector(0, 30, KitReady() ? 145.f : 110.f), -90.f, 14.f, FColor(40, 40, 50));   // above the kit wall shelf
+	if (KitReady()) { DressHouse(); DressGarage(); }
 }
 
 // =====================================================================================================
@@ -546,7 +637,7 @@ void AISHomeWorld::BuildNeighbourhood()
 	// our front garden: path, driveway, mailbox, flower beds, car
 	Paint(FVector(610, -700, 1.f), FVector(140, 1200, 2), FLinearColor(0.85f, 0.83f, 0.8f), 0.9f, false);   // path
 	Paint(FVector(-380, -650, 1.f), FVector(340, 1300, 2), FLinearColor(0.7f, 0.69f, 0.67f), 0.9f, false);  // driveway
-	C(TEXT("car"), TEXT("sedan"), FVector(-380, -520, 2.f), -90.f, 1.6f);
+	if (!PlaceCar(FVector(-380, -520, 2.f), -90.f)) C(TEXT("car"), TEXT("sedan"), FVector(-380, -520, 2.f), -90.f, 1.6f);
 	Paint(FVector(900, -1080, 55), FVector(8, 8, 110), Trim, 0.6f);
 	Paint(FVector(900, -1080, 120), FVector(26, 45, 26), FLinearColor(0.2f, 0.45f, 0.75f), 0.5f);
 	Paint(FVector(300, -90, 6), FVector(500, 110, 12), FLinearColor(0.42f, 0.28f, 0.2f), 0.95f, false);
@@ -560,8 +651,8 @@ void AISHomeWorld::BuildNeighbourhood()
 	}
 	C(TEXT("nat"), TEXT("plant_bushDetailed"), FVector(40, -120, 0), 0.f, 3.f, false);
 	C(TEXT("nat"), TEXT("plant_bushDetailed"), FVector(1460, -120, 0), 0.f, 3.f, false);
-	C(TEXT("nat"), TEXT("tree_oak"), FVector(1250, -700, 0), 30.f, KNat);
-	C(TEXT("nat"), TEXT("tree_default"), FVector(-1100, 1400, 0), 0.f, KNat);
+	PlaceTree(FVector(1250, -700, 0), 30.f);
+	PlaceTree(FVector(-1100, 1400, 0), 0.f);
 
 	// neighbours: built the same way as our house (same walls, windows, roof, flat paint), each in its own colours
 	struct FN { float X, Y, Face; FLinearColor Wall, Door, RoofC; };
@@ -578,7 +669,8 @@ void AISHomeWorld::BuildNeighbourhood()
 		HouseShell(FVector(H.X, H.Y, 0), 1100.f, 850.f, H.Face, H.Wall, H.Door, nullptr, H.RoofC);
 		const float Dir = H.Y > 0 ? -1.f : 1.f;
 		Paint(FVector(H.X + 750.f, H.Y + Dir * 900.f, 1.f), FVector(320, 900, 2), FLinearColor(0.7f, 0.69f, 0.67f), 0.9f, false);   // driveway
-		C(TEXT("nat"), R.RandRange(0, 1) ? TEXT("tree_default") : TEXT("tree_fat"), FVector(H.X - 800.f, H.Y + Dir * 800.f, 0), R.FRandRange(0.f, 360.f), KNat);
+		R.RandRange(0, 1);   // keeps the random sequence of the old Kenney pick
+		PlaceTree(FVector(H.X - 800.f, H.Y + Dir * 800.f, 0), R.FRandRange(0.f, 360.f));
 		WoodFence(FVector(H.X - 600.f, H.Y + Dir * 1150.f, 0), FVector(H.X + 500.f, H.Y + Dir * 1150.f, 0));
 	}
 }
@@ -600,8 +692,8 @@ void AISHomeWorld::BuildBackyard()
 	F(TEXT("chairModernCushion"), FVector(520, 1400, 8), 0.f);
 	F(TEXT("chairModernCushion"), FVector(680, 1400, 8), 180.f);
 	F(TEXT("loungeChairRelax"), FVector(1000, 1350, 8), 90.f);
-	C(TEXT("nat"), TEXT("tree_oak"), FVector(1900, 2600, 0), 0.f, KNat);
-	C(TEXT("nat"), TEXT("tree_small"), FVector(-500, 2900, 0), 0.f, KNat);
+	PlaceTree(FVector(1900, 2600, 0), 0.f);
+	PlaceTree(FVector(-500, 2900, 0), 0.f);
 	C(TEXT("nat"), TEXT("plant_bushLarge"), FVector(2150, 1400, 0), 0.f, 3.f);
 	C(TEXT("nat"), TEXT("plant_bushLarge"), FVector(-750, 1500, 0), 0.f, 3.f);
 	// path from the gate to the launch field
@@ -617,15 +709,21 @@ void AISHomeWorld::BuildBackyard()
 		const float A = R.FRandRange(0.f, 2.f * PI);
 		const float D = R.FRandRange(60000.f, 110000.f);
 		const float Rad = R.FRandRange(15000.f, 40000.f);
-		const FLinearColor Hc = FMath::Lerp(FLinearColor(0.32f, 0.58f, 0.25f), FLinearColor(0.5f, 0.68f, 0.32f), R.FRand());
-		ISBuild::Prim(this, Root, ISMat::Sphere(), FVector(FMath::Cos(A) * D, FMath::Sin(A) * D, -Rad * 0.75f), FVector(Rad * 2.f, Rad * 2.4f, Rad * 2.f), Hc, nullptr, FRotator(0, R.FRandRange(0.f, 180.f), 0), 0.f, 0.95f);
+		const FLinearColor Hc = KitReady() ? FMath::Lerp(FLinearColor(0.24f, 0.46f, 0.08f), FLinearColor(0.3f, 0.52f, 0.1f), R.FRand())   // same matte green as the grass ground
+		                                   : FMath::Lerp(FLinearColor(0.32f, 0.58f, 0.25f), FLinearColor(0.5f, 0.68f, 0.32f), R.FRand());
+		ISBuild::Prim(this, Root, ISMat::Sphere(), FVector(FMath::Cos(A) * D, FMath::Sin(A) * D, -Rad * 0.75f), FVector(Rad * 2.f, Rad * 2.4f, Rad * 2.f), Hc, nullptr, FRotator(0, R.FRandRange(0.f, 180.f), 0), 0.f, 1.f);
 	}
 
 	// instanced nature (trees, bushes, grass, flowers), density follows the graphics preset
 	auto Scatter = [&](const TCHAR* Name, int32 N, float MinR, float MaxR, const FVector& Ctr, float MinS, float MaxS, float Cull)
 	{
-		UStaticMesh* Mesh = ISMat::Mesh(KPath(TEXT("nat"), Name));
+		// a name with a '/' is a full asset path; then MinS/MaxS are heights in cm (scale from the mesh's own height)
+		const bool bPath = FString(Name).Contains(TEXT("/"));
+		UStaticMesh* Mesh = ISMat::Mesh(bPath ? FString(Name) : KPath(TEXT("nat"), Name));
 		if (!Mesh) return;
+		const FBox MB = Mesh->GetBoundingBox();
+		const float HScale = bPath ? 1.f / FMath::Max(1.f, MB.GetSize().Z) : 1.f;
+		const float Base = bPath ? -MB.Min.Z : 0.f;
 		N = FMath::Max(1, FMath::RoundToInt(N * ISQuality::Density()));
 		UHierarchicalInstancedStaticMeshComponent* H = NewObject<UHierarchicalInstancedStaticMeshComponent>(this);
 		H->SetStaticMesh(Mesh);
@@ -651,23 +749,48 @@ void AISHomeWorld::BuildBackyard()
 				for (const FVector2D& Nn : Nb) if (FMath::Abs(P.X - Nn.X) < 750.f && FMath::Abs(P.Y - Nn.Y) < 650.f) { bIn = true; break; }
 				if (bIn) continue;
 			}
-			const float S = R.FRandRange(MinS, MaxS);
-			H->AddInstance(FTransform(FRotator(0, R.FRandRange(0.f, 360.f), 0), P - FVector(0, 0, 4.f), FVector(S)));
+			const float S = R.FRandRange(MinS, MaxS) * HScale;
+			H->AddInstance(FTransform(FRotator(0, R.FRandRange(0.f, 360.f), 0), P + FVector(0, 0, Base * S - 4.f), FVector(S)));
 			++Added;
 		}
 		AllComps.Add(H);
 	};
 	const FVector Mid(800, 6000, 0);
-	Scatter(TEXT("tree_default"), 160, 6000.f, 40000.f, Mid, 3.5f, 6.f, 150000.f);
-	Scatter(TEXT("tree_oak"), 120, 6000.f, 40000.f, Mid, 3.5f, 5.5f, 150000.f);
-	Scatter(TEXT("tree_pineRoundB"), 120, 9000.f, 45000.f, Mid, 4.f, 7.f, 150000.f);
-	Scatter(TEXT("tree_fat"), 80, 7000.f, 40000.f, Mid, 3.5f, 5.5f, 150000.f);
-	Scatter(TEXT("plant_bush"), 260, 2500.f, 30000.f, Mid, 2.5f, 4.5f, 40000.f);
-	Scatter(TEXT("rock_largeA"), 40, 6000.f, 35000.f, Mid, 1.5f, 3.5f, 60000.f);
-	Scatter(TEXT("grass_large"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
-	Scatter(TEXT("grass"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
-	Scatter(TEXT("flower_yellowA"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
-	Scatter(TEXT("flower_purpleB"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+	if (KitReady())   // Quaternius Ultimate Nature (handmade low-poly), heights in cm
+	{
+		Scatter(TEXT("/Game/Infinisat/QN/CommonTree_1/SM_CommonTree_1.SM_CommonTree_1"), 110, 6000.f, 40000.f, Mid, 650.f, 1000.f, 150000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/CommonTree_2/SM_CommonTree_2.SM_CommonTree_2"), 90, 6000.f, 40000.f, Mid, 600.f, 900.f, 150000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/CommonTree_4/SM_CommonTree_4.SM_CommonTree_4"), 80, 6000.f, 40000.f, Mid, 700.f, 1000.f, 150000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/PineTree_1/SM_PineTree_1.SM_PineTree_1"), 110, 9000.f, 45000.f, Mid, 800.f, 1300.f, 150000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/PineTree_3/SM_PineTree_3.SM_PineTree_3"), 70, 9000.f, 45000.f, Mid, 800.f, 1200.f, 150000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/BirchTree_2/SM_BirchTree_2.SM_BirchTree_2"), 60, 7000.f, 40000.f, Mid, 700.f, 1000.f, 150000.f);
+	}
+	else
+	{
+		Scatter(TEXT("tree_default"), 160, 6000.f, 40000.f, Mid, 3.5f, 6.f, 150000.f);
+		Scatter(TEXT("tree_oak"), 120, 6000.f, 40000.f, Mid, 3.5f, 5.5f, 150000.f);
+		Scatter(TEXT("tree_pineRoundB"), 120, 9000.f, 45000.f, Mid, 4.f, 7.f, 150000.f);
+		Scatter(TEXT("tree_fat"), 80, 7000.f, 40000.f, Mid, 3.5f, 5.5f, 150000.f);
+	}
+	if (KitReady())   // faceted rocks + bushes/ferns (KayKit, Quaternius); the grass itself is the GrassCarpet
+	{
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_A_Color1/SM_Rock_1_A_Color1.SM_Rock_1_A_Color1"), 50, 2500.f, 35000.f, Mid, 60.f, 160.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_D_Color1/SM_Rock_1_D_Color1.SM_Rock_1_D_Color1"), 40, 2500.f, 35000.f, Mid, 80.f, 220.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_H_Color1/SM_Rock_1_H_Color1.SM_Rock_1_H_Color1"), 30, 2500.f, 35000.f, Mid, 50.f, 120.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Bush_1/SM_Bush_1.SM_Bush_1"), 120, 2500.f, 30000.f, Mid, 70.f, 140.f, 40000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Bush_2/SM_Bush_2.SM_Bush_2"), 120, 2500.f, 30000.f, Mid, 60.f, 120.f, 40000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Plant_2/SM_Plant_2.SM_Plant_2"), 120, 2500.f, 20000.f, Mid, 40.f, 90.f, 20000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Flowers/SM_Flowers.SM_Flowers"), 160, 2500.f, 16000.f, Mid, 25.f, 45.f, 9000.f);
+	}
+	else
+	{
+		Scatter(TEXT("plant_bush"), 260, 2500.f, 30000.f, Mid, 2.5f, 4.5f, 40000.f);
+		Scatter(TEXT("rock_largeA"), 40, 6000.f, 35000.f, Mid, 1.5f, 3.5f, 60000.f);
+		Scatter(TEXT("grass_large"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
+		Scatter(TEXT("grass"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
+		Scatter(TEXT("flower_yellowA"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+		Scatter(TEXT("flower_purpleB"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+	}
 }
 
 // =====================================================================================================
@@ -772,10 +895,18 @@ void AISHomeWorld::BuildGround2()
 	G->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	G->SetCollisionResponseToAllChannels(ECR_Block);
 	G->RegisterComponent();
-	if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Ground.M_IS_Ground"))) G->SetMaterial(0, M);
+	if (KitReady())
+	{
+		// matte root-green under the stylised grass carpet: no shine, and it reads as grass where the blades fade out
+		UMaterialInstanceDynamic* GM = UMaterialInstanceDynamic::Create(ISMat::Color(), G);
+		GM->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.24f, 0.46f, 0.08f));
+		GM->SetScalarParameterValue(TEXT("Roughness"), 1.f);
+		GM->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+		G->SetMaterial(0, GM);
+	}
+	else if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Ground.M_IS_Ground"))) G->SetMaterial(0, M);
 	AllComps.Add(G);
-	// mowed lawn around the house: slightly brighter
-	Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);
+	if (!KitReady()) Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);   // mowed lawn around the house
 }
 
 // Logs furniture that blocks doors/windows, overlaps other furniture, floats, or pokes through walls.
@@ -894,12 +1025,14 @@ void AISHomeWorld::SettleProps()
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] settled %d props onto their surfaces"), Moved);
+	ValidateDress();
 }
 
 void AISHomeWorld::ApplyLightQuality()
 {
 	for (int32 i = 0; i < RoomLights.Num(); ++i)
 		if (RoomLights[i]) RoomLights[i]->SetCastShadows(ISQuality::Level >= 3 && i < 2);
+	ApplyLook();   // Lumen in the demo looks follows the graphics preset too
 }
 
 // =====================================================================================================
@@ -923,6 +1056,7 @@ void AISHomeWorld::BuildSpaceCentre()
 	auto Bldg = [&](const FVector2D& C, float SX, float SY, float H, float DoorW, float DoorH, const TCHAR* Name)
 	{
 		const float T = 30.f, X0 = C.X - SX * 0.5f, X1 = C.X + SX * 0.5f, Y0 = C.Y - SY * 0.5f, Y1 = C.Y + SY * 0.5f;
+		Interiors.Add(FBox(FVector(X0, Y0, -50.f), FVector(X1, Y1, H)));
 		Paint(FVector(C.X, C.Y, 6.f), FVector(SX, SY, 12.f), FloorC, 0.8f);
 		Paint(FVector(C.X, Y1, H * 0.5f), FVector(SX, T, H), WallW, 0.7f);
 		Paint(FVector(X0, C.Y, H * 0.5f), FVector(T, SY, H), WallW, 0.7f);
@@ -987,7 +1121,7 @@ void AISHomeWorld::BuildSpaceCentre()
 	Paint(FVector(22500, 2000, 1250), FVector(20, 20, 500), FLinearColor(0.6f, 0.6f, 0.62f), 0.5f, false);       // feed
 
 	// parked cars and trees make it feel lived in
-	PlaceMesh(this, Root, AllComps, KPath(TEXT("car"), TEXT("sedan")), FVector(15200, -500, 2), 0.f, 1.6f, true, true);
-	PlaceMesh(this, Root, AllComps, KPath(TEXT("car"), TEXT("sedan")), FVector(15700, -500, 2), 0.f, 1.6f, true, true);
-	for (int32 k = 0; k < 6; ++k) PlaceMesh(this, Root, AllComps, KPath(TEXT("nat"), k % 2 ? TEXT("tree_default") : TEXT("tree_oak")), FVector(12800 + k * 1900.f, -900, 0), k * 50.f, KNat, true, true);
+	for (float X : { 15200.f, 15700.f })
+		if (!PlaceCar(FVector(X, -500, 2), 0.f)) PlaceMesh(this, Root, AllComps, KPath(TEXT("car"), TEXT("sedan")), FVector(X, -500, 2), 0.f, 1.6f, true, true);
+	for (int32 k = 0; k < 6; ++k) PlaceTree(FVector(12800 + k * 1900.f, -900, 0), k * 50.f);
 }

@@ -28,6 +28,9 @@ public:
 	UPROPERTY() USceneComponent* HandL;
 	UPROPERTY() USceneComponent* HandR;
 	UPROPERTY() USceneComponent* HoldRoot;   // held objects attach here (between the hands)
+	UPROPERTY() UStaticMeshComponent* ShadowBody;   // invisible round body + hands that only cast BIT's shadow
+	UPROPERTY() UStaticMeshComponent* ShadowHandL;
+	UPROPERTY() UStaticMeshComponent* ShadowHandR;
 	bool bHolding = false;
 
 	float WalkSpeed = 360.f;

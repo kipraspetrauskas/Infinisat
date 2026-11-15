@@ -5,8 +5,8 @@ import unreal
 
 ROOT = "/Game/Infinisat"
 PROJ = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
-MODELS = os.path.join(PROJ, "_downloads", "ph_clean")
-TEX = os.path.join(PROJ, "_downloads", "ph", "textures")
+MODELS = os.environ.get("IS_PH_MODELS", os.path.join(PROJ, "_downloads", "ph_clean"))   # downloads now live outside the project: C:/Dev/_downloads/ph_clean
+TEX = os.environ.get("IS_PH_TEX", os.path.join(PROJ, "_downloads", "ph", "textures"))
 FOLIAGE = {"fir_tree_01", "pine_tree_01", "tree_small_02", "shrub_01", "shrub_02", "shrub_03", "shrub_04", "island_tree_01", "jacaranda_tree", "potted_plant_01", "potted_plant_02", "potted_plant_04",
            "grass_medium_01", "grass_medium_02", "dandelion_01", "boulder_01", "rock_07"}
 
@@ -228,7 +228,7 @@ ONLY = os.environ.get("IS_ONLY", "")
 if not ONLY or "tex" in ONLY:
     import_textures()
 if not ONLY or "mat" in ONLY:
-    make_world_material()
+    make_world_material()   # NOTE: Tools/setup_pbr.py rebuilds M_IS_World with normal/roughness maps: run it after this step
     make_glass_material()
     make_foliage_material()
 if not ONLY or "models" in ONLY:

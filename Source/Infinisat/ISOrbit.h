@@ -39,6 +39,11 @@ namespace ISOrbit
 	void Kepler(double Mu, FVector3d& R, FVector3d& V, double Dt);
 	FISElements Elements(double Mu, double BodyRadius, const FVector3d& R, const FVector3d& V);
 	double CircularSpeed(double Mu, double R);
+	// Lambert's problem: the conic from R1 to R2 in Tof seconds, flown prograde about Normal. False if it did not converge
+	// (e.g. a transfer angle of exactly 180 deg, where the plane is undefined).
+	bool Lambert(double Mu, const FVector3d& R1, const FVector3d& R2, double Tof, const FVector3d& Normal, FVector3d& V1, FVector3d& V2);
+	// time from periapsis to radius R on a hyperbola with excess speed Vinf and periapsis radius Rp (s)
+	double HyperbolicTime(double Mu, double Rp, double Vinf, double R);
 }
 
 // A spacecraft flying on patched conics.

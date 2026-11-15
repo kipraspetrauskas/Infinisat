@@ -94,6 +94,10 @@ namespace ISSim
 	EISDest EffectiveDest(const FISDesign& D, const FISMission& M);
 	float EffectiveAlt(const FISDesign& D, const FISMission& M);
 	float DefaultAlt(EISDest Dest);
+	// one source of truth for the deep-space timeline (the 3D flight plan in ISTrajectory uses the same numbers)
+	bool IsDeepSpace(EISDest Dest);          // leaves Earth: Moon, Jupiter, interstellar
+	double DepartDay(EISDest Dest);          // departure burn from the parking orbit (0 = none)
+	double CruiseDays(EISDest Dest);         // arrival (orbit insertion) day; Jupiter = real Hohmann time of flight
 }
 
 // ------------------------------------------------------------------ Operations
@@ -127,6 +131,8 @@ public:
 	const FISEvent& PendingEvent() const { return Pending; }
 	const TArray<FISChoice>& Choices() const { return PendingChoices; }
 	void Choose(int32 Index);
+	// move a not-yet-reached event (matched by text prefix) to another day, e.g. to the exact moment the 3D flight burns
+	void Retime(const FString& Prefix, double NewDay);
 
 	double Day = 0.0;
 	double EndDay = 1.0;

@@ -3,6 +3,9 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace
 {
@@ -17,6 +20,19 @@ namespace
 }
 
 int32 ISQuality::Level = 2;
+
+bool ISDemo::bDemo = false;
+int32 ISDemo::Look = 0;
+FString ISDemo::Map;
+
+void ISDemo::Init(const UObject* Ctx)
+{
+	Map = Ctx ? UGameplayStatics::GetCurrentLevelName(Ctx, true) : FString();
+	bDemo = Map.StartsWith(TEXT("Demo_")) || FParse::Param(FCommandLine::Get(), TEXT("ISDemo"));
+	Look = bDemo ? 2 : 0;   // demo gameplay default: B bright morning (cinematics use A via -ISLook=1)
+	FParse::Value(FCommandLine::Get(), TEXT("ISLook="), Look);
+	Look = FMath::Clamp(Look, 0, 3);
+}
 
 namespace ISMat
 {

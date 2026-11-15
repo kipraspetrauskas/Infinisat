@@ -68,6 +68,7 @@ public:
 
 	void SetActive(bool bOn);
 	void ApplyLightQuality();     // room-light shadows follow the graphics preset (Epic: 2 main lights only)
+	void ApplyLook();             // demo look preset (ISDemo::Look): sun, sky, fog, clouds, fixed exposure, grade
 	FTransform SpawnPoint() const;
 
 	// --- order / design
@@ -203,6 +204,27 @@ private:
 	void RebuildTray();
 	UStaticMeshComponent* Block(const FVector& Center, const FVector& Size, const TCHAR* Tex, float Tile, const FLinearColor& Tint = FLinearColor::White, bool bCollide = true);
 	UStaticMeshComponent* Place(const TCHAR* Id, const FVector& Pos, float Yaw, float Scale = 1.f, bool bCollide = false);
+	// --- set dressing (ISDress.cpp): lived-in clutter from Poly Haven models
+	UStaticMeshComponent* Prop(const TCHAR* Id, const FVector& Pos, float Yaw, float Scale = 1.f, bool bSolid = false, bool bSettle = true);
+	UStaticMeshComponent* PropWall(const TCHAR* Id, bool bAlongX, float WallC, float Side, float Along, float Z, float YawOffset = 0.f, float Scale = 1.f, bool bSolid = true);
+	UStaticMeshComponent* Hang(const TCHAR* Id, const FVector& Pos, const FRotator& Rot, float Scale = 1.f);
+	int32 FillShelf(UStaticMeshComponent* Shelf, const TArray<float>& Levels, const TArray<const TCHAR*>& Ids, int32 Seed, float Fill = 0.9f);
+	UBoxComponent* Collider(const FBox& WorldBox);   // invisible blocking box (Poly Haven meshes come without collision)
+	int32 Litter(const TArray<const TCHAR*>& Ids, const FBox2D& Area, float Z, int32 Count, int32 Seed, float MinGap = 8.f);
+	void DressGarage();
+	void DressHouse();
+	void DressLaunchSite(const FVector& Pad);
+	UStaticMeshComponent* Deco(const TCHAR* Kit, const TCHAR* Name, const FVector& Pos, float Yaw, float Scale = 1.f, bool bSolid = false, bool bSettle = true);
+	void ValidateDress();
+	UStaticMeshComponent* PlaceTree(const FVector& P, float Yaw);
+	UStaticMeshComponent* PlaceCar(const FVector& P, float Yaw);
+	void GrassCarpet();
+	TArray<FISPlaced> Dressed;
+	// handmade kit pieces (ISDress.cpp)
+	static UStaticMesh* KitMeshAsset(const TCHAR* Kit, const TCHAR* Name);
+	static bool KitReady();
+	UStaticMeshComponent* KitPiece(const TCHAR* Kit, const TCHAR* Name, const FVector& BottomCentre, float Yaw, const FVector& Scale = FVector(1.f), bool bShadow = true);
+	void KitTile(const TCHAR* Kit, const TCHAR* Name, const FBox2D& Area, float Z, float TileX, float TileY, float ScaleZ = 1.f);
 	UBoxComponent* AddInteract(const FVector& Center, const FVector& Extent, FName Action);
 	UTextRenderComponent* AddSign(const FString& Text, const FVector& Pos, float Yaw, float Size, const FColor& Color);
 	void StepFlight(float Dt);
@@ -216,6 +238,12 @@ private:
 	UPROPERTY() UExponentialHeightFogComponent* Fog;
 	UPROPERTY() UVolumetricCloudComponent* Clouds;
 	UPROPERTY() APostProcessVolume* PPV = nullptr;
+	UPROPERTY() UDirectionalLightComponent* Rim = nullptr;   // look C: warm low back light
+	// demo looks: fixed exposure outdoors / indoors (lamp-lit rooms need ~2 stops more), blended when the camera crosses a doorway
+	TArray<FBox> Interiors;
+	float LookEV = 0.f, LookEVIn = 0.f, CurEV = 0.f;
+	bool bEVInit = false;
+	void UpdateLookExposure(float Dt);
 	UPROPERTY() ACameraActor* BenchCam = nullptr;
 	UPROPERTY() ACameraActor* ChaseCam = nullptr;
 	UPROPERTY() USceneComponent* CanRoot;

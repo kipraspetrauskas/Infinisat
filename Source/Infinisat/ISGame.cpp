@@ -40,6 +40,7 @@ void AISPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	if (!IsLocalController()) return;
+	ISDemo::Init(this);   // before the world is spawned: its sky reads the demo look
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -86,7 +87,7 @@ void AISPlayerController::BeginPlay()
 	ISQuality::Level = Graphics;
 	ApplyGraphics();
 	EnterMenu();
-	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld"));
+	const bool bWorldArg = FParse::Param(FCommandLine::Get(), TEXT("ISWorld")) || ISDemo::Map == TEXT("Demo_Backyard");
 	UE_LOG(LogInfinisat, Log, TEXT("PC BeginPlay: world=%d scene=%d ui=%d arg=%d"), World != nullptr, Scene != nullptr, UI.IsValid(), bWorldArg);
 	if (bWorldArg || ISCareer::bEnterWorldOnLoad) { ISCareer::bEnterWorldOnLoad = false; EnterWorld(); }
 	double OvA = 0.0;   // dev: -ISOverview=metres starts with the camera lifted above the site
@@ -182,6 +183,20 @@ void AISPlayerController::EnterWorld()
 	UE_LOG(LogInfinisat, Log, TEXT("EnterWorld: bit=%d"), Bit != nullptr);
 	Mode = EISMode::Walk;
 	SetCursorMode(false);
+	// dev: -ISCam=x,y,z,pitch,yaw[,fov] fixed camera for look comparisons (same frame every run)
+	FString CamS;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ISCam="), CamS, false))
+	{
+		TArray<FString> P; CamS.ParseIntoArray(P, TEXT(","));
+		if (P.Num() >= 5)
+		{
+			const FVector L(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]));
+			ACameraActor* Fixed = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), FTransform(FRotator(FCString::Atof(*P[3]), FCString::Atof(*P[4]), 0), L));
+			Fixed->GetCameraComponent()->SetFieldOfView(P.Num() >= 6 ? FCString::Atof(*P[5]) : 70.f);
+			Fixed->GetCameraComponent()->bConstrainAspectRatio = false;
+			SetViewTarget(Fixed);
+		}
+	}
 	if (PlayerCameraManager) PlayerCameraManager->StartCameraFade(1.f, 0.f, 1.2f, FLinearColor::Black, false, false);
 }
 

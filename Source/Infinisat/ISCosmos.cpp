@@ -18,6 +18,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Async/ParallelFor.h"
 #include "Components/LineBatchComponent.h"
+#include "ISOrbit.h"
 
 namespace ISCos
 {
@@ -405,6 +406,9 @@ void AISSpaceScene::ShowCosmos(const FISDesign& D)
 	BuildExoSystem(37, TEXT("Halcyon"), FVector(-110000, -290000, 52000), FLinearColor(1.f, 0.72f, 0.42f), 1700.f,
 		TEXT("FICTIONAL orange dwarf (K type), 0.8 Sun masses, 4,600 K. Astronomers think K stars are among the best hosts for life: calm, long-lived (15-30 billion years) and bright enough for a wide habitable zone."));
 	BuildBlackHole(FVector(360000, -170000, -18000));
+	CosmosBodyBase = CosmosBodies.Num();
+	CosmosCompBase = CosmosComps.Num();
+	SeedCosmosSim();
 	for (int32 i = 0; i < CosmosBodies.Num(); ++i) if (CosmosBodies[i].Name == TEXT("Earth")) { FocusCosmos(i); break; }
 	CamYaw = 150.f; CamPitch = -18.f;
 	CamFocus = CamFocusGoal; CamDist = CamDistGoal;
@@ -827,20 +831,368 @@ void AISSpaceScene::ClearCosmos()
 	CosmosComps.Reset();
 	CosmosBillboards.Reset();
 	CosmosBodies.Reset();
+	NBody = FISNBodySim();
+	SimToCosmos.Reset();
+	CosmosScale.Reset();
+	CosmosBodyBase = CosmosCompBase = 0;
+	bCosmosMission = false;
+	CosmosProbe = -1;
 	CosmosBackdrop = nullptr;
 	if (GEngine && GetWorld() && View == EISView::Cosmos) GEngine->Exec(GetWorld(), TEXT("r.SetNearClipPlane 10"));
 	if (SunLight) SunLight->SetVisibility(true);
 	if (FillLight) FillLight->SetIntensity(1.2f);
 }
 
+// ------------------------------------------------------------------------------------------------ a mission in the Cosmos view
+UTexture2D* AISSpaceScene::MoonTexture(const FString& Name)
+{
+	// same generated surfaces as the explorer's moons (shared cache key)
+	struct FM { const TCHAR* N; EWorld K; FLinearColor Tint; };
+	const FM Ms[] = { { TEXT("Io"), EWorld::Io, L(1, 1, 1) }, { TEXT("Europa"), EWorld::Europa, L(1, 1, 1) },
+		{ TEXT("Ganymede"), EWorld::Rock, L(0.7f, 0.65f, 0.58f) }, { TEXT("Callisto"), EWorld::Rock, L(0.45f, 0.4f, 0.36f) } };
+	for (const FM& M : Ms)
+	{
+		if (Name != M.N) continue;
+		const EWorld K = M.K; const FLinearColor Tint = M.Tint; const uint32 S = GetTypeHash(Name);
+		return CosmosTex(FString(TEXT("moon_")) + Name, 512, 256, [K, Tint, S](float U, float V) { return World(K, S, U, V, Tint); });
+	}
+	return nullptr;
+}
+
+// The solar-system view during a deep-space cruise: planets where they really are on the mission's day, the clock locked to
+// the mission, the probe and its whole route drawn on the compressed layout.
+void AISSpaceScene::SetCosmosMission(bool bOn)
+{
+	bCosmosMission = bOn && View == EISView::Cosmos && bVoyage && Voy.bValid;
+	if (!bCosmosMission) return;
+	CosmosMissionT = MissionDay * 86400.0;
+	SeedCosmosSim(Voy.Epoch + CosmosMissionT);
+	CosmosDays = MissionDay;
+	// an Earth mission's satellite on rails does not belong here
+	const int32 Ys = CosmosFind(TEXT("Your satellite"));
+	if (Ys >= 0) { CosmosBodies[Ys].Label.Reset(); CosmosBodies[Ys].Pivot->SetVisibility(false, true); }
+
+	const FString Where = ViewDest == EISDest::Jupiter ? TEXT("Jupiter") : TEXT("interstellar space");
+	const int32 I = AddCosmosBody(TEXT("Your probe"), TEXT("Solar System"), -1, 0.f, 1.f, 30.f, 0.f,
+		FString::Printf(TEXT("Your spacecraft on its way to %s. The orange line is where it has been, the blue line where gravity takes it next: no engine needed, it coasts on a real orbit around the Sun."), *Where));
+	if (MatGlow)
+	{
+		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(MatGlow, this);
+		M->SetTextureParameterValue(TEXT("Tex"), CosmosTex(TEXT("white"), 4, 4, [](float, float) { return FLinearColor::White; }));
+		M->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.6f, 0.2f));
+		M->SetScalarParameterValue(TEXT("Intensity"), 3.f);
+		CosmosSphere(CosmosBodies[I].Spinner, 30.f, M, false);
+	}
+	CosmosLabel(I, TEXT("YOUR PROBE"), FColor(255, 170, 60));
+	CosmosProbe = I;
+	// interstellar: name the two boundaries of the Sun's bubble (rings are drawn every frame)
+	if (ViewDest == EISDest::Interstellar)
+	{
+		const int32 SunS = NBody.Find(TEXT("Sun"));
+		const double Au = 1.495978707e8;
+		struct FMark { double AuR; const TCHAR* Text; };
+		const FMark Marks[] = { { 94.0, TEXT("Termination shock ~94 AU") }, { 120.0, TEXT("HELIOPAUSE ~120 AU: interstellar space") } };
+		for (const FMark& Mk : Marks)
+		{
+			const int32 K = AddCosmosBody(Mk.Text, TEXT("Solar System"), -1, 0.f, 1.f, 1.f, 0.f, TEXT("The edge of the bubble the solar wind blows into the gas between the stars. Voyager 1 crossed the heliopause in 2012 at 121 AU, Voyager 2 in 2018."));
+			CosmosBodies[K].Pivot->SetWorldLocation(FVector(0, CompressKm(SunS, Mk.AuR * Au, 0.f), 0));
+			CosmosLabel(K, Mk.Text, FColor(200, 150, 255));
+		}
+	}
+	CosmosBodyBase = CosmosBodies.Num();   // the sandbox's Reset keeps them
+	CosmosCompBase = CosmosComps.Num();
+	FocusCosmos(I);
+	CamDistGoal = 12000.f;                 // the inner solar system with the route in view, not a close-up of a dot
+}
+
+void AISSpaceScene::TickCosmosMission(TArray<FVector>& SimPos, TArray<uint8>& SimDone)
+{
+	if (!bCosmosMission || !Voy.bValid || !CosmosBodies.IsValidIndex(CosmosProbe) || NBody.B.Num() == 0 || SimPos.Num() == 0) return;
+	const double T = MissionDay * 86400.0;
+	const int32 SunS = NBody.Find(TEXT("Sun"));
+	const FVector SunC = CosmosSimPos(SunS, SimPos, SimDone);
+	// heliocentric position on the compressed layout; never drawn inside Earth or Jupiter (their spheres are exaggerated)
+	auto Disp = [&](double t)
+	{
+		const FVector3d H = Voy.HelioPos(t);
+		FVector Out = SunC + FVector(H.GetSafeNormal()) * CompressKm(SunS, H.Size(), 0.f);
+		for (const TCHAR* N : { TEXT("Earth"), TEXT("Jupiter") })
+		{
+			const int32 Ob = ISOrbit::FindBody(N), S = NBody.Find(N);
+			if (Ob < 0 || S < 0 || !NBody.B[S].bAlive) continue;
+			const FVector C = CosmosSimPos(S, SimPos, SimDone);
+			const float Touch = CosmosDispR(SimToCosmos[S]) * 1.15f;
+			const FVector D = Out - C;
+			if (D.Size() < Touch) Out = C + (D.IsNearlyZero() ? FVector(H - ISOrbit::BodyPos(Ob, Voy.Epoch + t)).GetSafeNormal() : D.GetSafeNormal()) * Touch;
+		}
+		return Out;
+	};
+	CosmosBodies[CosmosProbe].Pivot->SetWorldLocation(Disp(T));
+	if (!CosmosLines) return;
+	const double A = Voy.DepartT, B = Voy.ArriveT;
+	const int32 N = 300;
+	FVector Prev = Disp(A);
+	for (int32 i = 1; i <= N; ++i)
+	{
+		const double t = A + (B - A) * i / N;
+		const FVector P = Disp(t);
+		CosmosLines->DrawLine(Prev, P, t <= T ? FLinearColor(1.f, 0.55f, 0.15f) : FLinearColor(0.3f, 0.85f, 1.f), SDPG_World, 0.f, 0.f);
+		Prev = P;
+	}
+	if (ViewDest == EISDest::Interstellar)
+		for (const double Au : { 94.0, 120.0 })
+		{
+			const float Rr = CompressKm(SunS, Au * 1.495978707e8, 0.f);
+			FVector P0 = SunC + FVector(Rr, 0, 0);
+			for (int32 k = 1; k <= 256; ++k)
+			{
+				const float Ang = 2.f * PI * k / 256;
+				const FVector P1 = SunC + FVector(FMath::Cos(Ang), FMath::Sin(Ang), 0.f) * Rr;
+				CosmosLines->DrawLine(P0, P1, Au < 100.0 ? FLinearColor(0.4f, 0.8f, 1.f) * 0.6f : FLinearColor(0.8f, 0.4f, 1.f), SDPG_World, 0.f, 0.f);
+				P0 = P1;
+			}
+		}
+}
+
+// ------------------------------------------------------------------------------------------------ sandbox (real gravity)
+void AISSpaceScene::SeedCosmosSim(double T0)
+{
+	ISNBody::SeedSolarSystem(NBody, T0);
+	SimToCosmos.Init(-1, NBody.B.Num());
+	for (int32 c = 0; c < CosmosBodies.Num(); ++c)
+	{
+		FCosmosBody& B = CosmosBodies[c];
+		B.Sim = -1;
+		if (B.Pivot && !B.Pivot->IsVisible()) B.Pivot->SetVisibility(true, true);   // merged away in the last run
+		if (B.Group != TEXT("Solar System")) continue;
+		const int32 S = NBody.Find(B.Name);
+		if (S < 0 || SimToCosmos[S] >= 0) continue;
+		B.Sim = S;
+		B.RealR0 = NBody.B[S].Radius;
+		B.Pivot->SetRelativeScale3D(FVector::OneVector);
+		SimToCosmos[S] = c;
+	}
+	// the hand-made layout as a real-km -> scene-units curve per parent (e.g. Sun: Mercury 57.9e6 km -> 7000 ... Neptune -> 64000)
+	CosmosScale.Reset();
+	for (const FCosmosBody& B : CosmosBodies)
+	{
+		if (B.Sim < 0 || B.Parent < 0 || CosmosBodies[B.Parent].Sim < 0) continue;
+		const int32 P = CosmosBodies[B.Parent].Sim;
+		CosmosScale.FindOrAdd(P).Add(FVector2D(FMath::Loge((NBody.B[B.Sim].R - NBody.B[P].R).Size()), FMath::Loge((double)B.OrbitR)));
+	}
+	for (TPair<int32, TArray<FVector2D>>& It : CosmosScale) It.Value.Sort([](const FVector2D& A, const FVector2D& B) { return A.X < B.X; });
+	CosmosEventT = 0.f;
+}
+
+float AISSpaceScene::CosmosDispR(int32 C) const
+{
+	if (!CosmosBodies.IsValidIndex(C)) return 0.f;
+	const FCosmosBody& B = CosmosBodies[C];
+	return B.Sim >= 0 ? B.Radius * (float)(NBody.B[B.Sim].Radius / B.RealR0) : B.Radius;
+}
+
+float AISSpaceScene::CompressKm(int32 SimP, double Km, float Touch) const
+{
+	double D;
+	const double LK = FMath::Loge(FMath::Max(Km, 1.0));
+	const TArray<FVector2D>* Pts = CosmosScale.Find(SimP);
+	if (Pts && Pts->Num() > 0)
+	{
+		// log-log interpolation between the original children; proportional beyond the innermost / outermost
+		const TArray<FVector2D>& P = *Pts;
+		if (LK <= P[0].X) D = FMath::Exp(P[0].Y + LK - P[0].X);
+		else if (LK >= P.Last().X) D = FMath::Exp(P.Last().Y + LK - P.Last().X);
+		else
+		{
+			int32 k = 1;
+			while (P[k].X < LK) ++k;
+			D = FMath::Exp(FMath::Lerp(P[k - 1].Y, P[k].Y, (LK - P[k - 1].X) / (P[k].X - P[k - 1].X)));
+		}
+	}
+	else
+	{
+		// nothing orbited it at the start: square-root squeeze relative to its radius (close to the hand-made moon spacing)
+		const int32 C = SimToCosmos.IsValidIndex(SimP) ? SimToCosmos[SimP] : -1;
+		D = (C >= 0 ? CosmosDispR(C) : 100.f) * 0.55 * FMath::Sqrt(Km / FMath::Max(NBody.B[SimP].Radius, 1.0));
+	}
+	return (float)FMath::Max(D, (double)Touch);   // never draw two bodies overlapping before they really touch
+}
+
+// scene position of a simulated body: its current primary's scene position + the squeezed real offset
+FVector AISSpaceScene::CosmosSimPos(int32 S, TArray<FVector>& Memo, TArray<uint8>& Done) const
+{
+	if (Done[S]) return Memo[S];
+	const int32 P = NBody.Primary(S);
+	FVector Pos = FVector::ZeroVector;   // the heaviest body sits where the Sun was built
+	if (P >= 0)
+	{
+		const FVector3d D = NBody.B[S].R - NBody.B[P].R;
+		const double Km = D.Size();
+		const float Touch = CosmosDispR(SimToCosmos[S]) + CosmosDispR(SimToCosmos[P]);
+		Pos = CosmosSimPos(P, Memo, Done) + D / FMath::Max(Km, 1e-9) * CompressKm(P, Km, Touch);
+	}
+	Memo[S] = Pos;
+	Done[S] = 1;
+	return Pos;
+}
+
+void AISSpaceScene::CosmosScaleMass(int32 I, double F)
+{
+	if (!CosmosIsSim(I) || !CosmosAlive(I)) return;
+	FISNBody& X = NBody.B[CosmosBodies[I].Sim];
+	X.Mu *= F;
+	X.Radius *= FMath::Pow(F, 1.0 / 3.0);   // same density: radius grows with the cube root of the mass
+	NBody.Changed();
+	CosmosNotice(FString::Printf(TEXT("%s now has %.3g Earth masses."), *X.Name, X.Mu / 398600.4418));
+}
+
+void AISSpaceScene::CosmosNudge(int32 I, double F)
+{
+	if (!CosmosIsSim(I) || !CosmosAlive(I)) return;
+	const int32 S = CosmosBodies[I].Sim, P = NBody.Primary(S);
+	FISNBody& X = NBody.B[S];
+	const FVector3d Vp = P >= 0 ? NBody.B[P].V : FVector3d::ZeroVector;
+	X.V = Vp + (X.V - Vp) * F;
+	NBody.Changed();
+	CosmosNotice(FString::Printf(TEXT("%s %s by %.0f%%."), *X.Name, F > 1.0 ? TEXT("sped up") : TEXT("slowed down"), FMath::Abs(F - 1.0) * 100.0));
+}
+
+void AISSpaceScene::CosmosAddBody(int32 Kind)
+{
+	if (NBody.B.Num() == 0) return;
+	const int32 Sel = CosmosIsSim(CosmosSel) && CosmosAlive(CosmosSel) ? CosmosSel : SimToCosmos[NBody.Heaviest()];
+	const FISNBody T = NBody.B[CosmosBodies[Sel].Sim];   // copy: Add may reallocate
+	FRandomStream Rng(++CosmosAdded * 7919);
+	const double Ang = Rng.FRandRange(0.f, 2.f * PI);
+	const FVector3d Dir = FVector3d(Rng.FRandRange(-1.f, 1.f), Rng.FRandRange(-1.f, 1.f), Rng.FRandRange(0.2f, 0.8f)).GetSafeNormal();
+	FString Name, Facts;
+	double Mu, Rad;
+	FVector3d R, V;
+	float DispR;
+	EWorld Look = EWorld::Rock;
+	if (Kind == 0)
+	{
+		Name = FString::Printf(TEXT("New moon %d"), CosmosAdded);
+		Mu = FMath::Min(4902.8, T.Mu * 0.01);
+		Rad = 1737.4 * FMath::Pow(Mu / 4902.8, 1.0 / 3.0);
+		const double A = 30.0 * T.Radius;
+		const double Vc = ISOrbit::CircularSpeed(T.Mu + Mu, A);
+		R = T.R + FVector3d(FMath::Cos(Ang), FMath::Sin(Ang), 0) * A;
+		V = T.V + FVector3d(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Vc;
+		DispR = FMath::Max(20.f, CosmosBodies[Sel].Radius * 0.27f);
+		Facts = FString::Printf(TEXT("A moon you added on a circular orbit around %s, 30 of its radii out. Speed it up or slow it down to stretch the orbit."), *T.Name);
+	}
+	else if (Kind == 1)
+	{
+		Name = FString::Printf(TEXT("Rogue planet %d"), CosmosAdded);
+		Mu = 126686534.0;
+		Rad = 69911.0;
+		Look = EWorld::Gas;
+		const int32 H = NBody.Heaviest();
+		const double D = 3.0 * (T.R - NBody.B[H].R).Size() + 4.5e8;   // starts ~3 AU further out than the target
+		R = T.R + Dir * D;
+		V = T.V - Dir * 20.0;
+		DispR = 900.f;
+		Facts = FString::Printf(TEXT("A Jupiter-mass planet thrown out of another star system, falling at 20 km/s towards %s. Real rogue planets exist: microlensing surveys suggest there are billions in our galaxy."), *T.Name);
+	}
+	else
+	{
+		Name = FString::Printf(TEXT("Impactor %d"), CosmosAdded);
+		Mu = FMath::Min(T.Mu * 0.1, 42828.0);   // at most Mars-sized, like the Theia impact that probably made our Moon
+		Rad = 3389.5 * FMath::Pow(Mu / 42828.0, 1.0 / 3.0);
+		const double D = FMath::Max(60.0 * T.Radius, 1.0e6);
+		R = T.R + Dir * D;
+		V = T.V - Dir * 15.0;
+		DispR = FMath::Max(18.f, CosmosBodies[Sel].Radius * 0.25f);
+		Facts = FString::Printf(TEXT("A body on a collision course with %s at 15 km/s. When they touch they merge: mass and momentum are kept."), *T.Name);
+	}
+	const int32 S = NBody.Add(Name, Mu, Rad, R, V);
+	const int32 I = AddCosmosBody(Name, TEXT("Solar System"), Sel, 0.f, 1.f, DispR, 20.f, Facts);
+	const uint32 Seed = GetTypeHash(Name);
+	UTexture2D* Tex = CosmosTex(Look == EWorld::Gas ? TEXT("added_gas") : TEXT("added_rock"), 512, 256,
+		[Look, Seed](float U, float Vv) { return World(Look, Seed, U, Vv, Look == EWorld::Gas ? L(0.8f, 0.9f, 1.f) : L(0.6f, 0.55f, 0.5f)); });
+	CosmosPlanetTex(I, Tex, 0.f, 0.02f);
+	CosmosOrbitDots(I, FLinearColor(1.f, 0.6f, 0.2f) * 0.6f);
+	CosmosLabel(I, Name, FColor(255, 190, 120));
+	CosmosBodies[I].Sim = S;
+	CosmosBodies[I].RealR0 = Rad;
+	check(S == SimToCosmos.Num());
+	SimToCosmos.Add(I);
+	CosmosNotice(FString::Printf(TEXT("Added %s."), *Name));
+}
+
+void AISSpaceScene::CosmosResetSim()
+{
+	if (CosmosBodyBase <= 0) return;
+	for (int32 i = CosmosCompBase; i < CosmosComps.Num(); ++i) if (CosmosComps[i]) CosmosComps[i]->DestroyComponent();
+	CosmosComps.SetNum(CosmosCompBase);
+	CosmosBodies.SetNum(CosmosBodyBase);
+	if (!CosmosBodies.IsValidIndex(CosmosSel)) FocusCosmos(CosmosFind(TEXT("Earth")));
+	SeedCosmosSim();
+	CosmosDays = 0.0;
+	CosmosNotice(TEXT("Back to the real Solar System."));
+}
+
+FString AISSpaceScene::CosmosSimInfo(int32 I) const
+{
+	if (!CosmosIsSim(I)) return FString();
+	const int32 S = CosmosBodies[I].Sim;
+	const FISNBody& X = NBody.B[S];
+	if (!X.bAlive) return TEXT("Destroyed in a collision.");
+	const double Me = X.Mu / 398600.4418;
+	FString Out = Me >= 1000.0 ? FString::Printf(TEXT("%.0f Earth masses (%.3g Suns)"), Me, X.Mu / 1.32712440018e11) : FString::Printf(TEXT("%.3g Earth masses"), Me);
+	const int32 P = NBody.Primary(S);
+	if (P < 0) return Out + TEXT(". Everything else orbits it.");
+	const FISNBody& Pb = NBody.B[P];
+	const FVector3d R = X.R - Pb.R, V = X.V - Pb.V;
+	const FISElements E = ISOrbit::Elements(Pb.Mu + X.Mu, Pb.Radius, R, V);
+	const double Km = R.Size();
+	Out += FString::Printf(TEXT(". Orbits %s at %.2f km/s, %s km away."), *Pb.Name, V.Size(),
+		*(Km >= 1e6 ? FString::Printf(TEXT("%.1f million"), Km / 1e6) : FString::Printf(TEXT("%.0f"), Km)));
+	if (E.E < 1.0)
+	{
+		const double Days = E.Period / 86400.0;
+		Out += Days < 2.0 ? FString::Printf(TEXT(" Period %.1f h"), Days * 24.0) : Days < 730.0 ? FString::Printf(TEXT(" Period %.1f d"), Days) : FString::Printf(TEXT(" Period %.1f y"), Days / 365.25);
+		Out += FString::Printf(TEXT(", eccentricity %.3f."), E.E);
+	}
+	else Out += TEXT(" On an escape path.");
+	if (E.Periapsis < 0.0 && FVector3d::DotProduct(R, V) < 0.0) Out += TEXT(" Collision course!");
+	return Out;
+}
+
 void AISSpaceScene::TickCosmos(float Dt, const FVector& CamLoc)
 {
 	CosmosDays += Dt * CosmosRate;
+	CosmosEventT -= Dt;
+	// the Solar System on real gravity; everything with Sim < 0 (spacecraft, other stars) stays on its rails below
+	TArray<FVector> SimPos;
+	TArray<uint8> SimDone;
+	if (NBody.B.Num() > 0)
+	{
+		// a mission in progress drives the clock (the probe and the planets stay on the same day); otherwise the speed buttons
+		double Step = (double)Dt * CosmosRate * 86400.0;
+		if (bCosmosMission) { Step = FMath::Max(0.0, MissionDay * 86400.0 - CosmosMissionT); CosmosMissionT += Step; }
+		NBody.Advance(Step);
+		CosmosDays = bCosmosMission ? MissionDay : NBody.T / 86400.0;
+		if (!NBody.LastEvent.IsEmpty()) { CosmosNotice(NBody.LastEvent); NBody.LastEvent.Reset(); }
+		SimPos.SetNumZeroed(NBody.B.Num());
+		SimDone.SetNumZeroed(NBody.B.Num());
+		for (int32 s = 0; s < NBody.B.Num(); ++s)
+		{
+			const int32 c = SimToCosmos[s];
+			if (c < 0) continue;
+			FCosmosBody& B = CosmosBodies[c];
+			if (!NBody.B[s].bAlive) { if (B.Pivot->IsVisible()) B.Pivot->SetVisibility(false, true); continue; }
+			B.Pivot->SetWorldLocation(CosmosSimPos(s, SimPos, SimDone));
+			B.Pivot->SetRelativeScale3D(FVector(NBody.B[s].Radius / B.RealR0));
+		}
+	}
 	for (FCosmosBody& B : CosmosBodies)
 	{
-		if (B.Parent >= 0)
+		if (B.Parent >= 0 && B.Sim < 0)
 		{
 			const FCosmosBody& P = CosmosBodies[B.Parent];
+			if (!P.Pivot->IsVisible() && B.Pivot->IsVisible()) B.Pivot->SetVisibility(false, true);   // its planet was destroyed
 			B.Angle += FMath::Min(2.f * PI / FMath::Max(0.01f, B.PeriodDays) * CosmosRate, 1.2f) * Dt;
 			const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(B.Node)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(B.Inc));
 			B.Pivot->SetWorldLocation(P.Pivot->GetComponentLocation() + Q.RotateVector(FVector(FMath::Cos(B.Angle), FMath::Sin(B.Angle), 0.f) * B.OrbitR));
@@ -855,9 +1207,36 @@ void AISSpaceScene::TickCosmos(float Dt, const FVector& CamLoc)
 	if (CosmosLines)
 	{
 		CosmosLines->Flush();
-		for (const FCosmosBody& B : CosmosBodies)
+		for (int32 i = 0; i < CosmosBodies.Num(); ++i)
 		{
-			if (B.Parent < 0 || B.OrbitColor.A <= 0.f) continue;
+			const FCosmosBody& B = CosmosBodies[i];
+			if (B.Parent < 0 || B.OrbitColor.A <= 0.f || !B.Pivot->IsVisible()) continue;
+			if (B.Sim >= 0)
+			{
+				// the conic it is on right now around what it currently orbits (osculating orbit): mass edits reshape it at once
+				const int32 S = B.Sim, Pi = NBody.Primary(S);
+				if (Pi < 0) continue;
+				const FISNBody& X = NBody.B[S];
+				const FISNBody& Pb = NBody.B[Pi];
+				FVector3d R = X.R - Pb.R, V = X.V - Pb.V;
+				const double Mu = Pb.Mu + X.Mu;
+				const FISElements E = ISOrbit::Elements(Mu, Pb.Radius, R, V);
+				const bool bClosed = E.E < 1.0 && E.Period > 0.0;
+				const int32 N = bClosed ? 192 : 96;
+				const double Step = (bClosed ? E.Period : 4.0 * R.Size() / FMath::Max(V.Size(), 1e-6)) / N;
+				const FVector C = CosmosSimPos(Pi, SimPos, SimDone);
+				const float Touch = CosmosDispR(i) + CosmosDispR(SimToCosmos[Pi]);
+				auto Map = [&](const FVector3d& Q) { const double K = Q.Size(); return C + Q / FMath::Max(K, 1e-9) * CompressKm(Pi, K, Touch); };
+				FVector Prev = Map(R);
+				for (int32 k = 1; k <= N; ++k)
+				{
+					ISOrbit::Kepler(Mu, R, V, Step);
+					const FVector Pt = Map(R);
+					CosmosLines->DrawLine(Prev, Pt, B.OrbitColor, SDPG_World, 0.f, 0.f);
+					Prev = Pt;
+				}
+				continue;
+			}
 			const FVector C = CosmosBodies[B.Parent].Pivot->GetComponentLocation();
 			const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(B.Node)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(B.Inc));
 			const int32 N = B.OrbitR > 20000.f ? 256 : 128;
@@ -871,6 +1250,7 @@ void AISSpaceScene::TickCosmos(float Dt, const FVector& CamLoc)
 			}
 		}
 	}
+	TickCosmosMission(SimPos, SimDone);
 	if (CosmosBackdrop) CosmosBackdrop->SetWorldLocation(CamLoc);
 	Sky->SetWorldLocation(CamLoc);
 	for (USceneComponent* S : CosmosBillboards)

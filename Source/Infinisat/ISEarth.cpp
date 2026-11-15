@@ -61,12 +61,34 @@ void AISEarth::Tick(float Dt)
 	Super::Tick(Dt);
 	// level the site with the real ground: once the terrain under the origin has loaded, move the georeference so
 	// that the real surface at the pad is exactly the site floor (Z = 0)
-	if (!Terrain || bHeightFixed || bEarthOrigin) return;
+	if (!Terrain || bEarthOrigin) return;
 	FixT += Dt;
 	if (FixT < 1.f) return;
 	FixT = 0.f;
 	FHitResult H;
 	FCollisionQueryParams Q(TEXT("ISEarthLevel"), true);
+	if (bHeightFixed)
+	{
+		// clearance: the real ground must stay under the whole site plate. Levelled at one point only, the hills behind the
+		// house rose above the yard and you stood under the terrain, seeing just its tile skirts as dark ribbons in the sky.
+		// Sample the plate for the first half minute (finer tiles keep arriving) and lift the site over the highest point.
+		if (ClearChecks >= 30) return;
+		++ClearChecks;
+		float MaxZ = -1e9f;
+		for (int32 j = 0; j <= 6; ++j) for (int32 i = 0; i <= 10; ++i)
+		{
+			const FVector P(FMath::Lerp(-10000.f, 25000.f, i / 10.f), FMath::Lerp(-6000.f, 7500.f, j / 6.f), 0.f);
+			if (Terrain->ActorLineTraceSingle(H, P + FVector(0, 0, 500000.f), P - FVector(0, 0, 500000.f), ECC_Visibility, Q))
+				MaxZ = FMath::Max(MaxZ, (float)H.ImpactPoint.Z);
+		}
+		if (MaxZ > -5.f)   // within 5 cm of the floor or above it: lift (cm -> m, plus a 10 cm margin)
+		{
+			SiteHeight += MaxZ / 100.0 + 0.1;
+			Geo->SetOriginLongitudeLatitudeHeight(FVector(SiteLon, SiteLat, SiteHeight));
+			UE_LOG(LogTemp, Log, TEXT("[EARTH] real ground %.1f m above the site floor: site raised to %.1f m"), MaxZ / 100.f, SiteHeight);
+		}
+		return;
+	}
 	if (Terrain->ActorLineTraceSingle(H, FVector(0, 0, 500000.f), FVector(0, 0, -500000.f), ECC_Visibility, Q))
 	{
 		SiteHeight += H.ImpactPoint.Z / 100.0;
@@ -201,7 +223,9 @@ void AISEarth::SetStyled(bool bOn)
 	if (!Terrain || bStyled == bOn) return;
 	if (!StyleMat) StyleMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Terrain.M_IS_Terrain"));
 	if (!StyleMat) return;
-	if (!PhotoMat) PhotoMat = Terrain->GetMaterial();
+	// PhotoMat was captured in BeginPlay before the style went on. It is usually nullptr, which is right: an empty
+	// tileset material means Cesium's own photo material (MI_CesiumThreeOverlaysAndClipping). Re-reading it here returned
+	// the stylised material, so the views from space showed the flat "sea" colours instead of the real Earth.
 	bStyled = bOn;
 	Terrain->SetMaterial(bOn ? StyleMat : PhotoMat);
 }

@@ -241,6 +241,33 @@ namespace ISBuild
 			Prim(O, P, ISMat::Cyl(), B + FVector(0.3f, 0.3f, 0.88f), FVector(0.2f, 0.2f, 0.1f), Gold, M, FRotator::ZeroRotator, 1.f);
 			return 1.f;
 		}
+		if (S == TEXT("ex_sd"))
+		{
+			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.1f), FVector(2.4f, 1.8f, 0.16f), PCBBlue, M);
+			Prim(O, P, ISMat::Cube(), B + FVector(0.3f, 0, 0.3f), FVector(1.4f, 1.2f, 0.2f), Silver, M, FRotator::ZeroRotator, 1.f, 0.2f);   // card socket
+			Prim(O, P, ISMat::Cube(), B + FVector(0.5f, 0, 0.42f), FVector(1.1f, 1.0f, 0.06f), Chip, M);                               // the card
+			Pins(O, P, B + FVector(-1.f, -0.75f, 0.35f), FVector(0, 0.254f, 0), 6, M);
+			return 0.6f;
+		}
+		if (S == TEXT("pl_imu"))
+		{
+			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.1f), FVector(2.1f, 1.6f, 0.16f), PCBBlue, M);
+			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 0.24f), FVector(0.4f, 0.4f, 0.1f), Chip, M);
+			Pins(O, P, B + FVector(-0.95f, -0.6f, 0.35f), FVector(0.254f, 0, 0), 8, M);
+			return 0.6f;
+		}
+		if (S == TEXT("ex_parafoil"))
+		{
+			// folded ripstop wing (two-colour, like the sketch) with two SG90 servos and their control lines
+			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 1.0f), FVector(4.2f, 3.0f, 1.8f), FLinearColor(0.15f, 0.3f, 0.85f), M, FRotator::ZeroRotator, 0.f, 0.9f);
+			Prim(O, P, ISMat::Cube(), B + FVector(0, 0, 1.95f), FVector(4.2f, 1.2f, 0.12f), FLinearColor(0.85f, 0.15f, 0.15f), M, FRotator::ZeroRotator, 0.f, 0.9f);
+			for (int32 s : { -1, 1 })
+			{
+				Prim(O, P, ISMat::Cube(), B + FVector(s * 1.6f, 1.9f, 0.6f), FVector(1.2f, 0.6f, 1.1f), FLinearColor(0.1f, 0.25f, 0.8f), M);   // servo body
+				Prim(O, P, ISMat::Cyl(), B + FVector(s * 1.6f, 1.9f, 1.25f), FVector(0.3f, 0.3f, 0.2f), FLinearColor(0.95f, 0.95f, 0.95f), M);  // horn hub
+			}
+			return 2.1f;
+		}
 		if (S == TEXT("ex_chute_s") || S == TEXT("ex_chute_l"))
 		{
 			const float D = S == TEXT("ex_chute_l") ? 4.6f : 3.4f;

@@ -453,6 +453,8 @@ void AISPlayerController::TickCanTest(float Dt)
 	case 1:
 		if (FParse::Param(FCommandLine::Get(), TEXT("ISBenchEmpty"))) { EnterBench(); CanTestStep = 99; return; }   // dev: all parts found, empty can, play the bench by hand
 		for (const char* Id : { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l" }) World->BenchToggle(FName(Id));
+		// -ISCanTestPlus: the CanFusion upgrades instead of the plain chute (SD log, gyro, steerable parafoil)
+		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestPlus"))) { World->BenchToggle("ex_chute_l"); for (const char* Id : { "ex_sd", "pl_imu", "ex_parafoil" }) World->BenchToggle(FName(Id)); }
 		Log(FString::Printf(TEXT("built: %.0f g, stack %.1f cm"), World->Eval.TotalKg * 1000.f, World->StackHeightCm));
 		if (FParse::Param(FCommandLine::Get(), TEXT("ISCanTestBench"))) { EnterBench(); CanTestStep = 99; return; }   // stay at the bench for a screenshot
 		World->BenchSeal();

@@ -43,6 +43,8 @@ namespace ISTag
 	static const FName HGA(TEXT("HGA"));
 	static const FName Wiring(TEXT("Wiring"));
 	static const FName Buzzer(TEXT("Buzzer"));
+	static const FName IMU(TEXT("IMU"));        // gyro + accelerometer (CanSat MPU6050)
+	static const FName SDLog(TEXT("SDLog"));    // onboard data logger (CanSat microSD)
 }
 
 struct FISPart

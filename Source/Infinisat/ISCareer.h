@@ -7,6 +7,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/DateTime.h"
 
 struct FISMission;
 
@@ -17,6 +18,7 @@ struct FISCareerReward
 	int32 Science = 0;
 	int32 NewStars = 0;      // stars above the previous best (repeat flights only pay for improvements)
 	bool bRepeat = false;
+	int32 Days = 0;          // calendar time the flight campaign took
 	TArray<int32> NewContracts;   // mission indices this flight opened up
 };
 
@@ -33,7 +35,18 @@ namespace ISCareer
 		int32 Tier = 0;          // highest researched tech tier (parts with Unlock <= Tier can be built)
 		int32 Flights = 0;
 		TArray<int32> Best;      // best stars per mission (-1 = never flown)
+		// company calendar: days since the company was founded (Founded()). Time passes when work is done -
+		// a flight campaign (build, test, ship, launch, commissioning) or a research project - never with the real clock
+		double Day = 0.0;
+		TArray<double> PostedDay;   // the day each contract reached Mission Control (-1 = not yet)
 	};
+
+	FDateTime Founded();          // 16 Nov 2026, the morning the garage company starts
+	FDateTime Today();            // Founded() + Day
+	FString DateText(double Day); // "16 Nov 2026"
+	int32 CampaignDays(int32 Chapter);   // build + test + ship + launch + commissioning for an order of that chapter
+	static constexpr int32 ResearchDays = 45;
+	void PassDays(double Days);   // advances the calendar and posts contracts that just opened
 
 	FState& Get();
 	void Load();
@@ -65,5 +78,5 @@ namespace ISCareer
 	FISCareerReward Award(int32 MissionIdx, int32 Stars, int32 MetObjectives, double DataGb, double CostM);
 	FString RewardText(const FISCareerReward& R);
 
-	FString StatusLine();   // "FUNDS $12.4M   REPUTATION 40   SCIENCE 22   TECH 2"
+	FString StatusLine();   // "16 NOV 2026   FUNDS $12.4M   REPUTATION 40   SCIENCE 22   TECH 2"
 }

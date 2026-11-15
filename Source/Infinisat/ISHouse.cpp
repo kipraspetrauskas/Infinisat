@@ -855,6 +855,10 @@ void AISHomeWorld::SpawnHunt()
 	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-690, 130, JunkBoxTop), false, TEXT("buzzer"), 1.f);
 	Add("pl_gnss_mini", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
 	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("Office desk, behind the laptop"), FVector(DeskBox.Max.X - 12.f, DeskTopY + 22.f, DeskTopZ), false, nullptr, 1.f);
+	// optional upgrades from a real student CanSat (team CanFusion): onboard log, gyro, steerable parafoil
+	Add("ex_sd", TEXT("microSD card module"), TEXT("Office desk, next to the ESP32"), FVector(262.f + 45.f, DeskTopY - 30.f, DeskTopZ), false, nullptr, 1.f);
+	Add("pl_imu", TEXT("MPU6050 gyro board"), TEXT("Electronics kit on the office shelf"), FVector(OfficeShelfX, 915.f + 30.f, OfficeShelfTop), false, nullptr, 1.f);
+	Add("ex_parafoil", TEXT("Parafoil + 2 servos (RC plane parts)"), TEXT("Box of old electronics in the garage"), FVector(-690.f, 130.f + 45.f, JunkBoxTop), false, nullptr, 1.f);
 }
 
 int32 AISHomeWorld::FoundCount(bool bRequiredOnly) const

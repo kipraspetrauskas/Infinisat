@@ -20,6 +20,7 @@ namespace ISCareer
 		static FState S;
 		const int32 N = ISData::Missions().Num();
 		if (S.Best.Num() != N) { const int32 Old = S.Best.Num(); S.Best.SetNum(N); for (int32 i = Old; i < N; ++i) S.Best[i] = -1; }
+		if (S.PostedDay.Num() != N) { const int32 Old = S.PostedDay.Num(); S.PostedDay.SetNum(N); for (int32 i = Old; i < N; ++i) S.PostedDay[i] = -1.0; }
 		return S;
 	}
 
@@ -49,6 +50,15 @@ namespace ISCareer
 			for (int32 i = 0; i < P.Num() && i < S.Best.Num(); ++i) S.Best[i] = FCString::Atoi(*P[i]);
 		}
 		GConfig->GetBool(Section, TEXT("AllOpen"), bAllOpen, GGameUserSettingsIni);
+		FString D;
+		if (GConfig->GetString(Section, TEXT("Day"), D, GGameUserSettingsIni)) S.Day = FCString::Atod(*D);
+		FString PD;
+		if (GConfig->GetString(Section, TEXT("Posted"), PD, GGameUserSettingsIni))
+		{
+			TArray<FString> P; PD.ParseIntoArray(P, TEXT(","));
+			for (int32 i = 0; i < P.Num() && i < S.PostedDay.Num(); ++i) S.PostedDay[i] = FCString::Atod(*P[i]);
+		}
+		PassDays(0.0);   // saves from before the calendar: post what is already open, today
 	}
 
 	void Save()
@@ -65,6 +75,10 @@ namespace ISCareer
 		for (int32 i = 0; i < S.Best.Num(); ++i) B += (i ? TEXT(",") : TEXT("")) + FString::FromInt(S.Best[i]);
 		GConfig->SetString(Section, TEXT("Best"), *B, GGameUserSettingsIni);
 		GConfig->SetBool(Section, TEXT("AllOpen"), bAllOpen, GGameUserSettingsIni);
+		GConfig->SetString(Section, TEXT("Day"), *FString::Printf(TEXT("%.3f"), S.Day), GGameUserSettingsIni);
+		FString PD;
+		for (int32 i = 0; i < S.PostedDay.Num(); ++i) PD += (i ? TEXT(",") : TEXT("")) + FString::Printf(TEXT("%.1f"), S.PostedDay[i]);
+		GConfig->SetString(Section, TEXT("Posted"), *PD, GGameUserSettingsIni);
 		GConfig->Flush(false, GGameUserSettingsIni);
 	}
 
@@ -75,6 +89,7 @@ namespace ISCareer
 		Get();   // re-size Best
 		S.bStarted = true;
 		S.FundsM = 0.0005;   // $500 of pocket money for the first CanSat
+		PassDays(0.0);       // the first orders are posted on day one
 		if (!Fresh()) GConfig->EmptySection(TEXT("InfinisatProgress"), GGameUserSettingsIni);   // the house starts over too (parts to find, empty bench)
 		Save();
 	}
@@ -151,6 +166,7 @@ namespace ISCareer
 		S.Science -= TierScience(T);
 		S.FundsM -= TierFundsM(T);
 		S.Tier = T;
+		PassDays(ResearchDays);   // research takes the lab a month and a half
 		Save();
 		return true;
 	}
@@ -182,6 +198,8 @@ namespace ISCareer
 		S.Science += R.Science;
 		S.Best[Idx] = FMath::Max(Prev, Stars);
 		++S.Flights;
+		R.Days = CampaignDays(M.Chapter);
+		PassDays(R.Days);
 		for (int32 i = 0; i < Ms.Num(); ++i) if (!WasOpen[i] && ContractOpen(i)) R.NewContracts.Add(i);
 		Save();
 		return R;
@@ -191,6 +209,7 @@ namespace ISCareer
 	{
 		FString S = FString::Printf(TEXT("%s%s funds     %s%d reputation     +%d science"),
 			R.FundsM >= 0 ? TEXT("+") : TEXT("-"), *ISSim::FmtMoney(FMath::Abs(R.FundsM)), R.Rep >= 0 ? TEXT("+") : TEXT(""), R.Rep, R.Science);
+		if (R.Days > 0) S += FString::Printf(TEXT("\nThe campaign (build, test, ship, launch, first contact) took %d days: it is now %s."), R.Days, *DateText(Get().Day));
 		if (R.bRepeat && R.NewStars == 0) S += TEXT("\n(A repeat flight: no new stars, so the client pays nothing extra.)");
 		for (int32 i : R.NewContracts)
 			if (ISData::Missions().IsValidIndex(i)) S += TEXT("\nNEW CONTRACT at Mission Control: ") + ISData::Missions()[i].Title;
@@ -203,6 +222,29 @@ namespace ISCareer
 	FString StatusLine()
 	{
 		const FState& S = Get();
-		return FString::Printf(TEXT("FUNDS %s     REPUTATION %d     SCIENCE %d     TECH TIER %d"), *ISSim::FmtMoney(S.FundsM), S.Rep, S.Science, S.Tier);
+		return FString::Printf(TEXT("%s     FUNDS %s     REPUTATION %d     SCIENCE %d     TECH TIER %d"), *DateText(S.Day).ToUpper(), *ISSim::FmtMoney(S.FundsM), S.Rep, S.Science, S.Tier);
+	}
+
+	// ------------------------------------------------------------------ calendar
+	FDateTime Founded() { return FDateTime(2026, 11, 16, 9, 0, 0); }
+	FDateTime Today() { return Founded() + FTimespan::FromDays(Get().Day); }
+	FString DateText(double Day)
+	{
+		static const TCHAR* Mo[] = { TEXT("Jan"), TEXT("Feb"), TEXT("Mar"), TEXT("Apr"), TEXT("May"), TEXT("Jun"), TEXT("Jul"), TEXT("Aug"), TEXT("Sep"), TEXT("Oct"), TEXT("Nov"), TEXT("Dec") };
+		const FDateTime D = Founded() + FTimespan::FromDays(FMath::Max(0.0, Day));
+		return FString::Printf(TEXT("%d %s %d"), D.GetDay(), Mo[D.GetMonth() - 1], D.GetYear());
+	}
+	int32 CampaignDays(int32 Chapter)
+	{
+		// a CanSat is a weekend; real satellites take months even with a ready bus (kept short so a career fits a few years)
+		static const int32 D[] = { 2, 120, 150, 180, 120, 210, 300, 360 };
+		return D[FMath::Clamp(Chapter, 0, 7)];
+	}
+	void PassDays(double Days)
+	{
+		FState& S = Get();
+		S.Day += FMath::Max(0.0, Days);
+		for (int32 i = 0; i < S.PostedDay.Num(); ++i)
+			if (S.PostedDay[i] < 0.0 && ContractOpen(i)) S.PostedDay[i] = S.Day;
 	}
 }

@@ -42,9 +42,13 @@
 
 - **Art**: one style across house, space centre, pad and stand (currently low-poly house vs grey boxes vs clean room). Blender pass per the memory plan.
 - **Facilities**: let funds upgrade buildings (bigger stand = heavier buses, tracking dish = more data/science).
-- **Time**: one company calendar (missions take days/years; contracts expire), instead of real-world dates.
-- **Window exposure**: the outside looks dark through windows from inside the house.
-- **Globe view**: in `-ISScreen=globe` screenshots the Cesium globe had not streamed in (blue faceted surface); check in a real play session.
+- **Time** (done 2026-11-15): company calendar from 16 Nov 2026; flight campaigns (2 days for a CanSat, 4-12 months for satellites) and research (45 days) advance it; contracts carry the date they were posted. Next: contract deadlines that matter.
+- **Window exposure** (fixed): the sun was 10 lux, dimmer than the room lamps, so indoor auto-exposure darkened the outdoors. Sun 60 lux, sky light 2.
+- **Globe view** (fixed): the space views kept the stylised walking-world terrain material (flat "sea" colours); the photo material is restored now. A faint grid pattern over the far globe remains to check.
+
+## Reference CanSat: team CanFusion (KTU Engineering Lyceum)
+
+The user's own team CanSat (photos, firmware and ground-station code in the Cansat zip, not in the repo: the receiver code contains a Wi-Fi password). In the game: the CanSat contract's real-world reference, plus three optional parts found around the house, each with a real effect: microSD logger (full data back if the can is recovered), MPU6050 (landing g; it clips at 16 g), steerable parafoil + 2 servos (glides 3 m/s toward the pad, only with the gyro; useless when the wind is faster). The debrief applies their hand landing check (E = 1/2 m v^2, F = E / 2 cm) to the player's can.
 
 ## Licensing note on `Infinisat 5.8/New data`
 

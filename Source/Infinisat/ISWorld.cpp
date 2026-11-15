@@ -30,7 +30,7 @@ namespace
 	FString TexPath(const TCHAR* T) { return FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_diff.%s_diff"), T, T); }
 	const TArray<FName>& CanSatTray()
 	{
-		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss_mini", "pl_cam_mini", "pl_bme280", "ex_chute_s" };   // hobby parts only: real CanSats cost tens of dollars
+		static TArray<FName> T = { "bat_aa", "cpu_ard", "com_433", "pl_temp", "ex_wires", "ex_chute_l", "ex_buzzer", "pl_gnss_mini", "pl_cam_mini", "pl_bme280", "ex_chute_s", "ex_sd", "pl_imu", "ex_parafoil" };   // hobby parts only: real CanSats cost tens of dollars
 		return T;
 	}
 	int32 StackOrder(EISCat C)
@@ -149,7 +149,10 @@ UTextRenderComponent* AISHomeWorld::AddSign(const FString& Text, const FVector& 
 void AISHomeWorld::BuildSky()
 {
 	Sun->SetRelativeRotation(FRotator(-38.f, 125.f, 0.f));
-	Sun->SetIntensity(10.f);
+	// daylight must out-shine the room lamps (real: ~100,000 lux sun vs ~300 lux indoors). At 10 lux the 600-1,800 lm
+	// ceiling lights made the rooms brighter than the yard, so indoor auto-exposure turned the view through every window
+	// dark grey. 60 lux sun + a brighter sky keeps the rooms lamp-lit but the windows read as bright day.
+	Sun->SetIntensity(60.f);
 	Sun->SetAtmosphereSunLight(true);
 	Sun->SetCastShadows(true);
 	Sun->SetDynamicShadowCascades(4);
@@ -157,7 +160,7 @@ void AISHomeWorld::BuildSky()
 	SkyLight->bRealTimeCapture = true;
 	SkyLight->SetMobility(EComponentMobility::Movable);
 	SkyLight->SourceType = ESkyLightSourceType::SLS_CapturedScene;
-	SkyLight->SetIntensity(1.f);
+	SkyLight->SetIntensity(2.f);
 	Fog->SetFogDensity(AISEarth::Enabled() ? 0.0012f : 0.006f);   // on the real Earth the view reaches the real horizon
 	Fog->SetFogHeightFalloff(0.25f);
 	if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
@@ -858,6 +861,8 @@ void AISHomeWorld::Tick(float Dt)
 			RocketPosM = FVector(0, 0, 0.4f); RocketVelM = FVector::ZeroVector;
 			TelemetryTotal = TelemetryGot = 0;
 			Telemetry.Reset();
+			SdLog.Reset();
+			bSteered = false; LandingG = 0.f;
 			Report = FISFlightReport();
 			// where the parts sit matters (see ISBench.cpp)
 			UpdatePlacementFlags();
@@ -942,7 +947,16 @@ void AISHomeWorld::StepFlight(float Dt)
 			Area = 0.f;
 			for (const FName& Id : Design.Parts) if (const FISPart* P = ISData::FindPart(Id)) if (P->Tag == ISTag::Parachute) Area += P->SailM2;
 		}
-		const FVector Rel = CanVelMs - WindMs;
+		// steerable parafoil (team CanFusion style): the servos pull the lines to turn the wing toward the pad. It only works
+		// with a gyro: the computer must know which way the can is turning. The wing glides ~3 m/s through the AIR, so the
+		// canopy drag settles the can at wind + glide (it can only make headway when the wind is slower than its glide).
+		FVector Glide = FVector::ZeroVector;
+		if (bChute && Design.Has("ex_parafoil") && Design.HasTag(ISTag::IMU) && CanPosM.Z > 2.f)
+		{
+			const FVector2D ToPad(-CanPosM.X, -CanPosM.Y);
+			if (ToPad.Size() > 3.f) { const FVector2D D = ToPad.GetSafeNormal() * 3.f; Glide = FVector(D.X, D.Y, 0.f); bSteered = true; }
+		}
+		const FVector Rel = CanVelMs - WindMs - Glide;
 		const FVector Drag = -0.5f * RhoAt(CanPosM.Z) * Cd * Area * Rel.Size() * Rel;
 		CanVelMs += (Drag / CanKg + FVector(0, 0, -G)) * Dt;
 		CanPosM += CanVelMs * Dt;
@@ -952,6 +966,7 @@ void AISHomeWorld::StepFlight(float Dt)
 			CanPosM.Z = 0.f;
 			Report.LandingSpeed = FMath::Abs(CanVelMs.Z);
 			Report.bBroken = Report.LandingSpeed > 15.f;
+			LandingG = Report.LandingSpeed * Report.LandingSpeed / (2.f * 0.02f * G);   // v^2 / (2 d): stopping in ~2 cm of grass and foam
 			Report.DriftM = FVector::Dist2D(CanPosM, FVector::ZeroVector);
 			Report.FlightS = FlightT;
 			Stage = EISStage::Landed;
@@ -975,6 +990,16 @@ void AISHomeWorld::StepFlight(float Dt)
 		Acc = 0.f;
 		++TelemetryTotal;
 		const float Alt = Stage == EISStage::Descent ? CanPosM.Z : RocketPosM.Z;
+		if (Design.HasTag(ISTag::SDLog))
+		{
+			// the card logs every sample, radio or not (same sensor physics as the downlink below)
+			FRandomStream Rs(TelemetryTotal * 104729);
+			FISTelemetry L;
+			L.T = FlightT; L.AltM = Alt;
+			L.TempC = bSensorSealed ? 27.f + FMath::Min(FlightT, 120.f) * 0.02f + Rs.FRandRange(-0.1f, 0.1f) : 15.f - 6.5f * Alt / 1000.f + Rs.FRandRange(-0.3f, 0.3f);
+			L.PressHPa = 1013.25f * FMath::Exp(-Alt / 8400.f);
+			SdLog.Add(L);
+		}
 		if (bTrackSignal)
 		{
 			++TelemetryGot;

@@ -154,6 +154,9 @@ public:
 	FVector CanPosM = FVector::ZeroVector, CanVelMs = FVector::ZeroVector;
 	FVector WindMs = FVector::ZeroVector;
 	TArray<FISTelemetry> Telemetry;
+	TArray<FISTelemetry> SdLog;      // every sample written on board (microSD): read back only if the can is recovered
+	bool bSteered = false;           // the parafoil flew itself back toward the pad (servos + gyro)
+	float LandingG = 0.f;            // peak deceleration at touchdown (stopping in ~2 cm), in g
 	FISFlightReport Report;
 	// tracker readout for the HUD
 	float TrackDistM = 0.f, TrackRssi = -200.f, TrackSens = -110.f, BeaconLeftS = 0.f;

@@ -61,6 +61,7 @@ private:
 	bool bStyled = false;
 	void SetStyled(bool bOn);
 	bool bHeightFixed = false;
+	int32 ClearChecks = 0;     // site-plate clearance passes done (see Tick)
 	float FixT = 0.f;
 	FString Token() const;
 };

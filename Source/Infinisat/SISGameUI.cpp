@@ -171,6 +171,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 			if (P.Num() > 1) C.Rep = FCString::Atoi(*P[1]);
 			if (P.Num() > 2) C.Science = FCString::Atoi(*P[2]);
 			if (P.Num() > 3) C.Tier = FCString::Atoi(*P[3]);
+			ISCareer::PassDays(0.0);
 		}
 	}
 
@@ -680,7 +681,7 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	// contracts arrive like real-world requests (dated, from a client), not numbered levels
 	auto MonthShort = [](int32 Mo) { static const TCHAR* N[] = { TEXT("Jan"), TEXT("Feb"), TEXT("Mar"), TEXT("Apr"), TEXT("May"), TEXT("Jun"), TEXT("Jul"), TEXT("Aug"), TEXT("Sep"), TEXT("Oct"), TEXT("Nov"), TEXT("Dec") }; return N[FMath::Clamp(Mo, 1, 12) - 1]; };
-	const FDateTime Today = FDateTime::Now();
+	// contracts carry the company calendar date they reached Mission Control (not the real-world date)
 	for (int32 i = 0; i < Ms.Num(); ++i)
 	{
 		const FISMission& M = Ms[i];
@@ -689,7 +690,7 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 		const bool bDone = Best >= 1;
 		FString Title = M.Title;
 		if (Title.StartsWith(TEXT("Ch."))) { int32 Sp; if (Title.FindChar(TEXT(' '), Sp)) Title = Title.Mid(Sp).TrimStart(); }
-		const FDateTime Posted = Today - FTimespan::FromDays(FMath::Max(0, (int32)M.Chapter * 9 - 3));
+		const double PostedDay = ISCareer::Get().PostedDay.IsValidIndex(i) ? ISCareer::Get().PostedDay[i] : -1.0;
 		FString StarS; for (int32 s = 0; s < 3; ++s) StarS += s < Best ? TEXT("*") : TEXT("-");
 		const FString Status = M.Id == "sandbox" ? TEXT("FREE DESIGN") : bDone ? TEXT("DONE ") + StarS : bOpen ? TEXT("OPEN") : FString::Printf(TEXT("NEEDS %d REP"), ISCareer::RepNeeded(M.Chapter));
 		const FLinearColor StatusC = bDone ? COk : bOpen ? CAccent : FLinearColor(1, 1, 1, 0.35f);
@@ -706,7 +707,7 @@ TSharedRef<SWidget> SISGameUI::BuildMissions()
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f)).Text(FText::FromString(FString::Printf(TEXT("%s  -  %s"), *M.Client.Left(bOpen ? 30 : 22), M.Id == "sandbox" ? TEXT("any time") : *FString::Printf(TEXT("%d %s %d"), Posted.GetDay(), MonthShort(Posted.GetMonth()), Posted.GetYear()))))]
+						+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f)).Text(FText::FromString(M.Id == "sandbox" ? M.Client + TEXT("  -  any time") : PostedDay >= 0.0 ? FString::Printf(TEXT("%s  -  %s"), *M.Client.Left(30), *ISCareer::DateText(PostedDay)) : M.Client.Left(26)))]
 						+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(StatusC).Text(FText::FromString(Status))]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)[SNew(STextBlock).Font(ISFont("SemiBold", 15)).ColorAndOpacity(FLinearColor(1, 1, 1, bOpen ? 1.f : 0.45f)).Text(FText::FromString(Title))]
@@ -2095,19 +2096,30 @@ TSharedRef<SWidget> SISGameUI::BuildCanDebrief()
 	Add(TEXT("Stay within budget"), Eval.TotalCostM <= M.BudgetM, ISSim::FmtMoney(Eval.TotalCostM));
 	Add(TEXT("BONUS: GNSS position fix"), W->Design.HasTag(ISTag::GNSSRx) && !W->bGnssBlind, W->bGnssBlind ? TEXT("The GNSS module was buried under other boards: no view of the sky, no fix") : TEXT("Makes finding it much easier"), true);
 	Add(TEXT("BONUS: camera pictures"), W->Design.HasTag(ISTag::Camera) && !W->bCamBlind, W->bCamBlind ? TEXT("The camera was not at the window: black pictures") : TEXT("Pictures from the sky!"), true);
+	// upgrades from a real student CanSat (team CanFusion)
+	const bool bSd = W->Design.HasTag(ISTag::SDLog) && R.bFound;
+	Add(TEXT("BONUS: onboard SD log read back"), bSd, !W->Design.HasTag(ISTag::SDLog) ? TEXT("No card logger: only what the radio caught") : !R.bFound ? TEXT("The card is still in the can you did not find")
+		: *FString::Printf(TEXT("%d samples on the card vs %d by radio"), W->SdLog.Num(), W->Telemetry.Num()), true);
+	const bool bImu = W->Design.HasTag(ISTag::IMU) && !R.bBroken;
+	Add(TEXT("BONUS: landing shock measured (gyro board)"), bImu, !W->Design.HasTag(ISTag::IMU) ? TEXT("No accelerometer on board") : R.bBroken ? TEXT("The board broke at impact")
+		: *FString::Printf(TEXT("Peak about %.0f g%s"), W->LandingG, W->LandingG > 16.f ? TEXT(" - the MPU6050 clips at 16 g, so the real peak was off its scale") : TEXT("")), true);
+	Add(TEXT("BONUS: steered back toward the pad (parafoil + gyro)"), W->bSteered && R.DriftM < 150.f, !W->Design.Has("ex_parafoil") ? TEXT("No steerable parafoil")
+		: !W->Design.HasTag(ISTag::IMU) ? TEXT("The servos had no gyro to tell them which way the can was turning, so they could not steer") : R.DriftM < 150.f ? *FString::Printf(TEXT("Landed %.0f m from the pad"), R.DriftM)
+		: *FString::Printf(TEXT("Landed %.0f m away: the %.1f m/s wind is %s than the wing's 3 m/s glide"), R.DriftM, W->WindMs.Size(), W->WindMs.Size() > 3.f ? TEXT("faster") : TEXT("not much slower")), true);
 	int32 Req = 0, Met = 0, Bonus = 0;
 	FString FirstFail;
 	for (const FISObjective& X : O) { if (X.bBonus) { Bonus += X.bMet; continue; } ++Req; if (X.bMet) ++Met; else if (FirstFail.IsEmpty()) FirstFail = X.Text + TEXT(": ") + X.Why; }
 	const int32 Stars = (Met == Req && Bonus > 0) ? 3 : (Met == Req) ? 2 : (Met * 2 >= Req ? 1 : 0);
 	// the science club pays (once per flight); the telemetry you received is the science
-	if (!bAwarded) { bAwarded = true; LastReward = ISCareer::Award(MissionIdx, Stars, Met, R.TelemetryPct / 100.0 * 4.0, Eval.TotalCostM); }
+	if (!bAwarded) { bAwarded = true; LastReward = ISCareer::Award(MissionIdx, Stars, Met, (bSd ? 100.0 : R.TelemetryPct) / 100.0 * 4.0, Eval.TotalCostM); }
 
 	// lapse rate from the player's own data (linear regression of temperature against altitude)
 	double Sx = 0, Sy = 0, Sxx = 0, Sxy = 0; int32 N = 0;
-	for (const FISTelemetry& T : W->Telemetry) { const double X = T.AltM / 1000.0; Sx += X; Sy += T.TempC; Sxx += X * X; Sxy += X * T.TempC; ++N; }
+	const TArray<FISTelemetry>& Data = bSd && W->SdLog.Num() > W->Telemetry.Num() ? W->SdLog : W->Telemetry;   // the card has the full record
+	for (const FISTelemetry& T : Data) { const double X = T.AltM / 1000.0; Sx += X; Sy += T.TempC; Sxx += X * X; Sxy += X * T.TempC; ++N; }
 	const double Den = N * Sxx - Sx * Sx;
 	const FString Science = (N >= 4 && FMath::Abs(Den) > 1e-6)
-		? FString::Printf(TEXT("YOUR SCIENCE: from %d data packets, temperature changed by %.1f C per km of height. The standard atmosphere says -6.5 C/km (the 'lapse rate'). Your CanSat measured real atmospheric physics!"), N, (N * Sxy - Sx * Sy) / Den)
+		? FString::Printf(TEXT("YOUR SCIENCE: from %d data samples, temperature changed by %.1f C per km of height. The standard atmosphere says -6.5 C/km (the 'lapse rate'). Your CanSat measured real atmospheric physics!"), N, (N * Sxy - Sx * Sy) / Den)
 		: FString(TEXT("YOUR SCIENCE: too few telemetry packets to measure the lapse rate (-6.5 C per km). A longer-range radio or staying closer would help."));
 
 	FString StarStr;
@@ -2126,7 +2138,10 @@ TSharedRef<SWidget> SISGameUI::BuildCanDebrief()
 	}
 	TWeakObjectPtr<AISHomeWorld> WW = W;
 	const FString Stats = FString::Printf(TEXT("Apogee %.0f m  |  top speed %.0f m/s  |  landing %.1f m/s\nDrift %.0f m with %.1f m/s wind  |  flight %.0f s  |  search %.0f s\nTelemetry packets %d (%.0f%%)"),
-		R.ApogeeM, R.MaxSpeed, R.LandingSpeed, R.DriftM, W->WindMs.Size(), R.FlightS, R.SearchS, R.Samples, R.TelemetryPct);
+		R.ApogeeM, R.MaxSpeed, R.LandingSpeed, R.DriftM, W->WindMs.Size(), R.FlightS, R.SearchS, R.Samples, R.TelemetryPct)
+		// the landing check team CanFusion did by hand for their 370 g can (26.6 J at 12 m/s -> ~1,330 N), on your can
+		+ FString::Printf(TEXT("\nLanding energy 1/2 m v^2 = %.1f J. Stopped in ~2 cm: F = E / d = %.0f N (about %.0f g)."),
+			0.5f * Eval.TotalKg * R.LandingSpeed * R.LandingSpeed, 0.5f * Eval.TotalKg * R.LandingSpeed * R.LandingSpeed / 0.02f, W->LandingG);
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(12)[BuildTopBar(TEXT("DEBRIEF  -  ") + M.Title)]
 		+ SVerticalBox::Slot().FillHeight(1.f).Padding(12, 0, 12, 12)

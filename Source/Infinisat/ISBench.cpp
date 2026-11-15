@@ -37,6 +37,8 @@ int32 AISHomeWorld::IdealSlot(FName Id)
 	if (P->Tag == ISTag::TempSensor || P->Tag == ISTag::Buzzer) return 3;
 	if (P->Tag == ISTag::GNSSRx || P->Tag == ISTag::Camera) return 4;
 	if (P->Tag == ISTag::Parachute) return 5;
+	if (P->Tag == ISTag::SDLog) return 0;   // the card logger rides next to the battery (short power wires, protected at landing)
+	if (P->Tag == ISTag::IMU) return 1;     // gyro on the main board, near the centre of mass
 	if (P->Tag == ISTag::Wiring) return 1;
 	return 3;
 }

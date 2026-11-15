@@ -208,6 +208,14 @@ namespace
 			.Edu(TEXT("Wires carry power and data between boards. Real CanSats are soldered and glued: launches shake everything loose!")));
 		Add(FP("ex_buzzer", C::Extra, TEXT("Buzzer (recovery beeper)"), 0.003f, 0.0000002f).Pw(0.02f).Tag(ISTag::Buzzer)
 			.Edu(TEXT("A loud beeper helps you find your CanSat in tall grass. Real teams always add one.")));
+		// three parts from a real student CanSat (team CanFusion, KTU Engineering Lyceum, 2025): ESP32 + LoRa 433 + DHT22 +
+		// BMP180 + MPU6050 + GPS + microSD + two servos steering a parafoil + buzzer + FPV camera, 370 g
+		Add(FP("ex_sd", C::Extra, TEXT("microSD card logger"), 0.003f, 0.0000015f).Pw(0.1f).Tag(ISTag::SDLog)
+			.Edu(TEXT("Writes every sensor reading to a memory card on board. The radio loses packets when the antenna points away or the can is far; the card keeps everything - but you only get it if you find the CanSat. Real teams fly both.")));
+		Add(FP("pl_imu", C::Payload, TEXT("MPU6050 gyroscope + accelerometer"), 0.002f, 0.0000025f).Pw(0.015f).Data(0.0002f).Tag(ISTag::IMU)
+			.Edu(TEXT("Measures rotation (gyro) and acceleration. It tells you how the can swung under the chute and how hard it hit the ground - up to its 16 g limit, so a hard landing clips the reading. A steerable parachute needs it to know which way it is turning.")));
+		Add(FP("ex_parafoil", C::Extra, TEXT("Steerable parafoil + 2 servos"), 0.038f, 0.000014f).Pw(0.5f).Sail(0.15f).Tag(ISTag::Parachute)
+			.Edu(TEXT("A small wing-shaped parachute. Two SG90 servos pull its left and right lines to turn it, the way team CanFusion steered theirs. With a gyro on board the computer knows its heading and flies back toward the pad instead of drifting with the wind; without one the servos are guessing.")));
 		Add(FP("ex_vault", C::Extra, TEXT("Titanium radiation vault"), 180.f, 15.f, 6).Tag(ISTag::Vault).Rel(1.f).Mesh(CUBE).Col(0.55f, 0.55f, 0.6f)
 			.Edu(TEXT("Juno's electronics sit in a 1 cm-thick titanium box (~180 kg) that cuts Jupiter's radiation ~800x. Without it the electronics would die within weeks.")));
 		Add(FP("ex_redund", C::Extra, TEXT("Redundant electronics (backups)"), 0.f, 0.f, 1).Tag(ISTag::Redundancy).Rel(1.f)
@@ -279,9 +287,13 @@ namespace
 			X.Dest = EISDest::Backyard; X.AltKm = 1.f; X.BudgetM = 0.0004f; X.LifeYears = 2.f / 8760.f; X.MaxMassKg = 0.35f;
 			X.Required = { ISTag::TempSensor, ISTag::Parachute, ISTag::Wiring }; X.Bonus = { ISTag::GNSSRx, ISTag::Camera, ISTag::Buzzer };
 			X.Learn = { TEXT("Mass budget: every gram counts"), TEXT("Battery energy: Wh = W x hours"), TEXT("Radio range"), TEXT("Parachute physics: v = sqrt(2mg / (rho Cd A))") };
-			X.RealName = TEXT("ESA CanSat competition");
+			X.RealName = TEXT("ESA CanSat competition / team CanFusion");
 			X.RealMesh = TEXT("");
-			X.RealFacts = TEXT("Student CanSats: 66 mm x 115 mm, max 350 g, launched to ~1 km by rocket, descent ~8-11 m/s. Thousands of students build one every year across Europe and the USA.");
+			X.RealFacts = TEXT("Student CanSats: 66 mm x 115 mm, max 350 g, launched to ~1 km by rocket, descent ~8-11 m/s. Thousands of students build one every year across Europe and the USA.\n")
+				TEXT("A real one: team CanFusion (KTU Engineering Lyceum, Lithuania, 2025) stacked 3D-printed decks on rods around an ESP32 with a LoRa 433 MHz radio, ")
+				TEXT("DHT22 temperature/humidity, BMP180 pressure altitude, MPU6050 gyro, GPS, a microSD log, a light sensor that detects ejection from the rocket, ")
+				TEXT("an FPV camera and two servos steering a parafoil; a LoRa ground station with a small screen relayed the data to a web server. It weighed 370 g - ")
+				TEXT("20 g over the limit, the classic CanSat problem. Their landing check: 0.37 kg at 12 m/s carries 1/2 m v^2 = 26.6 J; stopped in 2 cm that is about 1,330 N.");
 			X.Quiz = {
 				Q(TEXT("Your CanSat draws 2 W. How much battery energy do you need for 2 hours?"), { TEXT("1 Wh"), TEXT("4 Wh"), TEXT("20 Wh") }, 1, TEXT("Energy = power x time = 2 W x 2 h = 4 Wh (add margin!).")),
 				Q(TEXT("You make the parachute 4x bigger. The descent speed..."), { TEXT("halves"), TEXT("becomes 4x slower"), TEXT("stays the same") }, 0, TEXT("v depends on 1/sqrt(area): sqrt(4) = 2, so speed halves.")) };

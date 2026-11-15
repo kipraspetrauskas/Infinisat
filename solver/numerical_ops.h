@@ -7,14 +7,14 @@
 #include "numerics/fixed_arrays.hpp"
 #include "serialization/integrators.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace integrators {
 namespace _methods {
 namespace internal {
 
-using namespace principia::base::_mod;
-using namespace principia::base::_not_constructible;
-using namespace principia::numerics::_fixed_arrays;
+using namespace cosmos_logic::base::_mod;
+using namespace cosmos_logic::base::_not_constructible;
+using namespace cosmos_logic::numerics::_fixed_arrays;
 
 struct EmbeddedExplicitRungeKutta : not_constructible {
   

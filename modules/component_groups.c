@@ -11,16 +11,16 @@
 #include "ksp_plugin/pile_up.hpp"
 #include "physics/ephemeris.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace base {
 namespace _disjoint_sets {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::ksp_plugin::_part;
-using namespace principia::ksp_plugin::_pile_up;
-using namespace principia::physics::_ephemeris;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::ksp_plugin::_part;
+using namespace cosmos_logic::ksp_plugin::_pile_up;
+using namespace cosmos_logic::physics::_ephemeris;
 
 Subset<Part>::Properties::Properties(not_null<Part*> const part) {
   if (part->is_piled_up()) {

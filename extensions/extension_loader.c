@@ -51,35 +51,35 @@
 #include "quantities/numbers.hpp"  
 #include "quantities/parser.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _plugin {
 namespace internal {
 
-using namespace principia::astronomy::_solar_system_fingerprints;
-using namespace principia::astronomy::_stabilize_ksp;
-using namespace principia::astronomy::_time_scales;
-using namespace principia::base::_flags;
-using namespace principia::base::_hexadecimal;
-using namespace principia::base::_map_util;
-using namespace principia::base::_serialization;
-using namespace principia::geometry::_frame;
-using namespace principia::geometry::_identity;
-using namespace principia::geometry::_permutation;
-using namespace principia::geometry::_space_transformations;
-using namespace principia::ksp_plugin::_equator_relevance_threshold;
-using namespace principia::ksp_plugin::_integrators;
-using namespace principia::ksp_plugin::_part;
-using namespace principia::physics::_barycentric_rotating_reference_frame;
-using namespace principia::physics::_body_centred_body_direction_reference_frame;  
-using namespace principia::physics::_body_centred_non_rotating_reference_frame;
-using namespace principia::physics::_body_surface_frame_field;
-using namespace principia::physics::_body_surface_reference_frame;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_reference_frame;
-using namespace principia::physics::_rotating_pulsating_reference_frame;
-using namespace principia::physics::_solar_system;
-using namespace principia::quantities::_parser;
+using namespace cosmos_logic::astronomy::_solar_system_fingerprints;
+using namespace cosmos_logic::astronomy::_stabilize_ksp;
+using namespace cosmos_logic::astronomy::_time_scales;
+using namespace cosmos_logic::base::_flags;
+using namespace cosmos_logic::base::_hexadecimal;
+using namespace cosmos_logic::base::_map_util;
+using namespace cosmos_logic::base::_serialization;
+using namespace cosmos_logic::geometry::_frame;
+using namespace cosmos_logic::geometry::_identity;
+using namespace cosmos_logic::geometry::_permutation;
+using namespace cosmos_logic::geometry::_space_transformations;
+using namespace cosmos_logic::ksp_plugin::_equator_relevance_threshold;
+using namespace cosmos_logic::ksp_plugin::_integrators;
+using namespace cosmos_logic::ksp_plugin::_part;
+using namespace cosmos_logic::physics::_barycentric_rotating_reference_frame;
+using namespace cosmos_logic::physics::_body_centred_body_direction_reference_frame;  
+using namespace cosmos_logic::physics::_body_centred_non_rotating_reference_frame;
+using namespace cosmos_logic::physics::_body_surface_frame_field;
+using namespace cosmos_logic::physics::_body_surface_reference_frame;
+using namespace cosmos_logic::physics::_discrete_trajectory;
+using namespace cosmos_logic::physics::_reference_frame;
+using namespace cosmos_logic::physics::_rotating_pulsating_reference_frame;
+using namespace cosmos_logic::physics::_solar_system;
+using namespace cosmos_logic::quantities::_parser;
 
 namespace {
 

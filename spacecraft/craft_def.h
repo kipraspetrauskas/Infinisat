@@ -38,7 +38,7 @@
 #include "quantities/quantities.hpp"
 #include "serialization/ksp_plugin.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 
 class VesselTest;
@@ -46,31 +46,31 @@ class VesselTest;
 namespace _vessel {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::base::_reanimator;
-using namespace principia::base::_recurring_thread;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_interval;
-using namespace principia::ksp_plugin::_celestial;
-using namespace principia::ksp_plugin::_flight_plan;
-using namespace principia::ksp_plugin::_flight_plan_optimization_driver;
-using namespace principia::ksp_plugin::_flight_plan_optimizer;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::ksp_plugin::_identification;
-using namespace principia::ksp_plugin::_manœuvre;
-using namespace principia::ksp_plugin::_orbit_analyser;
-using namespace principia::ksp_plugin::_part;
-using namespace principia::ksp_plugin::_pile_up;
-using namespace principia::physics::_checkpointer;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_discrete_trajectory_segment;
-using namespace principia::physics::_discrete_trajectory_segment_iterator;
-using namespace principia::physics::_ephemeris;
-using namespace principia::physics::_massless_body;
-using namespace principia::physics::_rotating_body;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::base::_reanimator;
+using namespace cosmos_logic::base::_recurring_thread;
+using namespace cosmos_logic::geometry::_grassmann;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::geometry::_interval;
+using namespace cosmos_logic::ksp_plugin::_celestial;
+using namespace cosmos_logic::ksp_plugin::_flight_plan;
+using namespace cosmos_logic::ksp_plugin::_flight_plan_optimization_driver;
+using namespace cosmos_logic::ksp_plugin::_flight_plan_optimizer;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::ksp_plugin::_identification;
+using namespace cosmos_logic::ksp_plugin::_manœuvre;
+using namespace cosmos_logic::ksp_plugin::_orbit_analyser;
+using namespace cosmos_logic::ksp_plugin::_part;
+using namespace cosmos_logic::ksp_plugin::_pile_up;
+using namespace cosmos_logic::physics::_checkpointer;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_discrete_trajectory;
+using namespace cosmos_logic::physics::_discrete_trajectory_segment;
+using namespace cosmos_logic::physics::_discrete_trajectory_segment_iterator;
+using namespace cosmos_logic::physics::_ephemeris;
+using namespace cosmos_logic::physics::_massless_body;
+using namespace cosmos_logic::physics::_rotating_body;
+using namespace cosmos_logic::quantities::_quantities;
 
 
 class Vessel {

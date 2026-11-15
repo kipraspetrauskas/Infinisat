@@ -12,18 +12,18 @@
 #include "quantities/quantities.hpp"
 #include "serialization/integrators.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace integrators {
 
 namespace _ordinary_differential_equations {
 namespace internal {
 
-using namespace principia::base::_algebra;
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_direct_sum;
-using namespace principia::geometry::_instant;
-using namespace principia::numerics::_double_precision;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_algebra;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::geometry::_direct_sum;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::numerics::_double_precision;
+using namespace cosmos_logic::quantities::_quantities;
 
 
 

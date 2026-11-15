@@ -31,7 +31,7 @@
 #include "quantities/quantities.hpp"
 #include "serialization/ksp_plugin.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 
 FORWARD_DECLARE(class, Part, FROM(part), INTO(pile_up));
@@ -41,25 +41,25 @@ class TestablePileUp;
 namespace _pile_up {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_frame;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_space_transformations;
-using namespace principia::integrators::_integrators;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::ksp_plugin::_identification;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_discrete_trajectory_segment_iterator;
-using namespace principia::physics::_ephemeris;
-using namespace principia::physics::_euler_solver;
-using namespace principia::physics::_massless_body;
-using namespace principia::physics::_mechanical_system;
-using namespace principia::physics::_rigid_motion;
-using namespace principia::physics::_tensors;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::geometry::_frame;
+using namespace cosmos_logic::geometry::_grassmann;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::geometry::_space_transformations;
+using namespace cosmos_logic::integrators::_integrators;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::ksp_plugin::_identification;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_discrete_trajectory;
+using namespace cosmos_logic::physics::_discrete_trajectory_segment_iterator;
+using namespace cosmos_logic::physics::_ephemeris;
+using namespace cosmos_logic::physics::_euler_solver;
+using namespace cosmos_logic::physics::_massless_body;
+using namespace cosmos_logic::physics::_mechanical_system;
+using namespace cosmos_logic::physics::_rigid_motion;
+using namespace cosmos_logic::physics::_tensors;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_quantities;
 
 
 

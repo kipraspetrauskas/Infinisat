@@ -1,10 +1,10 @@
 
 
-#ifndef PRINCIPIA_PHYSICS_BODY_HPP_
+#ifndef COSMOS_PHYSICS_BODY_HPP_
 #include "physics/body.hpp"
 #endif  
-#ifndef PRINCIPIA_PHYSICS_MASSIVE_BODY_HPP_
-#define PRINCIPIA_PHYSICS_MASSIVE_BODY_HPP_
+#ifndef COSMOS_PHYSICS_MASSIVE_BODY_HPP_
+#define COSMOS_PHYSICS_MASSIVE_BODY_HPP_
 
 #include <memory>
 #include <string>
@@ -13,15 +13,15 @@
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace physics {
 namespace _massive_body {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::physics::_body;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::physics::_body;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_quantities;
 
 class MassiveBody : public Body {
  public:

@@ -35,30 +35,30 @@
 #include "serialization/numerics.pb.h"
 #include "serialization/physics.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace physics {
 namespace _ephemeris {
 namespace internal {
 
-using namespace principia::base::_concepts;
-using namespace principia::base::_not_null;
-using namespace principia::base::_reanimator;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_space;
-using namespace principia::integrators::_integrators;
-using namespace principia::integrators::_ordinary_differential_equations;
-using namespace principia::physics::_apsides;
-using namespace principia::physics::_checkpointer;
-using namespace principia::physics::_continuous_trajectory;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_geopotential;
-using namespace principia::physics::_integration_parameters;
-using namespace principia::physics::_massive_body;
-using namespace principia::physics::_tensors;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_concepts;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::base::_reanimator;
+using namespace cosmos_logic::geometry::_grassmann;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::geometry::_space;
+using namespace cosmos_logic::integrators::_integrators;
+using namespace cosmos_logic::integrators::_ordinary_differential_equations;
+using namespace cosmos_logic::physics::_apsides;
+using namespace cosmos_logic::physics::_checkpointer;
+using namespace cosmos_logic::physics::_continuous_trajectory;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_discrete_trajectory;
+using namespace cosmos_logic::physics::_geopotential;
+using namespace cosmos_logic::physics::_integration_parameters;
+using namespace cosmos_logic::physics::_massive_body;
+using namespace cosmos_logic::physics::_tensors;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_quantities;
 
 
 

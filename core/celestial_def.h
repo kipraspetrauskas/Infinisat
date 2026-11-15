@@ -12,19 +12,19 @@
 #include "physics/rotating_body.hpp"
 #include "serialization/ksp_plugin.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _celestial {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_space;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::physics::_body;
-using namespace principia::physics::_continuous_trajectory;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_rotating_body;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::geometry::_space;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::physics::_body;
+using namespace cosmos_logic::physics::_continuous_trajectory;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_rotating_body;
 
 
 class Celestial {

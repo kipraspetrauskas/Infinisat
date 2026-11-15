@@ -11,7 +11,7 @@
 
 
 
-namespace principia {
+namespace cosmos_logic {
 
 FORWARD_DECLARE(class, Part, FROM(ksp_plugin, part), INTO(base, disjoint_sets));
 
@@ -19,10 +19,10 @@ namespace base {
 namespace _disjoint_sets {
 namespace internal {
 
-using namespace principia::geometry::_instant;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::ksp_plugin::_pile_up;
-using namespace principia::physics::_ephemeris;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::ksp_plugin::_pile_up;
+using namespace cosmos_logic::physics::_ephemeris;
 
 
 

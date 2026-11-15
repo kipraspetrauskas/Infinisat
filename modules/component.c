@@ -20,18 +20,18 @@
 #include "quantities/numbers.hpp"  
 #include "quantities/si.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _part {
 namespace internal {
 
-using namespace principia::base::_array;
-using namespace principia::base::_hexadecimal;
-using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_r3x3_matrix;
-using namespace principia::geometry::_space_transformations;
-using namespace principia::numerics::_elementary_functions;
-using namespace principia::quantities::_si;
+using namespace cosmos_logic::base::_array;
+using namespace cosmos_logic::base::_hexadecimal;
+using namespace cosmos_logic::geometry::_orthogonal_map;
+using namespace cosmos_logic::geometry::_r3x3_matrix;
+using namespace cosmos_logic::geometry::_space_transformations;
+using namespace cosmos_logic::numerics::_elementary_functions;
+using namespace cosmos_logic::quantities::_si;
 
 constexpr Mass untruthful_part_mass = 1 * Kilogram;
 

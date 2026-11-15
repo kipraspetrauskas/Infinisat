@@ -18,20 +18,20 @@
 #include "quantities/named_quantities.hpp"
 #include "quantities/si.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace interface {
 
-using namespace principia::base::_algebra;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_r3x3_matrix;
-using namespace principia::journal::_method;
-using namespace principia::ksp_plugin::_identification;
-using namespace principia::ksp_plugin::_part;
-using namespace principia::physics::_tensors;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_si;
+using namespace cosmos_logic::base::_algebra;
+using namespace cosmos_logic::geometry::_grassmann;
+using namespace cosmos_logic::geometry::_r3x3_matrix;
+using namespace cosmos_logic::journal::_method;
+using namespace cosmos_logic::ksp_plugin::_identification;
+using namespace cosmos_logic::ksp_plugin::_part;
+using namespace cosmos_logic::physics::_tensors;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_si;
 
-XYZ __cdecl principia__PartAngularMomentumFromAngularVelocity(
+XYZ __cdecl cosmos_logic__PartAngularMomentumFromAngularVelocity(
     XYZ world_angular_velocity,
     XYZ moments_of_inertia_in_tonnes,
     WXYZ principal_axes_rotation,
@@ -54,7 +54,7 @@ XYZ __cdecl principia__PartAngularMomentumFromAngularVelocity(
   return m.Return(ToXYZ(angular_momentum));
 }
 
-void __cdecl principia__PartApplyIntrinsicForce(
+void __cdecl cosmos_logic__PartApplyIntrinsicForce(
     Plugin* const plugin,
     PartId const part_id,
     XYZ const force_in_kilonewtons) {
@@ -66,7 +66,7 @@ void __cdecl principia__PartApplyIntrinsicForce(
   return m.Return();
 }
 
-void __cdecl principia__PartApplyIntrinsicForceAtPosition(
+void __cdecl cosmos_logic__PartApplyIntrinsicForceAtPosition(
     Plugin* const plugin,
     PartId const part_id,
     XYZ const force_in_kilonewtons,
@@ -83,7 +83,7 @@ void __cdecl principia__PartApplyIntrinsicForceAtPosition(
   return m.Return();
 }
 
-void __cdecl principia__PartApplyIntrinsicTorque(
+void __cdecl cosmos_logic__PartApplyIntrinsicTorque(
     Plugin* const plugin,
     PartId const part_id,
     XYZ const torque_in_kilonewton_metre) {
@@ -96,7 +96,7 @@ void __cdecl principia__PartApplyIntrinsicTorque(
   return m.Return();
 }
 
-XYZ __cdecl principia__PartDragTorqueFromAngularVelocity(
+XYZ __cdecl cosmos_logic__PartDragTorqueFromAngularVelocity(
     double const angular_drag_per_second,
     double const delta_t,
     XYZ const world_angular_velocity,
@@ -127,7 +127,7 @@ XYZ __cdecl principia__PartDragTorqueFromAngularVelocity(
       angular_drag, Δt, angular_velocity, inertia_tensor))));
 }
 
-QPRW __cdecl principia__PartGetActualRigidMotion(
+QPRW __cdecl cosmos_logic__PartGetActualRigidMotion(
     Plugin const* const plugin,
     PartId const part_id,
     Origin const origin) {
@@ -156,7 +156,7 @@ QPRW __cdecl principia__PartGetActualRigidMotion(
        ToXYZ(part_angular_velocity.coordinates() / (Radian / Second))});
 }
 
-bool __cdecl principia__PartIsTruthful(
+bool __cdecl cosmos_logic__PartIsTruthful(
     Plugin const* const plugin,
     uint32_t const part_id) {
   journal::Method<journal::PartIsTruthful> m({plugin, part_id});
@@ -164,7 +164,7 @@ bool __cdecl principia__PartIsTruthful(
   return m.Return(plugin->PartIsTruthful(part_id));
 }
 
-void __cdecl principia__PartSetApparentRigidMotion(
+void __cdecl cosmos_logic__PartSetApparentRigidMotion(
     Plugin* const plugin,
     PartId const part_id,
     QP const degrees_of_freedom,

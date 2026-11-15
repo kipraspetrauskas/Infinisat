@@ -25,27 +25,27 @@
 #include "quantities/quantities.hpp"
 #include "serialization/ksp_plugin.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _part {
 namespace internal {
 
-using namespace principia::base::_algebra;
-using namespace principia::base::_disjoint_sets;
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_space;
-using namespace principia::ksp_plugin::_frames;
-using namespace principia::ksp_plugin::_identification;
-using namespace principia::ksp_plugin::_pile_up;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_discrete_trajectory_segment_iterator;
-using namespace principia::physics::_rigid_motion;
-using namespace principia::physics::_tensors;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_algebra;
+using namespace cosmos_logic::base::_disjoint_sets;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::geometry::_grassmann;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::geometry::_space;
+using namespace cosmos_logic::ksp_plugin::_frames;
+using namespace cosmos_logic::ksp_plugin::_identification;
+using namespace cosmos_logic::ksp_plugin::_pile_up;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_discrete_trajectory;
+using namespace cosmos_logic::physics::_discrete_trajectory_segment_iterator;
+using namespace cosmos_logic::physics::_rigid_motion;
+using namespace cosmos_logic::physics::_tensors;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_quantities;
 
 
 class Part final {
@@ -250,7 +250,7 @@ namespace base {
 namespace _disjoint_sets {
 namespace internal {
 
-using namespace principia::ksp_plugin::_part;
+using namespace cosmos_logic::ksp_plugin::_part;
 
 template<>
 inline not_null<Subset<Part>::Node*> Subset<Part>::Node::Get(Part& element) {

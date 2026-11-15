@@ -9,16 +9,16 @@
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _integrators {
 namespace internal {
 
-using namespace principia::integrators::_embedded_explicit_generalized_runge_kutta_nyström_integrator;  
-using namespace principia::integrators::_embedded_explicit_runge_kutta_nyström_integrator;  
-using namespace principia::integrators::_methods;
-using namespace principia::integrators::_symmetric_linear_multistep_integrator;
-using namespace principia::integrators::_symplectic_runge_kutta_nyström_integrator;  
+using namespace cosmos_logic::integrators::_embedded_explicit_generalized_runge_kutta_nyström_integrator;  
+using namespace cosmos_logic::integrators::_embedded_explicit_runge_kutta_nyström_integrator;  
+using namespace cosmos_logic::integrators::_methods;
+using namespace cosmos_logic::integrators::_symmetric_linear_multistep_integrator;
+using namespace cosmos_logic::integrators::_symplectic_runge_kutta_nyström_integrator;  
 
 DiscreteTrajectorySegment<Barycentric>::DownsamplingParameters
 DefaultDownsamplingParameters() {

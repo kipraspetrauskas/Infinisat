@@ -24,22 +24,22 @@
 #include "numerics/davenport_q_method.hpp"
 #include "quantities/si.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace ksp_plugin {
 namespace _pile_up {
 namespace internal {
 
-using namespace principia::base::_map_util;
-using namespace principia::geometry::_identity;
-using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_quaternion;
-using namespace principia::geometry::_rotation;
-using namespace principia::geometry::_signature;
-using namespace principia::geometry::_space;
-using namespace principia::ksp_plugin::_integrators;
-using namespace principia::ksp_plugin::_part;
-using namespace principia::numerics::_davenport_q_method;
-using namespace principia::quantities::_si;
+using namespace cosmos_logic::base::_map_util;
+using namespace cosmos_logic::geometry::_identity;
+using namespace cosmos_logic::geometry::_orthogonal_map;
+using namespace cosmos_logic::geometry::_quaternion;
+using namespace cosmos_logic::geometry::_rotation;
+using namespace cosmos_logic::geometry::_signature;
+using namespace cosmos_logic::geometry::_space;
+using namespace cosmos_logic::ksp_plugin::_integrators;
+using namespace cosmos_logic::ksp_plugin::_part;
+using namespace cosmos_logic::numerics::_davenport_q_method;
+using namespace cosmos_logic::quantities::_si;
 
 const auto part_x = Vector<double, RigidPart>({1, 0, 0});
 const auto part_y = Vector<double, RigidPart>({0, 1, 0});

@@ -1,5 +1,5 @@
-#ifndef PRINCIPIA_PHYSICS_BODY_HPP_
-#define PRINCIPIA_PHYSICS_BODY_HPP_
+#ifndef COSMOS_PHYSICS_BODY_HPP_
+#define COSMOS_PHYSICS_BODY_HPP_
 
 #include <memory>
 
@@ -7,13 +7,13 @@
 #include "base/not_null.hpp"
 #include "serialization/physics.pb.h"
 
-namespace principia {
+namespace cosmos_logic {
 namespace physics {
 namespace _body {
 namespace internal {
 
-using namespace principia::base::_not_constructible;
-using namespace principia::base::_not_null;
+using namespace cosmos_logic::base::_not_constructible;
+using namespace cosmos_logic::base::_not_null;
 
 class Body {
  public:

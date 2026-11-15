@@ -12,18 +12,18 @@
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 
-namespace principia {
+namespace cosmos_logic {
 namespace physics {
 namespace _kepler_orbit {
 namespace internal {
 
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_instant;
-using namespace principia::physics::_body;
-using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_massive_body;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
+using namespace cosmos_logic::base::_not_null;
+using namespace cosmos_logic::geometry::_instant;
+using namespace cosmos_logic::physics::_body;
+using namespace cosmos_logic::physics::_degrees_of_freedom;
+using namespace cosmos_logic::physics::_massive_body;
+using namespace cosmos_logic::quantities::_named_quantities;
+using namespace cosmos_logic::quantities::_quantities;
 
 template<typename Frame>
 struct KeplerianElements final {

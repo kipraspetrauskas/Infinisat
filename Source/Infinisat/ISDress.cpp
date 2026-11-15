@@ -11,6 +11,8 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "Engine/CollisionProfile.h"
 #include "Math/RandomStream.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace ISDressK { constexpr float WallT = 14.f, WallH = 270.f; }   // same as the house shell (ISHouse.cpp)
 
@@ -148,119 +150,210 @@ int32 AISHomeWorld::Litter(const TArray<const TCHAR*>& Ids, const FBox2D& Area, 
 	return N;
 }
 
-// The garage: x -760..0, y 0..700. Door (open arch) on y=0 between x -680 and -80, back wall y=700 with the workbench
-// in the middle and a window at x -700..-560, the house on the x=0 side. The walking line door -> bench stays clear.
-void AISHomeWorld::DressGarage()
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  Handmade kit pieces (Kenney Building Kit "KB", KayKit "KK"/"KD", nature "KF"/"QN", Poly Pizza "LP", vehicles "VEH").
+//  Path: /Game/Infinisat/<Kit>/<Name>/SM_<Name> (dashes in the source names became underscores on import).
+// ---------------------------------------------------------------------------------------------------------------------
+UStaticMesh* AISHomeWorld::KitMeshAsset(const TCHAR* Kit, const TCHAR* Name)
 {
-	using namespace ISDressK;
-	// --- surfaces: stained concrete floor, bare block wainscot (the painted plaster above), so it reads as a garage
-	Block(FVector(-380.f, 350.f, 2.1f), FVector(756.f, 696.f, 0.2f), TEXT("concrete_floor_02"), 220.f, FLinearColor(0.95f, 0.94f, 0.9f), false);
-	const FLinearColor BlockTint(0.9f, 0.89f, 0.86f);
-	Block(FVector(-760.f + WallT * 0.5f + 2.5f, 350.f, 62.f), FVector(1.f, 686.f, 120.f), TEXT("brushed_concrete"), 140.f, BlockTint, false);
-	Block(FVector(-380.f, 700.f - WallT * 0.5f - 2.5f, 62.f), FVector(746.f, 1.f, 120.f), TEXT("brushed_concrete"), 140.f, BlockTint, false);
-	Block(FVector(-720.f, WallT * 0.5f + 2.5f, 62.f), FVector(66.f, 1.f, 120.f), TEXT("brushed_concrete"), 140.f, BlockTint, false);
-
-	const float BT = BenchTop.Z;
-	const float WallIn = 700.f - WallT * 0.5f;   // back wall inside face
-	// --- workbench: pegboard with hanging tools behind it, tools and junk on the top (centre kept free for the CanSat)
-	Block(FVector(BenchTop.X, WallIn - 5.f, BT + 78.f), FVector(200.f, 3.f, 110.f), TEXT("brown_planks_05"), 60.f, FLinearColor(0.78f, 0.64f, 0.48f), false);   // pegboard
-	struct FPeg { const TCHAR* Id; float X, Z, Roll; };
-	const FPeg Pegs[] = {
-		{ TEXT("cross_pein_hammer"), -80.f, 110.f, 90.f }, { TEXT("handsaw_wood"), -42.f, 100.f, 90.f }, { TEXT("adjustable_wrench"), -5.f, 118.f, 90.f },
-		{ TEXT("combination_wrench"), 10.f, 116.f, 90.f }, { TEXT("pipe_wrench"), 32.f, 104.f, 90.f }, { TEXT("rusted_hacksaw"), 72.f, 64.f, 0.f },
-		{ TEXT("tongue_groove_pliers"), -15.f, 74.f, 90.f }, { TEXT("flathead_screwdriver"), 5.f, 76.f, 90.f }, { TEXT("garden_gloves_01"), -75.f, 62.f, 0.f },
-		{ TEXT("ratchet_wrench"), 55.f, 112.f, 90.f }, { TEXT("wooden_hammer_01"), 85.f, 108.f, 90.f }, { TEXT("bolt_cutters_01"), -60.f, 74.f, 90.f },
-	};
-	for (const FPeg& P : Pegs) Hang(P.Id, FVector(BenchTop.X + P.X, WallIn - 9.f, BT + P.Z), FRotator(0.f, 90.f, P.Roll));
-	Prop(TEXT("bench_vice_01"), BenchTop + FVector(-88, -12, 1), 0.f);
-	Prop(TEXT("retro_multimeter"), BenchTop + FVector(60, -18, 1), -25.f);
-	Prop(TEXT("screwdrivers_02"), BenchTop + FVector(-60, 18, 1), 15.f);
-	Prop(TEXT("small_oil_can_01"), BenchTop + FVector(85, 22, 1), 0.f);
-	Prop(TEXT("lubricant_spray"), BenchTop + FVector(95, 5, 1), 30.f);
-	Prop(TEXT("office_notepads"), BenchTop + FVector(-45, -22, 1), -8.f);
-	Prop(TEXT("circuit_board"), BenchTop + FVector(42, -25, 1), 20.f);
-	Prop(TEXT("lightbulb_led"), BenchTop + FVector(70, -30, 1), 0.f);
-	Prop(TEXT("measuring_tape_01"), BenchTop + FVector(-30, -30, 1), 50.f);
-	for (float Y : { 200.f, 520.f }) Hang(TEXT("mounted_fluorescent_lights"), FVector(-380.f, Y, WallH - 6.f), FRotator::ZeroRotator);
-	Prop(TEXT("metal_stool_01"), FVector(BenchTop.X + 35.f, 560.f, 2.f), 20.f, 1.f, true, false);
-
-	// --- back wall either side of the bench: tool cart (under the window), tool chest with the drill press on top
-	Prop(TEXT("tool_cart"), FVector(-630.f, 620.f, 2.f), 8.f, 1.f, true, false);
-	Prop(TEXT("vintage_spacecraft_instrument"), FVector(-640.f, 615.f, 92.f), 25.f);
-	Prop(TEXT("chemistry_set"), FVector(-600.f, 625.f, 92.f), -10.f);
-	if (UStaticMeshComponent* Chest = PropWall(TEXT("metal_tool_chest"), true, 700.f, -1.f, -150.f, 2.f))
-		Prop(TEXT("drill_press_01"), FVector(-150.f, Chest->Bounds.GetBox().GetCenter().Y, Chest->Bounds.GetBox().Max.Z + 1.f), 180.f);
-
-	// --- left wall (x=-760): steel shelving packed with junk either side of the old shelf, a barrel in the corner
-	const TArray<const TCHAR*> ShelfJunk = { TEXT("plastic_crate_01"), TEXT("plastic_crate_02"), TEXT("cardboard_box_01"), TEXT("cleaner_tin_01"), TEXT("all_purpose_cleaner"),
-		TEXT("bleach_bottle"), TEXT("multi_cleaner_5_litre"), TEXT("oil_tin"), TEXT("spray_paint_bottles_02"), TEXT("spray_paint_bottles"), TEXT("can_rusted"), TEXT("plastic_container"),
-		TEXT("medical_box"), TEXT("binder_notebook"), TEXT("boombox"), TEXT("portable_cassette_player"), TEXT("metal_toolbox"), TEXT("Drill_01"), TEXT("vintage_hand_drill"),
-		TEXT("hand_plane_no4"), TEXT("tire_pump"), TEXT("watering_can_metal_01"), TEXT("lightbulb_01"), TEXT("plastic_jerrycan"), TEXT("vintage_microscope") };
-	const TArray<float> Steel02 = { 14.f, 64.f, 114.f, 166.f, 214.f }, Rack = { 44.f, 92.f, 142.f, 190.f };
-	int32 Seed = 11;
-	for (float Y : { 470.f, 532.f, 594.f })
-		if (UStaticMeshComponent* S = PropWall(TEXT("steel_frame_shelves_02"), false, -760.f, 1.f, Y, 2.f, 0.f, 1.f, false)) FillShelf(S, Steel02, ShelfJunk, Seed++);
-	if (UStaticMeshComponent* S = PropWall(TEXT("worn_metal_rack"), false, -760.f, 1.f, 140.f, 2.f, 0.f, 1.f, false)) FillShelf(S, Rack, ShelfJunk, 23);
-	Prop(TEXT("Barrel_02"), FVector(-715.f, 660.f, 2.f), 30.f, 1.f, true, false);
-	Prop(TEXT("compost_bags"), FVector(-700.f, 45.f, 2.f), 75.f, 1.f, true, false);
-
-	// --- right wall (x=0, the house side): ladder, garden tools leaning, hose reel, tyre, kid's sports stuff
-	Hang(TEXT("wooden_ladder"), FVector(-28.f, 420.f, 150.f), FRotator(-12.f, 90.f, 0.f));
-	Hang(TEXT("rusted_spade_01"), FVector(-14.f, 250.f, 60.f), FRotator(-14.f, 180.f, 0.f));
-	Hang(TEXT("plastic_broom"), FVector(-14.f, 280.f, 70.f), FRotator(-10.f, 180.f, 4.f));
-	Hang(TEXT("garden_hose_wall_mounted_01"), FVector(-14.f, 140.f, 120.f), FRotator(0.f, 180.f, 0.f));
-	Prop(TEXT("old_tyre"), FVector(-70.f, 560.f, 2.f), 0.f, 1.f, true, false);
-	Prop(TEXT("baseball_bat"), FVector(-30.f, 330.f, 2.f), 80.f);
-	Prop(TEXT("korean_fire_extinguisher_01"), FVector(-25.f, 60.f, 2.f), 180.f, 1.f, true, false);
-	Prop(TEXT("metal_jerrycan"), FVector(-50.f, 95.f, 2.f), 95.f, 1.f, true, false);
-
-	// --- floor junk along the walls (the centre stays walkable), plus a bag of trash next to the bin
-	const TArray<const TCHAR*> Floor = { TEXT("dirty_football"), TEXT("can_rusted"), TEXT("plastic_crate_03"), TEXT("cardboard_box_01"), TEXT("dustpan"),
-		TEXT("watering_can_metal_01"), TEXT("baseball_01"), TEXT("rubber_duck_toy"), TEXT("trowel_01"), TEXT("plastic_jerrycan"), TEXT("wooden_crate_01"), TEXT("football") };
-	Litter(Floor, FBox2D(FVector2D(-745.f, 20.f), FVector2D(-560.f, 690.f)), 2.f, 6, 101);   // left strip
-	Litter(Floor, FBox2D(FVector2D(-200.f, 20.f), FVector2D(-15.f, 690.f)), 2.f, 5, 202);    // right strip
-	Prop(TEXT("trashbag"), FVector(-100.f, 655.f, 2.f), 40.f, 1.f, false, false);
+	return ISMat::Mesh(FString::Printf(TEXT("/Game/Infinisat/%s/%s/SM_%s.SM_%s"), Kit, Name, Name, Name));
 }
 
-// The house (floor top z=10): living room x 0..750 / y 0..600 (TV on the y=600 wall, sofa at y=140), kitchen + dining
-// x 750..1500 / y 0..600 (counter run on the y=600 wall), BIT's room / office x 0..500 / y 760..1050 (desk on the
-// y=1050 wall), bedroom x 500..1000, mudroom x 1250..1500. Small things are dropped from above onto the furniture.
+bool AISHomeWorld::KitReady()
+{
+	static const bool bReady = KitMeshAsset(TEXT("KB"), TEXT("wall")) != nullptr && !FParse::Param(FCommandLine::Get(), TEXT("ISNoKit"));
+	return bReady;
+}
+
+// Places a kit mesh so that the centre of its footprint and its bottom land on BottomCentre (any pivot, any scale).
+UStaticMeshComponent* AISHomeWorld::KitPiece(const TCHAR* Kit, const TCHAR* Name, const FVector& BottomCentre, float Yaw, const FVector& Scale, bool bShadow)
+{
+	UStaticMesh* Mesh = KitMeshAsset(Kit, Name);
+	if (!Mesh) { UE_LOG(LogTemp, Warning, TEXT("[KIT] missing %s/%s"), Kit, Name); return nullptr; }
+	const FBox B = Mesh->GetBoundingBox();
+	const FVector Pivot(B.GetCenter().X, B.GetCenter().Y, B.Min.Z);
+	const FRotator R(0.f, Yaw, 0.f);
+	UStaticMeshComponent* M = NewObject<UStaticMeshComponent>(this);
+	M->SetStaticMesh(Mesh);
+	M->SetupAttachment(Root);
+	M->SetRelativeTransform(FTransform(R, BottomCentre - R.RotateVector(Pivot * Scale), Scale));
+	M->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	M->SetCastShadow(bShadow);
+	M->RegisterComponent();
+	AllComps.Add(M);
+	return M;
+}
+
+// Tiles a kit piece (native footprint TileX x TileY cm) over a rectangle at height Z, stretched to fit whole tiles.
+void AISHomeWorld::KitTile(const TCHAR* Kit, const TCHAR* Name, const FBox2D& Area, float Z, float TileX, float TileY, float ScaleZ)
+{
+	const FVector2D Sz = Area.GetSize();
+	const int32 NX = FMath::Max(1, FMath::RoundToInt(Sz.X / TileX)), NY = FMath::Max(1, FMath::RoundToInt(Sz.Y / TileY));
+	const float SX = Sz.X / NX, SY = Sz.Y / NY;
+	for (int32 i = 0; i < NX; ++i)
+		for (int32 j = 0; j < NY; ++j)
+			KitPiece(Kit, Name, FVector(Area.Min.X + (i + 0.5f) * SX, Area.Min.Y + (j + 0.5f) * SY, Z), 0.f, FVector(SX / TileX, SY / TileY, ScaleZ));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  Set dressing with handmade low-poly pieces. Deco() registers every piece; ValidateDress() (after SettleProps) logs
+//  [DRESS-OVERLAP] for two dressed pieces that intersect and [DRESS-FLOAT] for a settled piece with nothing under it.
+// ---------------------------------------------------------------------------------------------------------------------
+namespace ISDressK2 { constexpr float KK = 0.65f; }   // KayKit Furniture Bits is ~1.5x real size
+
+UStaticMeshComponent* AISHomeWorld::Deco(const TCHAR* Kit, const TCHAR* Name, const FVector& Pos, float Yaw, float Scale, bool bSolid, bool bSettle)
+{
+	UStaticMeshComponent* M = KitPiece(Kit, Name, Pos, Yaw, FVector(Scale));
+	if (!M) return nullptr;
+	M->SetCullDistance(bSolid ? 0.f : 7000.f);
+	if (bSolid) Collider(M->Bounds.GetBox());
+	FISPlaced P; P.Name = FString::Printf(TEXT("%s/%s"), Kit, Name); P.C = M; P.bSurface = bSolid; P.bOnTop = bSettle;
+	Furniture.Add(P);
+	Dressed.Add(P);
+	return M;
+}
+
+void AISHomeWorld::ValidateDress()
+{
+	int32 Over = 0, Float = 0;
+	for (int32 i = 0; i < Dressed.Num(); ++i)
+	{
+		const FISPlaced& A = Dressed[i];
+		if (!A.C) continue;
+		const FBox BA = A.C->Bounds.GetBox().ExpandBy(-1.5f);
+		for (int32 j = i + 1; j < Dressed.Num(); ++j)
+		{
+			const FISPlaced& B = Dressed[j];
+			if (!B.C) continue;
+			const FBox BB = B.C->Bounds.GetBox().ExpandBy(-1.5f);
+			if (!BA.Intersect(BB)) continue;
+			if (FMath::Abs(BA.Min.Z - BB.Max.Z) < 4.f || FMath::Abs(BB.Min.Z - BA.Max.Z) < 4.f) continue;   // resting on top
+			if ((A.bSurface && !B.bSurface && BA.IsInsideXY(BB.GetCenter())) || (B.bSurface && !A.bSurface && BB.IsInsideXY(BA.GetCenter()))) continue;   // on a shelf board
+			++Over;
+			UE_LOG(LogTemp, Warning, TEXT("[DRESS-OVERLAP] %s at (%.0f,%.0f,%.0f) x %s at (%.0f,%.0f,%.0f)"), *A.Name, BA.GetCenter().X, BA.GetCenter().Y, BA.Min.Z, *B.Name, BB.GetCenter().X, BB.GetCenter().Y, BB.Min.Z);
+		}
+		for (const FISPlaced& K : Furniture)
+		{
+			if (!K.C || Dressed.ContainsByPredicate([&](const FISPlaced& D) { return D.C == K.C; })) continue;
+			const FBox BK = K.C->Bounds.GetBox().ExpandBy(-1.5f);
+			if (!BA.Intersect(BK) || FMath::Abs(BA.Min.Z - BK.Max.Z) < 4.f || FMath::Abs(BK.Min.Z - BA.Max.Z) < 4.f) continue;
+			if (BK.IsInsideXY(BA.GetCenter()) && BA.Min.Z > BK.Min.Z + 20.f) continue;   // on a shelf / in a cabinet
+			++Over;
+			UE_LOG(LogTemp, Warning, TEXT("[DRESS-OVERLAP] %s at (%.0f,%.0f,%.0f) x furniture %s"), *A.Name, BA.GetCenter().X, BA.GetCenter().Y, BA.Min.Z, *K.Name);
+		}
+		if (!A.bOnTop) continue;
+		FHitResult H;
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(ISDressFloat), true);
+		Q.AddIgnoredComponent(A.C);
+		const FVector Start(BA.GetCenter().X, BA.GetCenter().Y, BA.Min.Z + 3.f);
+		if (!GetWorld()->LineTraceSingleByChannel(H, Start, Start - FVector(0, 0, 10.f), ECC_Visibility, Q))
+		{
+			++Float;
+			UE_LOG(LogTemp, Warning, TEXT("[DRESS-FLOAT] %s at (%.0f,%.0f,%.0f)"), *A.Name, Start.X, Start.Y, BA.Min.Z);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[DRESS-CHECK] %d pieces, %d overlaps, %d floating"), Dressed.Num(), Over, Float);
+}
+
+// Garage x -760..0, y 0..700 (floor ~2): open garage door on y=0 (x -680..-80), window on the back wall (x -700..-560),
+// door to the house on x=0 (y 440..530), Kenney desk bench centred at x -380 on the back wall, hunt-item shelf on the
+// left wall at y 330, junk box (-690,130). The walk line door -> bench stays clear.
+void AISHomeWorld::DressGarage()
+{
+	using namespace ISDressK2;
+	const float GZ = 2.f;
+	// left wall: big steel shelving full of cans, toolboxes and tools (one invisible collider per board)
+	if (UStaticMeshComponent* S = Deco(TEXT("LP"), TEXT("ShelfLarge"), FVector(-760.f + 7.f + 18.f, 520.f, GZ), 90.f, 1.f, true, false))
+	{
+		const FBox B = S->Bounds.GetBox();
+		const float Lv[] = { 30.f, 58.f, 86.f, 114.f, 144.f, 172.f };
+		const TCHAR* Items[] = { TEXT("CanRed"), TEXT("Toolbox"), TEXT("CanRed"), TEXT("Wrench"), TEXT("Mallet"), TEXT("Toolbox"), TEXT("CanRed"), TEXT("Screwdriver") };
+		int32 k = 0;
+		for (float L : Lv)
+		{
+			Collider(FBox(FVector(B.Min.X + 2.f, B.Min.Y + 2.f, B.Min.Z + L - 2.f), FVector(B.Max.X - 2.f, B.Max.Y - 2.f, B.Min.Z + L)));
+			for (float Y : { -45.f, 0.f, 45.f })
+			{
+				++k;
+				if ((k % 3) == 1 && L > 100.f) continue;   // gaps, fuller at the bottom
+				Deco(TEXT("LP"), Items[k % UE_ARRAY_COUNT(Items)], FVector(B.GetCenter().X, B.GetCenter().Y + Y, B.Min.Z + L + 0.5f), 90.f + float(k * 23 % 30) - 15.f, 1.f, false, false);
+			}
+		}
+	}
+	Deco(TEXT("KD"), TEXT("barrel_small"), FVector(-712.f, 650.f, GZ), 20.f, 0.6f, true, false);
+	Deco(TEXT("KD"), TEXT("crates_stacked"), FVector(-690.f, 230.f, GZ), 90.f, 0.5f, true, false);
+
+	// back wall: wall shelf above the bench with the kid's model rocket and a globe; tyres + bucket by the bin
+	if (UStaticMeshComponent* WS = Deco(TEXT("KK"), TEXT("shelf_A_big"), FVector(BenchTop.X, 700.f - 7.f - 17.f, BenchTop.Z + 70.f), 0.f, KK, true, false))
+	{
+		const float Top = WS->Bounds.GetBox().Max.Z + 0.5f;
+		Deco(TEXT("LP"), TEXT("Rocket"), FVector(BenchTop.X - 45.f, 676.f, Top), 0.f, 1.f, false, false);
+		Deco(TEXT("LP"), TEXT("Globe"), FVector(BenchTop.X + 45.f, 676.f, Top), 30.f, 1.f, false, false);
+	}
+	Deco(TEXT("LP"), TEXT("Tires"), FVector(-170.f, 640.f, GZ), 0.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("Bucket"), FVector(-110.f, 600.f, GZ), 0.f, 1.f, false, true);
+	Deco(TEXT("LP"), TEXT("Planet"), FVector(-380.f, 420.f, 215.f), 0.f, 1.f, false, false);   // hanging solar-system mobile
+
+	// right wall (house side; the door at y 440..530 stays clear): ladder, shovel + hoe against the wall, fuel can
+	Deco(TEXT("LP"), TEXT("Ladder"), FVector(-45.f, 300.f, GZ), 90.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("Shovel"), FVector(-20.f, 190.f, GZ), 0.f, 1.f, false, true);
+	Deco(TEXT("LP"), TEXT("Hoe"), FVector(-30.f, 130.f, GZ), 90.f, 1.f, false, true);
+	Deco(TEXT("LP"), TEXT("GasCan"), FVector(-35.f, 50.f, GZ), 0.f, 1.f, false, true);
+}
+
+// House (floor top 10): living x 0..800 / y 0..600, kitchen x 800..1500 / y 0..600, hall y 600..760, BIT's room
+// x 0..500 / y 760..1050 (desk on y=1050; BIT's dock at (380,830) stays clear), bedroom x 500..1000, bath, mudroom.
 void AISHomeWorld::DressHouse()
 {
-	const float FZ = 10.f, Drop = FZ + 130.f;   // spawn above the furniture, SettleProps drops them onto it
-	// --- living room: a game left mid-match, a chess board, a guitar against the sofa, photos on the shelf
-	Prop(TEXT("gamepad"), FVector(315.f, 300.f, Drop), 25.f);
-	Prop(TEXT("chess_set"), FVector(355.f, 325.f, Drop), 10.f);
-	Prop(TEXT("gaming_console"), FVector(400.f, 570.f, Drop), 180.f);
-	Prop(TEXT("Ukulele_01"), FVector(430.f, 105.f, FZ + 2.f), 70.f);
-	Prop(TEXT("standing_picture_frame_01"), FVector(30.f, 230.f, Drop + 90.f), 90.f);
-	Prop(TEXT("alarm_clock_01"), FVector(490.f, 150.f, Drop), 200.f);
-	Prop(TEXT("dirty_football"), FVector(560.f, 420.f, FZ + 2.f), 0.f);
-	Prop(TEXT("wicker_basket_01"), FVector(80.f, 520.f, FZ + 2.f), 15.f);
-	for (int32 i = 0; i < 3; ++i)   // a row of photos on the wall the sofa backs onto (y=0 side wall, facing +Y)
-		Hang(i == 1 ? TEXT("hanging_picture_frame_02") : (i == 0 ? TEXT("hanging_picture_frame_01") : TEXT("hanging_picture_frame_03")), FVector(240.f + i * 80.f, 12.f, FZ + 175.f + (i == 1 ? 12.f : 0.f)), FRotator(0.f, 90.f, 0.f));
+	using namespace ISDressK2;
+	const float F = 10.f, Drop = F + 120.f;
+	// --- living room: pictures over the TV, pillows on the sofa, cactus in the empty corner, books on the coffee table
+	Deco(TEXT("KK"), TEXT("pictureframe_small_A"), FVector(175.f, 586.f, F + 165.f), 180.f, KK, false, false);
+	Deco(TEXT("KK"), TEXT("pictureframe_medium"), FVector(330.f, 586.f, F + 175.f), 180.f, KK, false, false);
+	Deco(TEXT("KK"), TEXT("pictureframe_small_B"), FVector(490.f, 586.f, F + 165.f), 180.f, KK, false, false);
+	Deco(TEXT("KK"), TEXT("pillow_A"), FVector(285.f, 135.f, Drop), 8.f, KK, false, true);
+	Deco(TEXT("KK"), TEXT("pillow_B"), FVector(375.f, 135.f, Drop), -10.f, KK, false, true);
+	Deco(TEXT("KK"), TEXT("book_set"), FVector(330.f, 300.f, Drop), 15.f, KK * 0.5f, false, true);
+	Deco(TEXT("KK"), TEXT("cactus_medium_A"), FVector(755.f, 555.f, F), 0.f, KK, false, true);
 
-	// --- kitchen: kettle, chopping board, fruit; dining table with a fruit bowl, a vase and the kid's homework
-	Prop(TEXT("vintage_electric_kettle"), FVector(1060.f, 565.f, Drop), 200.f);
-	Prop(TEXT("wooden_cutting_board"), FVector(1210.f, 568.f, Drop), 0.f);
-	Prop(TEXT("bananas"), FVector(1290.f, 560.f, Drop), 30.f);
-	Prop(TEXT("wooden_bowl_01"), FVector(1150.f, 250.f, Drop), 0.f);
-	Prop(TEXT("food_apple_01"), FVector(1150.f, 252.f, Drop + 10.f), 0.f);
-	Prop(TEXT("ceramic_vase_01"), FVector(1110.f, 230.f, Drop), 0.f);
-	Prop(TEXT("office_notepads"), FVector(1185.f, 270.f, Drop), -20.f);
-	Prop(TEXT("tea_set_01"), FVector(1115.f, 275.f, Drop), 40.f);
+	// --- kitchen + dining: bottles and plates on the counter, a meal on the table, picture by the window
+	Deco(TEXT("KD"), TEXT("bottle_A_green"), FVector(1110.f, 282.f, Drop), 0.f, 0.3f, false, true);   // the counter run is full of appliances
+	Deco(TEXT("KD"), TEXT("plate_food_A"), FVector(1120.f, 250.f, Drop), 0.f, 0.25f, false, true);
+	Deco(TEXT("KD"), TEXT("plate_food_A"), FVector(1185.f, 250.f, Drop), 180.f, 0.25f, false, true);
+	Deco(TEXT("KD"), TEXT("bottle_A_brown"), FVector(1150.f, 228.f, Drop), 0.f, 0.3f, false, true);
+	Deco(TEXT("KK"), TEXT("pictureframe_large_A"), FVector(1486.f, 520.f, F + 160.f), -90.f, KK, false, false);
 
-	// --- BIT's room / office: space kid's desk, chalkboard with orbits, camera and binoculars, a ball on the floor
-	const float DX = DeskBox.GetCenter().X, DY = DeskBox.GetCenter().Y;
-	Prop(TEXT("vintage_binocular"), FVector(DX - 60.f, DY - 10.f, Drop), 120.f);
-	Prop(TEXT("Camera_01"), FVector(DeskBox.Max.X - 20.f, DY, Drop), 200.f);
-	Prop(TEXT("binder_notebook"), FVector(DX + 10.f, DY - 25.f, Drop), 10.f);
-	Prop(TEXT("standing_chalkboard_01"), FVector(460.f, 830.f, FZ + 2.f), 225.f, 1.f, true, false);
-	Prop(TEXT("football"), FVector(120.f, 820.f, FZ + 2.f), 0.f);
-	Prop(TEXT("vintage_video_camera"), FVector(60.f, 1000.f, Drop), 140.f);
+	// --- BIT's room: telescope at the window, globe on the desk, toy rocket, solar-system mobile, poster, rug
+	Deco(TEXT("LP"), TEXT("Telescope"), FVector(85.f, 915.f, F), -90.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("Globe"), FVector(OfficeShelfX, 915.f, OfficeShelfTop + 0.5f), 200.f, 1.f, false, false);   // on top of the bookcase
+	Deco(TEXT("LP"), TEXT("RocketToy"), FVector(455.f, 800.f, F), 0.f, 0.5f, false, true);
+	Deco(TEXT("LP"), TEXT("Planet"), FVector(250.f, 900.f, F + 200.f), 0.f, 1.f, false, false);
+	Deco(TEXT("KK"), TEXT("pictureframe_large_B"), FVector(410.f, 774.f, F + 165.f), 0.f, KK * 0.7f, false, false);
+	Deco(TEXT("KK"), TEXT("rug_oval_A"), FVector(220.f, 880.f, F), 90.f, 0.4f, false, false);
 
-	// --- bedroom + mudroom: suitcase still half unpacked, boots and a basket by the back door
-	Prop(TEXT("vintage_suitcase"), FVector(880.f, 800.f, FZ + 2.f), 75.f);
-	Prop(TEXT("rubber_boots"), FVector(1300.f, 790.f, FZ + 2.f), 30.f);
-	Prop(TEXT("wicker_basket_01"), FVector(1440.f, 790.f, FZ + 2.f), 0.f);
+	// --- bedroom: pillows, picture, plant; mudroom: a box
+	Deco(TEXT("KK"), TEXT("pillow_A"), FVector(690.f, 1000.f, Drop), 0.f, KK, false, true);
+	Deco(TEXT("KK"), TEXT("pillow_B"), FVector(750.f, 1000.f, Drop), 0.f, KK, false, true);
+	Deco(TEXT("KK"), TEXT("pictureframe_medium"), FVector(986.f, 900.f, F + 160.f), -90.f, KK, false, false);
+	Deco(TEXT("KK"), TEXT("cactus_small_B"), FVector(960.f, 795.f, F), 0.f, KK, false, true);
+	Deco(TEXT("KD"), TEXT("box_small"), FVector(1310.f, 1005.f, F), 20.f, 0.5f, true, false);
+}
+
+// Launch field around Pad: handmade pad + camp (folding table with the controller box, chairs, coolers, grill), cones.
+void AISHomeWorld::DressLaunchSite(const FVector& Pad)
+{
+	Deco(TEXT("LP"), TEXT("LaunchPad"), Pad, 0.f, 1.f, true, false);
+	if (UStaticMeshComponent* T = Deco(TEXT("LP"), TEXT("FoldingTable"), Pad + FVector(-250.f, 120.f, 0.f), 0.f, 1.f, true, false))
+		Deco(TEXT("LP"), TEXT("Toolbox"), Pad + FVector(-250.f, 120.f, T->Bounds.GetBox().Max.Z - Pad.Z + 0.5f), 90.f, 1.f, false, false);   // launch controller
+	Deco(TEXT("LP"), TEXT("BeachChair"), Pad + FVector(-420.f, 40.f, 0.f), 200.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("BeachChair"), Pad + FVector(-430.f, 220.f, 0.f), 160.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("CoolerOpen"), Pad + FVector(-330.f, 280.f, 0.f), 30.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("CoolerBlue"), Pad + FVector(-560.f, 130.f, 0.f), 80.f, 1.f, true, false);
+	Deco(TEXT("LP"), TEXT("Grill"), Pad + FVector(-680.f, 340.f, 0.f), 0.f, 1.f, true, false);
+	for (int32 i = 0; i < 12; ++i)
+	{
+		const FVector D = FRotator(0, i * 30.f, 0).Vector() * 900.f;
+		KitPiece(TEXT("K/road"), TEXT("construction_cone"), Pad + D, i * 30.f, FVector(2.f));
+	}
 }

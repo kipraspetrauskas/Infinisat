@@ -202,6 +202,15 @@ private:
 	int32 Litter(const TArray<const TCHAR*>& Ids, const FBox2D& Area, float Z, int32 Count, int32 Seed, float MinGap = 8.f);
 	void DressGarage();
 	void DressHouse();
+	void DressLaunchSite(const FVector& Pad);
+	UStaticMeshComponent* Deco(const TCHAR* Kit, const TCHAR* Name, const FVector& Pos, float Yaw, float Scale = 1.f, bool bSolid = false, bool bSettle = true);
+	void ValidateDress();
+	TArray<FISPlaced> Dressed;
+	// handmade kit pieces (ISDress.cpp)
+	static UStaticMesh* KitMeshAsset(const TCHAR* Kit, const TCHAR* Name);
+	static bool KitReady();
+	UStaticMeshComponent* KitPiece(const TCHAR* Kit, const TCHAR* Name, const FVector& BottomCentre, float Yaw, const FVector& Scale = FVector(1.f), bool bShadow = true);
+	void KitTile(const TCHAR* Kit, const TCHAR* Name, const FBox2D& Area, float Z, float TileX, float TileY, float ScaleZ = 1.f);
 	UBoxComponent* AddInteract(const FVector& Center, const FVector& Extent, FName Action);
 	UTextRenderComponent* AddSign(const FString& Text, const FVector& Pos, float Yaw, float Size, const FColor& Color);
 	void Toast(const FString& S) { Toasts.Add(S); }

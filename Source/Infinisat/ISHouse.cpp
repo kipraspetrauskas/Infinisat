@@ -111,17 +111,19 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 	auto P = [&](float U, float N, float Z) { return bAlongX ? FVector(U0 + U, Fixed + N, Z) : FVector(Fixed + N, U0 + U, Z); };
 	auto S = [&](float SU, float SN, float SZ) { return bAlongX ? FVector(SU, SN, SZ) : FVector(SN, SU, SZ); };
 	const FLinearColor CoreCol = OutSide == 0.f ? In : Out;
+	const bool bKit = KitReady();   // handmade Kenney Building Kit pieces draw the wall; the boxes below only collide
 
 	auto Piece = [&](float U1, float U2, float Z1, float Z2)
 	{
 		if (U2 - U1 < 0.5f || Z2 - Z1 < 0.5f) return;
-		Paint(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), CoreCol, 0.85f);
+		UStaticMeshComponent* Core = Paint(P((U1 + U2) * 0.5f, 0, FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, WallT, Z2 - Z1), CoreCol, 0.85f);
+		if (bKit) { if (Core) { Core->SetVisibility(false); Core->SetCastShadow(false); } return; }
 		if (OutSide != 0.f)   // interior paint layer on the inside face
 			Paint(P((U1 + U2) * 0.5f, -OutSide * (WallT * 0.5f + 0.6f), FZ + (Z1 + Z2) * 0.5f), S(U2 - U1, 1.f, Z2 - Z1), In, 0.9f, false);
 	};
 	auto Baseboard = [&](float U1, float U2)
 	{
-		if (!bBaseboard || U2 - U1 < 2.f) return;
+		if (bKit || !bBaseboard || U2 - U1 < 2.f) return;
 		for (float Side : { -1.f, 1.f })
 		{
 			if (OutSide != 0.f && Side == OutSide) continue;   // no baseboard outside
@@ -146,19 +148,22 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 			const FVector A3 = P(O.From, -Depth - WallT * 0.5f, FZ + Z0), B3 = P(O.To, Depth + WallT * 0.5f, FZ + O.Top);
 			Openings.Add(FBox(FVector(FMath::Min(A3.X, B3.X), FMath::Min(A3.Y, B3.Y), A3.Z), FVector(FMath::Max(A3.X, B3.X), FMath::Max(A3.Y, B3.Y), B3.Z)));
 		}
-		// frame trims (both faces)
+		// frame trims (both faces) - the kit pieces bring their own frames
 		const float FT = WallT + 3.f;
-		Paint(P(O.From - 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
-		Paint(P(O.To + 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
-		Paint(P(Mid, 0, FZ + O.Top + 3.f), S(W + 12.f, FT, 6.f), Trim, 0.5f, false);
+		if (!bKit) Paint(P(O.From - 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
+		if (!bKit) Paint(P(O.To + 3.f, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(6.f, FT, O.Top - O.Bottom + 6.f), Trim, 0.5f, false);
+		if (!bKit) Paint(P(Mid, 0, FZ + O.Top + 3.f), S(W + 12.f, FT, 6.f), Trim, 0.5f, false);
 		if (O.Kind == 1)
 		{
 			// window: glass, cross mullions, sill
 			UStaticMeshComponent* G = ISBuild::Glass(this, Root, ISMat::Cube(), P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 1.5f, O.Top - O.Bottom), FLinearColor(0.75f, 0.9f, 1.f), 0.18f, nullptr);
 			if (G) { G->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); G->SetCollisionResponseToAllChannels(ECR_Block); AllComps.Add(G); }
-			Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(4.f, 4.f, O.Top - O.Bottom), Trim, 0.5f, false);
-			Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 4.f, 4.f), Trim, 0.5f, false);
-			Paint(P(Mid, 0, FZ + O.Bottom - 2.f), S(W + 16.f, WallT + 12.f, 4.f), Trim, 0.5f, false);
+			if (!bKit)
+			{
+				Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(4.f, 4.f, O.Top - O.Bottom), Trim, 0.5f, false);
+				Paint(P(Mid, 0, FZ + (O.Bottom + O.Top) * 0.5f), S(W, 4.f, 4.f), Trim, 0.5f, false);
+				Paint(P(Mid, 0, FZ + O.Bottom - 2.f), S(W + 16.f, WallT + 12.f, 4.f), Trim, 0.5f, false);
+			}
 		}
 		else if (O.Kind == 0 || O.Kind == 3)
 		{
@@ -169,6 +174,61 @@ void AISHomeWorld::Wall(const FVector2D& A, const FVector2D& B, const TArray<FIS
 			AddDoor(Hinge, Yaw, W, bExterior ? Teal : Trim, !bExterior);
 		}
 		Cur = O.To;
+	}
+
+	// ---- handmade wall: Kenney Building Kit pieces (200 cm wide, 240 tall; window hole 90 wide at 70..200, door hole
+	// 90 wide 0..220, wide versions 400 / 290). Each framed piece is scaled so its hole matches the opening exactly;
+	// where a frame doesn't fit between neighbours, plain wall pieces surround the opening instead.
+	if (bKit)
+	{
+		const float PieceYaw = bAlongX ? 90.f : 0.f;   // kit pieces run along their local Y
+		auto Slab = [&](float U1, float U2, float Z1, float Z2)
+		{
+			if (U2 - U1 < 1.f || Z2 - Z1 < 1.f) return;
+			KitPiece(TEXT("KB"), TEXT("wall"), P((U1 + U2) * 0.5f, 0, FZ + Z1), PieceYaw, FVector(WallT / 10.f, (U2 - U1) / 200.f, (Z2 - Z1) / 240.f));
+		};
+		auto Run = [&](float U1, float U2)
+		{
+			if (U2 - U1 < 1.f) return;
+			const int32 N = FMath::Max(1, FMath::RoundToInt((U2 - U1) / 200.f));
+			const float L = (U2 - U1) / N;
+			for (int32 k = 0; k < N; ++k) Slab(U1 + k * L, U1 + (k + 1) * L, 0.f, WallH);
+		};
+		float C0 = 0.f;
+		for (int32 i = 0; i < Sorted.Num(); ++i)
+		{
+			const FISOpening& O = Sorted[i];
+			const float Next = i + 1 < Sorted.Num() ? Sorted[i + 1].From : Len;
+			const float W = O.To - O.From, Mid = (O.From + O.To) * 0.5f;
+			bool bFramed = false;
+			if (O.Kind != 2)
+			{
+				const bool bWide = W > 160.f;
+				const float SU = W / (bWide ? 290.f : 90.f), PL = (bWide ? 400.f : 200.f) * SU;
+				const float HB = O.Kind == 1 ? 70.f : 0.f, HT = O.Kind == 1 ? 200.f : 220.f;
+				const float SZ = (O.Top - O.Bottom) / (HT - HB);
+				const float Z0 = O.Bottom - HB * SZ, Z1 = Z0 + 240.f * SZ;
+				if (Mid - PL * 0.5f >= C0 - 0.5f && Mid + PL * 0.5f <= Next + 0.5f && Z0 > -1.f && Z1 <= WallH + 1.f)
+				{
+					const TCHAR* Name = O.Kind == 1 ? (bWide ? TEXT("wall_window_wide_square") : TEXT("wall_window_square"))
+					                                : (bWide ? TEXT("wall_doorway_wide_square") : TEXT("wall_doorway_square"));
+					KitPiece(TEXT("KB"), Name, P(Mid, 0, FZ + Z0), PieceYaw, FVector(WallT / 14.f, SU, SZ));
+					Run(C0, Mid - PL * 0.5f);
+					Slab(Mid - PL * 0.5f, Mid + PL * 0.5f, 0.f, Z0);
+					Slab(Mid - PL * 0.5f, Mid + PL * 0.5f, Z1, WallH);
+					C0 = Mid + PL * 0.5f;
+					bFramed = true;
+				}
+			}
+			if (!bFramed)
+			{
+				Run(C0, O.From);
+				Slab(O.From, O.To, 0.f, O.Bottom);
+				Slab(O.From, O.To, O.Top, WallH);
+				C0 = O.To;
+			}
+		}
+		Run(C0, Len);
 	}
 	Piece(Cur, Len, 0.f, WallH);
 	Baseboard(Cur, Len);
@@ -361,12 +421,38 @@ void AISHomeWorld::BuildHome()
 	Wall({ -760, 0 }, { 0, 0 }, { { 80, 680, 0, 235, 2 } }, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), -1.f, false);
 	Wall({ -760, 700 }, { 0, 700 }, { { 60, 200, 140, 220, 1 } }, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), 1.f, false);
 	Wall({ -760, 0 }, { -760, 700 }, {}, nullptr, GarageGrey, nullptr, FLinearColor(0.62f, 0.75f, 0.86f), -1.f, false);
-	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Paint(FVector(-380, 350, FZ + WallH + 22.f), FVector(800, 740, 18), FLinearColor(0.35f, 0.36f, 0.4f), 0.8f);   // garage flat roof
+	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof")) && !KitReady()) Paint(FVector(-380, 350, FZ + WallH + 22.f), FVector(800, 740, 18), FLinearColor(0.35f, 0.36f, 0.4f), 0.8f);   // garage flat roof
 	Paint(FVector(-380, -4, FZ + 255.f), FVector(640, 30, 40), FLinearColor(0.55f, 0.66f, 0.76f), 0.6f);          // rolled-up door box
 
 	// ---- roof + chimney
-	if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Roof(FVector(750, 525, FZ + WallH + 10.f), 1500, 1050, 30.f, 55.f, nullptr, Coral, nullptr, Cream);
-	Paint(FVector(1180, 760, FZ + WallH + 260.f), FVector(70, 70, 330), FLinearColor(0.62f, 0.3f, 0.25f), 0.9f);
+	if (KitReady())
+	{
+		// handmade flat roofs (Kenney Building Kit): roof tiles + a border trim all round, house and garage
+		auto KitRoof = [&](const FBox2D& R, float Z)
+		{
+			if (FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) return;
+			KitTile(TEXT("KB"), TEXT("roof_flat_center"), R, Z, 200.f, 200.f);
+			for (int32 Side = 0; Side < 4; ++Side)
+			{
+				const bool bX = Side < 2;   // edges running along X (y = min / max)
+				const float L = bX ? R.GetSize().X : R.GetSize().Y;
+				const int32 N = FMath::Max(1, FMath::RoundToInt(L / 200.f));
+				for (int32 k = 0; k < N; ++k)
+				{
+					const float U = (k + 0.5f) * L / N;
+					const FVector C = bX ? FVector(R.Min.X + U, Side == 0 ? R.Min.Y : R.Max.Y, Z) : FVector(Side == 2 ? R.Min.X : R.Max.X, R.Min.Y + U, Z);
+					KitPiece(TEXT("KB"), TEXT("border"), C, bX ? 90.f : 0.f, FVector(1.f, (L / N) / 200.f, 1.f));
+				}
+			}
+		};
+		KitRoof(FBox2D(FVector2D(-10, -10), FVector2D(1510, 1060)), FZ + WallH + 10.f);
+		KitRoof(FBox2D(FVector2D(-770, -10), FVector2D(-10, 710)), WallH + 13.f);
+	}
+	else
+	{
+		if (!FParse::Param(FCommandLine::Get(), TEXT("ISNoRoof"))) Roof(FVector(750, 525, FZ + WallH + 10.f), 1500, 1050, 30.f, 55.f, nullptr, Coral, nullptr, Cream);
+		Paint(FVector(1180, 760, FZ + WallH + 260.f), FVector(70, 70, 330), FLinearColor(0.62f, 0.3f, 0.25f), 0.9f);
+	}
 	// porch canopy + light
 	Paint(FVector(610, -60, FZ + 240.f), FVector(220, 120, 8), Trim, 0.6f, false);
 	for (float X : { 520.f, 700.f }) Paint(FVector(X, -110, FZ + 120.f), FVector(10, 10, 240), Trim, 0.6f);
@@ -380,7 +466,7 @@ void AISHomeWorld::BuildHome()
 	RoomLight(FVector(250, 905, FZ + WallH - 20.f), 1100.f);
 	RoomLight(FVector(750, 905, FZ + WallH - 20.f), 1000.f);
 	RoomLight(FVector(1375, 905, FZ + WallH - 20.f), 600.f);
-	RoomLight(FVector(-380, 350, WallH - 20.f), 1800.f, false);   // garage: fluorescent tubes (DressGarage), no ceiling cube
+	RoomLight(FVector(-380, 350, WallH - 20.f), 1800.f);
 
 	// Place a piece with its back flat against a wall (real measured depth), facing into the room.
 	// bAlongX: the wall runs along X (fixed Y). Side: +1 if the room is on the + side of the wall.
@@ -499,9 +585,7 @@ void AISHomeWorld::BuildHome()
 	MudShelfY = CenterOf(Mud, FVector(1290, 905, 0)).Y;
 
 	// ---- garage: workbench on the back wall, shelf on the side wall, junk box by the door
-	// steel work desk (Poly Haven, 200 x 95 x 79 cm); the bench camera and the CanSat build follow BenchTop
-	UStaticMeshComponent* Bench = PropWall(TEXT("metal_office_desk"), true, 700, -1, -380, 2.f, -90.f);   // -90: long along its X, drawers toward the room
-	if (!Bench) Bench = KW(TEXT("desk"), true, 700, -1, -380, 2.f, KF * 1.2f);
+	UStaticMeshComponent* Bench = KW(TEXT("desk"), true, 700, -1, -380, 2.f, KF * 1.2f);
 	if (Bench)
 	{
 		const FBox B = Bench->Bounds.GetBox();
@@ -509,23 +593,21 @@ void AISHomeWorld::BuildHome()
 	}
 	else BenchTop = FVector(-380, 655, 90);
 	AddInteract(BenchTop + FVector(0, 0, 10), FVector(70, 30, 20), "bench");
-	Prop(TEXT("vintage_radio_transceiver"), BenchTop + FVector(52, 22, 1), 180.f);
-	AddInteract(BenchTop + FVector(52, 22, 15), FVector(25, 15, 18), "radio");
-	Prop(TEXT("desk_lamp_arm_01"), BenchTop + FVector(-80, 28, 1), 200.f);
-	// side shelf with the hunt items (radio module, sat-nav): steel unit, boards measured at 14/64/114/166/214 cm
-	UStaticMeshComponent* GShelf = PropWall(TEXT("steel_frame_shelves_02"), false, -760, 1, 330, 2.f, 0.f, 1.f, false);
-	if (!GShelf) GShelf = KW(TEXT("bookcaseOpen"), false, -760, 1, 330, 2.f);
-	else FillShelf(GShelf, { 14.f, 64.f, 114.f, 166.f, 214.f }, {}, 0);   // board colliders only: the hunt items sit here
+	K(TEXT("radio"), BenchTop + FVector(52, 10, 0), -90.f, KF, false);
+	if (Furniture.Num()) Furniture.Last().bOnTop = true;
+	AddInteract(BenchTop + FVector(52, 10, 15), FVector(25, 15, 18), "radio");
+	K(TEXT("lampSquareTable"), BenchTop + FVector(-80, 15, 0), -90.f, KF, false);
+	if (Furniture.Num()) Furniture.Last().bOnTop = true;
+	UStaticMeshComponent* GShelf = KW(TEXT("bookcaseOpen"), false, -760, 1, 330, 2.f);
 	if (GShelf) GarageShelfBox = GShelf->Bounds.GetBox();
 	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] garage shelf %s"), *GarageShelfBox.ToString());
-	GarageShelfTop = GShelf ? GShelf->Bounds.GetBox().Min.Z + 115.f : 140.f;
+	GarageShelfTop = TopOf(GShelf, 180.f) - 40.f;
 	GarageShelfX = CenterOf(GShelf, FVector(-730, 330, 0)).X;
-	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-650, 240, 2.f), 20.f), 40.f);   // in front of the side shelf (the steel units from DressGarage stand either side)
-
-	Prop(TEXT("metal_trash_can"), FVector(-45, 650, 2.f), 0.f, 1.f, true, false);
-	AddSign(TEXT("WORKBENCH"), BenchTop + FVector(0, 30, 110), -90.f, 14.f, FColor(40, 40, 50));
-	DressHouse();
-	DressGarage();
+	JunkBoxTop = TopOf(K(TEXT("cardboardBoxOpen"), FVector(-690, 130, 2.f), 0.f), 40.f);
+	K(TEXT("cardboardBoxClosed"), FVector(-610, 650, 2.f), 15.f);   // clear of the steel shelving (DressGarage)
+	K(TEXT("trashcan"), FVector(-45, 650, 2.f), 0.f);
+	AddSign(TEXT("WORKBENCH"), BenchTop + FVector(0, 30, KitReady() ? 145.f : 110.f), -90.f, 14.f, FColor(40, 40, 50));   // above the kit wall shelf
+	if (KitReady()) { DressHouse(); DressGarage(); }
 }
 
 // =====================================================================================================
@@ -734,7 +816,7 @@ void AISHomeWorld::SpawnHunt()
 	Add("bat_aa", TEXT("18650 battery + holder"), TEXT("Mudroom shelf (old flashlight)"), FVector(MudShelfX, MudShelfY, MudShelfTop), true, TEXT("battery_18650"), 1.f);
 	Add("ex_chute_l", TEXT("Parachute (ripstop nylon)"), TEXT("Folded on the bed"), FVector(BedX, BedY, BedTopZ), true, nullptr, 1.f);
 	Add("ex_wires", TEXT("Jumper wires + pin headers"), TEXT("Garage workbench"), BenchTop + FVector(-30, 10, 0), true, TEXT("header_1x15"), 1.f);
-	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-650, 240, JunkBoxTop), false, TEXT("buzzer"), 1.f);
+	Add("ex_buzzer", TEXT("Buzzer (recovery beeper)"), TEXT("Box of old electronics in the garage"), FVector(-690, 130, JunkBoxTop), false, TEXT("buzzer"), 1.f);
 	Add("pl_gnss_mini", TEXT("GNSS module"), TEXT("Old car sat-nav on the garage shelf"), FVector(GarageShelfX, GarageShelfBox.GetCenter().Y + GarageShelfBox.GetExtent().Y * 0.45f, GarageShelfTop), false, nullptr, 1.f);
 	Add("pl_cam_mini", TEXT("Camera module (old webcam)"), TEXT("Office desk, behind the laptop"), FVector(DeskBox.Max.X - 12.f, DeskTopY + 22.f, DeskTopZ), false, nullptr, 1.f);
 }
@@ -874,7 +956,7 @@ void AISHomeWorld::SettleProps()
 	for (FISPlaced& A : Furniture)
 	{
 		if (!A.C || !A.bOnTop || A.Name.Contains(TEXT("Upper"))) continue;   // wall cabinets hang on the wall on purpose
-		if (DropTo(A.C, A.C->Bounds.GetBox(), { A.C }, 200.f)) ++Moved;
+		if (DropTo(A.C, A.C->Bounds.GetBox(), { A.C }, 120.f)) ++Moved;
 	}
 	for (FISHuntItem& H : Hunt)
 	{
@@ -890,6 +972,7 @@ void AISHomeWorld::SettleProps()
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[LAYOUT-INFO] settled %d props onto their surfaces"), Moved);
+	ValidateDress();
 }
 
 void AISHomeWorld::ApplyLightQuality()

@@ -84,17 +84,6 @@ UStaticMeshComponent* AISHomeWorld::Block(const FVector& C, const FVector& S, co
 	if (Tex)
 	{
 		if (UTexture* T = LoadObject<UTexture>(nullptr, *TexPath(Tex))) MID->SetTextureParameterValue(TEXT("Tex"), T);
-		// full PBR when the normal / roughness maps were imported (Tools/setup_pbr.py)
-		for (const TCHAR* Map : { TEXT("nor"), TEXT("rough") })
-		{
-			const FString P = FString::Printf(TEXT("/Game/Infinisat/PHTex/%s_%s.%s_%s"), Tex, Map, Tex, Map);
-			if (UTexture* T = LoadObject<UTexture>(nullptr, *P, nullptr, LOAD_NoWarn | LOAD_Quiet))
-			{
-				const bool bNor = Map[0] == TEXT('n');
-				MID->SetTextureParameterValue(bNor ? TEXT("Nor") : TEXT("Rough"), T);
-				if (!bNor) MID->SetScalarParameterValue(TEXT("RoughMul"), 1.f);   // the map carries the real roughness
-			}
-		}
 		MID->SetScalarParameterValue(TEXT("Tile"), Tile);
 		MID->SetVectorParameterValue(TEXT("Tint"), Tint);
 	}
@@ -430,21 +419,31 @@ void AISHomeWorld::BuildField()
 	PadRoot->SetupAttachment(Root);
 	PadRoot->SetRelativeLocation(PadPos);
 	PadRoot->RegisterComponent();
-	ISBuild::LaunchPad(this, PadRoot, &PadModel);
+	const bool bKitPad = KitReady() && KitMeshAsset(TEXT("LP"), TEXT("LaunchPad")) != nullptr;
+	if (bKitPad) DressLaunchSite(PadPos);   // handmade pad + camp (ISDress.cpp)
+	else ISBuild::LaunchPad(this, PadRoot, &PadModel);
 	AddInteract(PadPos + FVector(0, 0, 100), FVector(60, 60, 100), "pad");
-	AddInteract(PadPos + FVector(-250, 120, 10), FVector(25, 20, 15), "pad");
-	AddSign(TEXT("LAUNCH PAD"), PadPos + FVector(-260, 120, 60), 180.f, 25.f, FColor(255, 200, 40));
+	AddInteract(PadPos + FVector(-250, 120, bKitPad ? 50.f : 10.f), FVector(25, 20, 15), "pad");
+	AddSign(TEXT("LAUNCH PAD"), PadPos + FVector(-260, 120, bKitPad ? 110.f : 60.f), 180.f, 25.f, FColor(255, 200, 40));
 	// safety perimeter markers
-	for (int32 i = 0; i < 16; ++i)
+	for (int32 i = 0; i < 16 && !bKitPad; ++i)
 	{
 		const FVector D = FRotator(0, i * 22.5f, 0).Vector() * 1500.f;
 		ISBuild::Prim(this, PadRoot, ISMat::Cone(), D + FVector(0, 0, 18), FVector(20, 20, 36), FLinearColor(1.f, 0.35f, 0.05f), &PadModel);
 	}
-	Place(TEXT("wooden_picnic_table"), PadPos + FVector(-700, 400, 0), 70.f, 1.f, true);
-	Place(TEXT("binoculars"), PadPos + FVector(-700, 400, 78), 10.f);
+	if (!bKitPad)
+	{
+		Place(TEXT("wooden_picnic_table"), PadPos + FVector(-700, 400, 0), 70.f, 1.f, true);
+		Place(TEXT("binoculars"), PadPos + FVector(-700, 400, 78), 10.f);
+	}
 	RocketRoot->SetRelativeLocation(PadPos + FVector(0, 0, 40));
 	RocketModel.Destroy();
-	ISBuild::HobbyRocket(this, RocketRoot, &RocketModel);
+	if (UStaticMeshComponent* Toy = bKitPad ? KitPiece(TEXT("LP"), TEXT("RocketToy"), PadPos + FVector(0, 0, 33), 0.f, FVector(1.f)) : nullptr)
+	{
+		Toy->AttachToComponent(RocketRoot, FAttachmentTransformRules::KeepWorldTransform);   // handmade rocket; the CanSat rides inside
+		RocketModel.Parts.Add(Toy);
+	}
+	else ISBuild::HobbyRocket(this, RocketRoot, &RocketModel);
 	RocketModel.SetVisible(true);
 	// motor flame under the nozzle, shown only while the motor burns
 	RocketFlame.Destroy();

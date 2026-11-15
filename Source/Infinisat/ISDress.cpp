@@ -13,6 +13,8 @@
 #include "Math/RandomStream.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 namespace ISDressK { constexpr float WallT = 14.f, WallH = 270.f; }   // same as the house shell (ISHouse.cpp)
 
@@ -384,4 +386,71 @@ UStaticMeshComponent* AISHomeWorld::PlaceCar(const FVector& P, float Yaw)
 	UStaticMeshComponent* C = KitPiece(TEXT("VEH"), TEXT("hilux"), P, bLongY ? Yaw - 90.f : Yaw, FVector(S));
 	if (C) Collider(C->Bounds.GetBox());
 	return C;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  Stylised grass carpet (KayKit Forest grass clumps): a dense jittered grid over the yard, gardens and the launch field,
+//  instanced per clump shape and faded out with distance; the ground under it is matte root-green, so it reads as
+//  grass to the horizon. Skips the house, driveway, paths, patio, street, the launch pad and the neighbours' houses.
+// ---------------------------------------------------------------------------------------------------------------------
+void AISHomeWorld::GrassCarpet()
+{
+	static const TCHAR* Clumps[] = { TEXT("Grass_1_A_Color1"), TEXT("Grass_1_B_Color1"), TEXT("Grass_2_A_Color1"), TEXT("Grass_2_B_Color1") };
+	TArray<UHierarchicalInstancedStaticMeshComponent*> H;
+	TArray<float> Fit;
+	for (const TCHAR* C : Clumps)
+	{
+		UStaticMesh* M = KitMeshAsset(TEXT("KF"), C);
+		if (!M) continue;
+		UHierarchicalInstancedStaticMeshComponent* I = NewObject<UHierarchicalInstancedStaticMeshComponent>(this);
+		I->SetStaticMesh(M);
+		I->SetupAttachment(Root);
+		I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		I->SetCastShadow(false);   // thousands of blades: no shadow cost; the ground is already root-green
+		I->SetCullDistances(3500, 5500);
+		const FBox B = M->GetBoundingBox();
+		if (UMaterialInterface* GM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Grass.M_IS_Grass")))
+		{
+			// stylised blades: two-sided, dark root -> bright tip by height (the pack's material came in black)
+			UMaterialInstanceDynamic* MI = UMaterialInstanceDynamic::Create(GM, I);
+			MI->SetScalarParameterValue(TEXT("Height"), FMath::Max(1.f, B.Max.Z));
+			for (int32 k = 0; k < FMath::Max(1, M->GetStaticMaterials().Num()); ++k) I->SetMaterial(k, MI);
+		}
+		I->RegisterComponent();
+		AllComps.Add(I);
+		H.Add(I);
+		Fit.Add(34.f / FMath::Max(1.f, B.GetSize().Z));   // ~34 cm tall clumps
+	}
+	if (H.Num() == 0) return;
+	const FBox2D Keep[] = {
+		FBox2D(FVector2D(-800, -40), FVector2D(1540, 1090)),     // house + garage
+		FBox2D(FVector2D(-570, -1320), FVector2D(-190, 0)),      // driveway
+		FBox2D(FVector2D(530, -1320), FVector2D(690, 0)),        // front path
+		FBox2D(FVector2D(40, -150), FVector2D(560, -30)),        // flower bed
+		FBox2D(FVector2D(290, 1090), FVector2D(1210, 1610)),     // patio
+		FBox2D(FVector2D(-100000, -2450), FVector2D(100000, -1150)),   // street + sidewalks
+		FBox2D(FVector2D(12200, -1300), FVector2D(23900, 4400)),       // space centre grounds
+	};
+	static const FVector2D Nb[] = { { -2700, 500 }, { 3600, 500 }, { 6900, 500 }, { -1600, -3700 }, { 1800, -3700 }, { 5200, -3700 }, { -5200, -3700 } };
+	const FVector2D PathA(450, 0), PathB(PadPos.X, PadPos.Y);
+	const float Step = 30.f / FMath::Sqrt(FMath::Max(0.25f, ISQuality::Density()));
+	FRandomStream R(777);
+	int32 N = 0;
+	for (float X = -2600.f; X <= 3600.f; X += Step)
+		for (float Y = -1150.f; Y <= PadPos.Y + 1500.f; Y += Step)
+		{
+			const FVector2D P(X + R.FRandRange(-0.45f, 0.45f) * Step, Y + R.FRandRange(-0.45f, 0.45f) * Step);
+			bool bSkip = false;
+			for (const FBox2D& K : Keep) if (K.IsInside(P)) { bSkip = true; break; }
+			for (const FVector2D& C : Nb) if (FMath::Abs(P.X - C.X) < 620.f && FMath::Abs(P.Y - C.Y) < 500.f) { bSkip = true; break; }
+			if (bSkip || FVector2D::Distance(P, FVector2D(PadPos.X, PadPos.Y)) < 120.f) continue;
+			const FVector2D Seg = PathB - PathA;
+			const float T = FMath::Clamp(FVector2D::DotProduct(P - PathA, Seg) / Seg.SizeSquared(), 0.f, 1.f);
+			if (FVector2D::Distance(P, PathA + Seg * T) < 110.f) continue;   // the dirt path to the launch field
+			const int32 V = R.RandRange(0, H.Num() - 1);
+			const float S = Fit[V] * R.FRandRange(0.8f, 1.3f);
+			H[V]->AddInstance(FTransform(FRotator(0, R.FRandRange(0.f, 360.f), 0), FVector(P.X, P.Y, 0.5f), FVector(S * 1.6f, S * 1.6f, S * R.FRandRange(0.85f, 1.25f))));   // wide clumps that overlap into a carpet
+			++N;
+		}
+	UE_LOG(LogTemp, Log, TEXT("[GRASS] %d clumps in %d batches"), N, H.Num());
 }

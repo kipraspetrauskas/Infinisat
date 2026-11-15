@@ -450,6 +450,7 @@ void AISHomeWorld::BuildField()
 	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -14.f), FVector(4.5f, 4.5f, 26.f), FLinearColor(1.f, 0.5f, 0.12f), 12.f, &RocketFlame, FRotator(180, 0, 0));
 	ISBuild::Unlit(this, RocketRoot, ISMat::Cone(), FVector(0, 0, -6.f), FVector(2.4f, 2.4f, 11.f), FLinearColor(1.f, 0.92f, 0.7f), 25.f, &RocketFlame, FRotator(180, 0, 0));
 	RocketFlame.SetVisible(false);
+	if (KitReady()) GrassCarpet();   // needs PadPos (the field and the path to the pad)
 }
 
 void AISHomeWorld::BuildNature()

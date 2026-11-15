@@ -708,8 +708,9 @@ void AISHomeWorld::BuildBackyard()
 		const float A = R.FRandRange(0.f, 2.f * PI);
 		const float D = R.FRandRange(60000.f, 110000.f);
 		const float Rad = R.FRandRange(15000.f, 40000.f);
-		const FLinearColor Hc = FMath::Lerp(FLinearColor(0.32f, 0.58f, 0.25f), FLinearColor(0.5f, 0.68f, 0.32f), R.FRand());
-		ISBuild::Prim(this, Root, ISMat::Sphere(), FVector(FMath::Cos(A) * D, FMath::Sin(A) * D, -Rad * 0.75f), FVector(Rad * 2.f, Rad * 2.4f, Rad * 2.f), Hc, nullptr, FRotator(0, R.FRandRange(0.f, 180.f), 0), 0.f, 0.95f);
+		const FLinearColor Hc = KitReady() ? FMath::Lerp(FLinearColor(0.24f, 0.46f, 0.08f), FLinearColor(0.3f, 0.52f, 0.1f), R.FRand())   // same matte green as the grass ground
+		                                   : FMath::Lerp(FLinearColor(0.32f, 0.58f, 0.25f), FLinearColor(0.5f, 0.68f, 0.32f), R.FRand());
+		ISBuild::Prim(this, Root, ISMat::Sphere(), FVector(FMath::Cos(A) * D, FMath::Sin(A) * D, -Rad * 0.75f), FVector(Rad * 2.f, Rad * 2.4f, Rad * 2.f), Hc, nullptr, FRotator(0, R.FRandRange(0.f, 180.f), 0), 0.f, 1.f);
 	}
 
 	// instanced nature (trees, bushes, grass, flowers), density follows the graphics preset
@@ -769,12 +770,25 @@ void AISHomeWorld::BuildBackyard()
 		Scatter(TEXT("tree_pineRoundB"), 120, 9000.f, 45000.f, Mid, 4.f, 7.f, 150000.f);
 		Scatter(TEXT("tree_fat"), 80, 7000.f, 40000.f, Mid, 3.5f, 5.5f, 150000.f);
 	}
-	Scatter(TEXT("plant_bush"), 260, 2500.f, 30000.f, Mid, 2.5f, 4.5f, 40000.f);
-	Scatter(TEXT("rock_largeA"), 40, 6000.f, 35000.f, Mid, 1.5f, 3.5f, 60000.f);
-	Scatter(TEXT("grass_large"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
-	Scatter(TEXT("grass"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
-	Scatter(TEXT("flower_yellowA"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
-	Scatter(TEXT("flower_purpleB"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+	if (KitReady())   // faceted rocks + bushes/ferns (KayKit, Quaternius); the grass itself is the GrassCarpet
+	{
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_A_Color1/SM_Rock_1_A_Color1.SM_Rock_1_A_Color1"), 50, 2500.f, 35000.f, Mid, 60.f, 160.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_D_Color1/SM_Rock_1_D_Color1.SM_Rock_1_D_Color1"), 40, 2500.f, 35000.f, Mid, 80.f, 220.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/KF/Rock_1_H_Color1/SM_Rock_1_H_Color1.SM_Rock_1_H_Color1"), 30, 2500.f, 35000.f, Mid, 50.f, 120.f, 60000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Bush_1/SM_Bush_1.SM_Bush_1"), 120, 2500.f, 30000.f, Mid, 70.f, 140.f, 40000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Bush_2/SM_Bush_2.SM_Bush_2"), 120, 2500.f, 30000.f, Mid, 60.f, 120.f, 40000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Plant_2/SM_Plant_2.SM_Plant_2"), 120, 2500.f, 20000.f, Mid, 40.f, 90.f, 20000.f);
+		Scatter(TEXT("/Game/Infinisat/QN/Flowers/SM_Flowers.SM_Flowers"), 160, 2500.f, 16000.f, Mid, 25.f, 45.f, 9000.f);
+	}
+	else
+	{
+		Scatter(TEXT("plant_bush"), 260, 2500.f, 30000.f, Mid, 2.5f, 4.5f, 40000.f);
+		Scatter(TEXT("rock_largeA"), 40, 6000.f, 35000.f, Mid, 1.5f, 3.5f, 60000.f);
+		Scatter(TEXT("grass_large"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
+		Scatter(TEXT("grass"), 2800, 2500.f, 16000.f, Mid, 1.4f, 2.2f, 9000.f);
+		Scatter(TEXT("flower_yellowA"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+		Scatter(TEXT("flower_purpleB"), 500, 2500.f, 14000.f, Mid, 1.2f, 1.7f, 7000.f);
+	}
 }
 
 // =====================================================================================================
@@ -870,10 +884,18 @@ void AISHomeWorld::BuildGround2()
 	G->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	G->SetCollisionResponseToAllChannels(ECR_Block);
 	G->RegisterComponent();
-	if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Ground.M_IS_Ground"))) G->SetMaterial(0, M);
+	if (KitReady())
+	{
+		// matte root-green under the stylised grass carpet: no shine, and it reads as grass where the blades fade out
+		UMaterialInstanceDynamic* GM = UMaterialInstanceDynamic::Create(ISMat::Color(), G);
+		GM->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.24f, 0.46f, 0.08f));
+		GM->SetScalarParameterValue(TEXT("Roughness"), 1.f);
+		GM->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+		G->SetMaterial(0, GM);
+	}
+	else if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Infinisat/Materials/M_IS_Ground.M_IS_Ground"))) G->SetMaterial(0, M);
 	AllComps.Add(G);
-	// mowed lawn around the house: slightly brighter
-	Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);
+	if (!KitReady()) Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);   // mowed lawn around the house
 }
 
 // Logs furniture that blocks doors/windows, overlaps other furniture, floats, or pokes through walls.

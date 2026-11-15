@@ -207,6 +207,7 @@ private:
 	void ValidateDress();
 	UStaticMeshComponent* PlaceTree(const FVector& P, float Yaw);
 	UStaticMeshComponent* PlaceCar(const FVector& P, float Yaw);
+	void GrassCarpet();
 	TArray<FISPlaced> Dressed;
 	// handmade kit pieces (ISDress.cpp)
 	static UStaticMesh* KitMeshAsset(const TCHAR* Kit, const TCHAR* Name);

@@ -253,9 +253,51 @@ void AISHomeWorld::Roof(const FVector& C, float SX, float SY, float Pitch, float
 	AllComps.Add(PM);
 }
 
-void AISHomeWorld::HouseShell(const FVector& Origin, float, float, float Yaw, const FLinearColor&, const FLinearColor&, const TCHAR* Type, const FLinearColor&)
+// Neighbour house built exactly like ours (same walls, trimmed windows, gabled roof, same flat paint style), door to the street.
+void AISHomeWorld::HouseShell(const FVector& Origin, float SX, float SY, float Yaw, const FLinearColor& WallCol, const FLinearColor& DoorCol, const TCHAR*, const FLinearColor& RoofCol)
 {
-	PlaceMesh(this, Root, AllComps, KPath(TEXT("sub"), Type), Origin, Yaw, KCity, true, true);
+	const float X0 = Origin.X - SX * 0.5f, X1 = Origin.X + SX * 0.5f, Y0 = Origin.Y - SY * 0.5f, Y1 = Origin.Y + SY * 0.5f;
+	const bool bDoorFront = Yaw < 0.f;          // -90: faces -Y (street below), +90: faces +Y
+	Paint(FVector(Origin.X, Origin.Y, FZ * 0.5f - 15.f), FVector(SX + 30.f, SY + 30.f, FZ + 30.f), FLinearColor(0.75f, 0.73f, 0.7f));   // plinth
+	auto Win = [](float From) { return FISOpening{ From, From + 120.f, 90.f, 210.f, 1 }; };
+	const float Mid = SX * 0.5f;
+	TArray<FISOpening> Front = { Win(120.f), Win(SX - 240.f) }, Back = { Win(150.f), Win(SX - 270.f) };
+	(bDoorFront ? Front : Back).Add(FISOpening{ Mid - 50.f, Mid + 50.f, 0.f, 215.f, 0 });
+	Wall(FVector2D(X0, Y0), FVector2D(X1, Y0), Front, nullptr, Cream, nullptr, WallCol, -1.f);
+	Wall(FVector2D(X0, Y1), FVector2D(X1, Y1), Back, nullptr, Cream, nullptr, WallCol, 1.f);
+	Wall(FVector2D(X0, Y0), FVector2D(X0, Y1), { Win(SY * 0.5f - 60.f) }, nullptr, Cream, nullptr, WallCol, -1.f);
+	Wall(FVector2D(X1, Y0), FVector2D(X1, Y1), { Win(SY * 0.5f - 60.f) }, nullptr, Cream, nullptr, WallCol, 1.f);
+	Paint(FVector(Origin.X, bDoorFront ? Y0 - 2.f : Y1 + 2.f, FZ + 107.f), FVector(98.f, 6.f, 214.f), DoorCol, 0.5f);           // closed door
+	Paint(FVector(Origin.X, bDoorFront ? Y0 - 60.f : Y1 + 60.f, FZ * 0.5f), FVector(160.f, 100.f, FZ), FLinearColor(0.75f, 0.74f, 0.72f), 0.9f);   // step
+	Roof(FVector(Origin.X, Origin.Y, FZ + WallH + 10.f), SX, SY, 30.f, 50.f, nullptr, RoofCol, nullptr, WallCol);
+}
+
+// Picket-rail fence from A to B in the house's wood colour: posts every 1.5 m and two rails; optional gap (a gate opening).
+void AISHomeWorld::WoodFence(const FVector& A, const FVector& B, float GapFrom, float GapTo)
+{
+	const FVector D = B - A;
+	const float Len = D.Size2D();
+	if (Len < 10.f) return;
+	const FVector U = D.GetSafeNormal2D();
+	const float Yaw = U.Rotation().Yaw;
+	const FLinearColor FenceCol = Wood * 1.15f;
+	for (float T = 0.f; T <= Len + 1.f; T += 150.f)
+	{
+		if (GapTo > GapFrom && T > GapFrom && T < GapTo) continue;
+		Paint(A + U * T + FVector(0, 0, 55.f), FVector(10.f, 10.f, 110.f), FenceCol, 0.8f, true, Yaw);
+	}
+	if (GapTo > GapFrom)   // gate posts exactly at the opening
+	{
+		Paint(A + U * GapFrom + FVector(0, 0, 60.f), FVector(12.f, 12.f, 120.f), FenceCol, 0.8f, true, Yaw);
+		Paint(A + U * GapTo + FVector(0, 0, 60.f), FVector(12.f, 12.f, 120.f), FenceCol, 0.8f, true, Yaw);
+	}
+	auto Rail = [&](float T0, float T1)
+	{
+		if (T1 - T0 < 5.f) return;
+		for (float Z : { 40.f, 88.f }) Paint(A + U * ((T0 + T1) * 0.5f) + FVector(0, 0, Z), FVector(T1 - T0, 3.f, 12.f), FenceCol, 0.8f, true, Yaw);
+	};
+	if (GapTo > GapFrom) { Rail(0.f, GapFrom); Rail(GapTo, Len); }
+	else Rail(0.f, Len);
 }
 
 // =====================================================================================================
@@ -487,19 +529,22 @@ void AISHomeWorld::BuildNeighbourhood()
 	auto C = [this](const TCHAR* Kit, const TCHAR* Name, const FVector& P, float Face, float Scale, bool bCollide = true)
 	{ return PlaceMesh(this, Root, AllComps, KPath(Kit, Name), P, Face, Scale, bCollide, true); };
 
-	// road along X with sidewalks
-	for (int32 i = -8; i <= 10; ++i)
-		C(TEXT("road"), TEXT("road-straight"), FVector(i * 1000.f, -1800.f, 0.5f), 0.f, KCity, false);
+	// road along X: one clean asphalt strip with a dashed centre line, kerbed sidewalks, simple street lights
+	Paint(FVector(1000, -1800, 0.6f), FVector(19000, 960, 1.2f), FLinearColor(0.2f, 0.2f, 0.21f), 0.9f, false);
+	for (int32 i = -9; i <= 10; ++i) Paint(FVector(i * 1000.f + 250.f, -1800.f, 1.3f), FVector(300.f, 12.f, 0.4f), FLinearColor(0.92f, 0.9f, 0.82f), 0.8f, false);
 	Paint(FVector(1000, -1240, 4), FVector(19000, 160, 8), FLinearColor(0.82f, 0.81f, 0.79f), 0.9f);
 	Paint(FVector(1000, -2360, 4), FVector(19000, 160, 8), FLinearColor(0.82f, 0.81f, 0.79f), 0.9f);
 	for (int32 i = -3; i <= 4; ++i)
-	{
-		C(TEXT("road"), TEXT("light-square"), FVector(i * 2500.f, -1190.f, 8.f), -90.f, KCity * 0.8f);
-		C(TEXT("road"), TEXT("light-square"), FVector(i * 2500.f + 1250.f, -2410.f, 8.f), 90.f, KCity * 0.8f);
-	}
+		for (int32 s = 0; s < 2; ++s)
+		{
+			const float Lx = i * 2500.f + s * 1250.f, Ly = s == 0 ? -1210.f : -2390.f, Arm = s == 0 ? -90.f : 90.f;
+			Paint(FVector(Lx, Ly, 300.f), FVector(10.f, 10.f, 600.f), FLinearColor(0.55f, 0.57f, 0.6f), 0.5f, true, 0.f, 0.6f);
+			Paint(FVector(Lx, Ly + Arm * 0.6f, 595.f), FVector(10.f, 110.f, 8.f), FLinearColor(0.55f, 0.57f, 0.6f), 0.5f, false, 0.f, 0.6f);
+			Paint(FVector(Lx, Ly + Arm * 1.15f, 588.f), FVector(30.f, 18.f, 8.f), FLinearColor(1.f, 0.95f, 0.8f), 0.3f, false);
+		}
 	// our front garden: path, driveway, mailbox, flower beds, car
-	for (int32 i = 0; i < 3; ++i) C(TEXT("sub"), TEXT("path-long"), FVector(610, -300.f - i * 400.f, 1.f), 0.f, KCity, false);
-	for (int32 i = 0; i < 3; ++i) C(TEXT("sub"), TEXT("driveway-long"), FVector(-380, -250.f - i * 400.f, 1.f), 0.f, KCity, false);
+	Paint(FVector(610, -700, 1.f), FVector(140, 1200, 2), FLinearColor(0.85f, 0.83f, 0.8f), 0.9f, false);   // path
+	Paint(FVector(-380, -650, 1.f), FVector(340, 1300, 2), FLinearColor(0.7f, 0.69f, 0.67f), 0.9f, false);  // driveway
 	C(TEXT("car"), TEXT("sedan"), FVector(-380, -520, 2.f), -90.f, 1.6f);
 	Paint(FVector(900, -1080, 55), FVector(8, 8, 110), Trim, 0.6f);
 	Paint(FVector(900, -1080, 120), FVector(26, 45, 26), FLinearColor(0.2f, 0.45f, 0.75f), 0.5f);
@@ -517,17 +562,23 @@ void AISHomeWorld::BuildNeighbourhood()
 	C(TEXT("nat"), TEXT("tree_oak"), FVector(1250, -700, 0), 30.f, KNat);
 	C(TEXT("nat"), TEXT("tree_default"), FVector(-1100, 1400, 0), 0.f, KNat);
 
-	// neighbours (Kenney suburban houses) with their own driveways and trees
-	struct FN { const TCHAR* Type; float X, Y, Face; };
-	const FN Hs[] = { { TEXT("building-type-c"), -2700, 500, -90 }, { TEXT("building-type-k"), 3600, 500, -90 }, { TEXT("building-type-f"), 6900, 500, -90 },
-		{ TEXT("building-type-h"), -1600, -3700, 90 }, { TEXT("building-type-a"), 1800, -3700, 90 }, { TEXT("building-type-m"), 5200, -3700, 90 }, { TEXT("building-type-p"), -5200, -3700, 90 } };
+	// neighbours: built the same way as our house (same walls, windows, roof, flat paint), each in its own colours
+	struct FN { float X, Y, Face; FLinearColor Wall, Door, RoofC; };
+	const FN Hs[] = {
+		{ -2700, 500, -90, Mint, FLinearColor(0.2f, 0.3f, 0.45f), FLinearColor(0.35f, 0.42f, 0.5f) },
+		{ 3600, 500, -90, SoftBlue, Coral, FLinearColor(0.55f, 0.3f, 0.26f) },
+		{ 6900, 500, -90, Peach, Teal, FLinearColor(0.3f, 0.33f, 0.38f) },
+		{ -1600, -3700, 90, Lilac, FLinearColor(0.3f, 0.2f, 0.12f), FLinearColor(0.6f, 0.32f, 0.28f) },
+		{ 1800, -3700, 90, Cream, FLinearColor(0.1f, 0.25f, 0.4f), Coral },
+		{ 5200, -3700, 90, Aqua, FLinearColor(0.5f, 0.35f, 0.15f), FLinearColor(0.35f, 0.36f, 0.4f) },
+		{ -5200, -3700, 90, WarmWhite, Teal, FLinearColor(0.5f, 0.3f, 0.25f) } };
 	for (const FN& H : Hs)
 	{
-		C(TEXT("sub"), H.Type, FVector(H.X, H.Y, 0), H.Face, KCity);
+		HouseShell(FVector(H.X, H.Y, 0), 1100.f, 850.f, H.Face, H.Wall, H.Door, nullptr, H.RoofC);
 		const float Dir = H.Y > 0 ? -1.f : 1.f;
-		C(TEXT("sub"), TEXT("driveway-long"), FVector(H.X + 450.f, H.Y + Dir * 900.f, 1.f), 0.f, KCity, false);
-		C(TEXT("nat"), R.RandRange(0, 1) ? TEXT("tree_default") : TEXT("tree_fat"), FVector(H.X - 600.f, H.Y + Dir * 700.f, 0), R.FRandRange(0.f, 360.f), KNat);
-		C(TEXT("sub"), TEXT("fence-1x3"), FVector(H.X - 300.f, H.Y + Dir * 1150.f, 0), 0.f, KCity * 0.7f, false);
+		Paint(FVector(H.X + 750.f, H.Y + Dir * 900.f, 1.f), FVector(320, 900, 2), FLinearColor(0.7f, 0.69f, 0.67f), 0.9f, false);   // driveway
+		C(TEXT("nat"), R.RandRange(0, 1) ? TEXT("tree_default") : TEXT("tree_fat"), FVector(H.X - 800.f, H.Y + Dir * 800.f, 0), R.FRandRange(0.f, 360.f), KNat);
+		WoodFence(FVector(H.X - 600.f, H.Y + Dir * 1150.f, 0), FVector(H.X + 500.f, H.Y + Dir * 1150.f, 0));
 	}
 }
 
@@ -537,16 +588,10 @@ void AISHomeWorld::BuildBackyard()
 	{ return PlaceMesh(this, Root, AllComps, KPath(Kit, Name), P, Face, Scale, bCollide, true); };
 	// wooden fence around the back garden with a gate toward the field
 	const float Y1 = 3400.f, X0 = -900.f, X1 = 2300.f;
-	for (float X = X0; X < X1 - 10.f; X += 300.f)
-	{
-		if (X > 600.f && X < 1000.f) { if (X < 700.f) C(TEXT("nat"), TEXT("fence_gate"), FVector(X + 150.f, Y1, 0), 0.f, 3.f, false); continue; }
-		C(TEXT("nat"), TEXT("fence_simple"), FVector(X + 150.f, Y1, 0), 0.f, 3.f);
-	}
-	for (float Y = 1100.f; Y < Y1 - 10.f; Y += 300.f)
-	{
-		C(TEXT("nat"), TEXT("fence_simple"), FVector(X0, Y + 150.f, 0), 90.f, 3.f);
-		C(TEXT("nat"), TEXT("fence_simple"), FVector(X1, Y + 150.f, 0), 90.f, 3.f);
-	}
+	// one continuous fence; the gate opening is lined up exactly with the path to the launch field (x = 800)
+	WoodFence(FVector(X0, Y1, 0), FVector(X1, Y1, 0), 800.f - X0 - 110.f, 800.f - X0 + 110.f);
+	WoodFence(FVector(X0, 1100.f, 0), FVector(X0, Y1, 0));
+	WoodFence(FVector(X1, 1100.f, 0), FVector(X1, Y1, 0));
 	// patio + garden furniture
 	Paint(FVector(750, 1350, 4), FVector(900, 500, 8), FLinearColor(0.78f, 0.74f, 0.68f), 0.9f);
 	auto F = [this](const TCHAR* Name, const FVector& Pp, float Face) { return PlaceMesh(this, Root, AllComps, KPath(TEXT("furn"), Name), Pp, Face, KF, true, true); };

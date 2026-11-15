@@ -484,7 +484,7 @@ void AISHomeWorld::RebuildTray()
 		Slot->SetRelativeLocation(Pos);
 		Slot->RegisterComponent();
 		FISModel& M = TrayModels.Add(Id);
-		ISBuild::Prim(this, Slot, ISMat::Cube(), FVector(0, 0, 0.1f), FVector(11.f, 10.f, 0.2f), FLinearColor(0.12f, 0.12f, 0.14f), &M);
+		// parts lie straight on the bench top (no mats)
 		ISBuild::CanSatPart(this, Slot, Id, FVector(0, 0, 0.2f), &M);
 		UBoxComponent* B = NewObject<UBoxComponent>(this);
 		B->SetupAttachment(Slot);

@@ -403,7 +403,7 @@ void AISHomeWorld::ProcessThumbs()
 	const FName Id = ThumbQueue[0];
 	// photograph the part lying on the bench (already on screen, so it renders); parts not on the bench are built in the booth
 	TArray<UStaticMeshComponent*> Subject;
-	if (const FISModel* T = TrayModels.Find(Id)) { for (int32 i = 1; i < T->Parts.Num(); ++i) if (IsValid(T->Parts[i])) Subject.Add(T->Parts[i]); }   // [0] is the mat
+	if (const FISModel* T = TrayModels.Find(Id)) { for (UStaticMeshComponent* C : T->Parts) if (IsValid(C)) Subject.Add(C); }
 	if (ThumbFrames < 0)
 	{
 		ThumbModel.Destroy();

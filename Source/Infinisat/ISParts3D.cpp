@@ -149,7 +149,7 @@ namespace ISBuild
 						}
 					}
 				if (bRadio)   // quarter-wave whip: 17.3 cm at 433 MHz
-					Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 8.65f), FVector(0.08f, 0.08f, 17.3f), Silver, M, FRotator::ZeroRotator, 1.f, 0.2f);
+					Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 1.4f), FVector(0.45f, 0.45f, 2.8f), Copper, M, FRotator::ZeroRotator, 1.f, 0.35f);   // helical 433 MHz coil antenna (the usual one on hobby LoRa modules)
 				return H;
 			}
 		}
@@ -200,7 +200,7 @@ namespace ISBuild
 			for (int32 i = 0; i < 6; ++i)
 				Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 0.6f + i * 0.18f), FVector(0.5f, 0.5f, 0.06f), Copper, M, FRotator::ZeroRotator, 1.f, 0.3f);
 			// quarter-wave whip antenna: 17.3 cm at 433 MHz (lambda/4 = c / f / 4)
-			Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 8.65f), FVector(0.08f, 0.08f, 17.3f), Silver, M, FRotator::ZeroRotator, 1.f, 0.2f);
+			Prim(O, P, ISMat::Cyl(), B + FVector(1.f, 0, 1.6f + 1.4f), FVector(0.45f, 0.45f, 2.8f), Copper, M, FRotator::ZeroRotator, 1.f, 0.35f);   // helical 433 MHz coil antenna (the usual one on hobby LoRa modules)
 			return 1.6f;
 		}
 		if (S == TEXT("pl_temp"))

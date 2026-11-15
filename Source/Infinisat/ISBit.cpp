@@ -4,6 +4,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 
 AISBitCharacter::AISBitCharacter()
 {
@@ -22,6 +25,24 @@ AISBitCharacter::AISBitCharacter()
 	HoldRoot = CreateDefaultSubobject<USceneComponent>(TEXT("HoldRoot"));
 	HoldRoot->SetupAttachment(Cam);
 	HoldRoot->SetRelativeLocation(FVector(34.f, 8.f, -12.f));
+	// BIT is first person with no visible body, but it should still throw a shadow: hidden spheres that cast one
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	auto ShadowPart = [&](const TCHAR* Name, USceneComponent* Parent, const FVector& Loc, float Scale)
+	{
+		UStaticMeshComponent* C = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		C->SetupAttachment(Parent);
+		if (SphereMesh.Succeeded()) C->SetStaticMesh(SphereMesh.Object);
+		C->SetRelativeLocation(Loc);
+		C->SetRelativeScale3D(FVector(Scale));
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetHiddenInGame(true);
+		C->bCastHiddenShadow = true;
+		C->SetCastShadow(true);
+		return C;
+	};
+	ShadowBody = ShadowPart(TEXT("ShadowBody"), GetCapsuleComponent(), FVector(0.f, 0.f, 25.f), 0.6f);
+	ShadowHandL = ShadowPart(TEXT("ShadowHandL"), GetCapsuleComponent(), FVector(20.f, -38.f, 10.f), 0.18f);
+	ShadowHandR = ShadowPart(TEXT("ShadowHandR"), GetCapsuleComponent(), FVector(20.f, 38.f, 10.f), 0.18f);
 
 	bUseControllerRotationYaw = true;
 	bUseControllerRotationPitch = false;

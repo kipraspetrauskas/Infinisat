@@ -205,6 +205,8 @@ private:
 	void DressLaunchSite(const FVector& Pad);
 	UStaticMeshComponent* Deco(const TCHAR* Kit, const TCHAR* Name, const FVector& Pos, float Yaw, float Scale = 1.f, bool bSolid = false, bool bSettle = true);
 	void ValidateDress();
+	UStaticMeshComponent* PlaceTree(const FVector& P, float Yaw);
+	UStaticMeshComponent* PlaceCar(const FVector& P, float Yaw);
 	TArray<FISPlaced> Dressed;
 	// handmade kit pieces (ISDress.cpp)
 	static UStaticMesh* KitMeshAsset(const TCHAR* Kit, const TCHAR* Name);

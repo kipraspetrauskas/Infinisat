@@ -205,7 +205,7 @@ void AISHomeWorld::ApplyLook()
 		// (the garage door faces -Y: a sun travelling +Y reaches the bench at the back wall)
 		{ -8.f, 75.f, 14.f, 1.5f, 1.0f, 0.02f, 0.85f, -0.25f, -0.6f, -3.6f, 5800.f, 0.f, FVector4(0.93f, 0.98f, 1.08f, 1.f), FVector4(1.08f, 1.0f, 0.9f, 1.f) },
 		// B bright morning: high clean sun, crisp shadows, light haze
-		{ -42.f, 50.f, 12.f, 0.8f, 1.2f, 0.005f, 0.3f, -0.3f, -1.9f, -3.9f, 6300.f, 0.f, FVector4(0.97f, 0.99f, 1.03f, 1.f), FVector4(1.03f, 1.0f, 0.97f, 1.f) },
+		{ -42.f, 50.f, 12.f, 0.8f, 2.2f, 0.005f, 0.3f, -0.3f, -1.9f, -3.9f, 6300.f, 0.f, FVector4(0.97f, 0.99f, 1.03f, 1.f), FVector4(1.03f, 1.0f, 0.97f, 1.f) },
 		// C soft overcast + warm rim: dim, very soft key under heavy cloud, warm low light from behind
 		{ -55.f, 120.f, 5.f, 10.f, 2.0f, 0.012f, 0.5f, 0.45f, -2.2f, -3.9f, 6800.f, 4.f, FVector4(0.95f, 0.98f, 1.05f, 1.f), FVector4(1.05f, 1.0f, 0.94f, 1.f) },
 	};

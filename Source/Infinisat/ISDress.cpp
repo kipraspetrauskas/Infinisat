@@ -357,3 +357,31 @@ void AISHomeWorld::DressLaunchSite(const FVector& Pad)
 		KitPiece(TEXT("K/road"), TEXT("construction_cone"), Pad + D, i * 30.f, FVector(2.f));
 	}
 }
+
+// Single garden / street tree: a Quaternius low-poly tree (variant + height from the position), trunk collider.
+UStaticMeshComponent* AISHomeWorld::PlaceTree(const FVector& P, float Yaw)
+{
+	static const TCHAR* Trees[] = { TEXT("CommonTree_1"), TEXT("CommonTree_2"), TEXT("CommonTree_3"), TEXT("CommonTree_4"), TEXT("BirchTree_2"), TEXT("PineTree_1") };
+	const uint32 Hh = GetTypeHash(FIntPoint(FMath::RoundToInt(P.X), FMath::RoundToInt(P.Y)));
+	const TCHAR* Name = Trees[Hh % UE_ARRAY_COUNT(Trees)];
+	UStaticMesh* Mesh = KitMeshAsset(TEXT("QN"), Name);
+	if (!Mesh) return nullptr;
+	const float Height = 650.f + float(Hh % 300);
+	const float S = Height / FMath::Max(1.f, Mesh->GetBoundingBox().GetSize().Z);
+	UStaticMeshComponent* T = KitPiece(TEXT("QN"), Name, P, Yaw, FVector(S));
+	Collider(FBox(P + FVector(-25.f, -25.f, 0.f), P + FVector(25.f, 25.f, 300.f)));
+	return T;
+}
+
+// The user's Toyota Hilux (low-poly), 5.2 m long, long axis along the same direction the Kenney sedan used for Yaw.
+UStaticMeshComponent* AISHomeWorld::PlaceCar(const FVector& P, float Yaw)
+{
+	UStaticMesh* Mesh = KitMeshAsset(TEXT("VEH"), TEXT("hilux"));
+	if (!Mesh || !KitReady()) return nullptr;
+	const FVector Sz = Mesh->GetBoundingBox().GetSize();
+	const bool bLongY = Sz.Y > Sz.X;
+	const float S = 520.f / FMath::Max(1.f, FMath::Max(Sz.X, Sz.Y));
+	UStaticMeshComponent* C = KitPiece(TEXT("VEH"), TEXT("hilux"), P, bLongY ? Yaw - 90.f : Yaw, FVector(S));
+	if (C) Collider(C->Bounds.GetBox());
+	return C;
+}

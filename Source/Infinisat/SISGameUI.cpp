@@ -177,6 +177,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
 		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosZoom="), Zm)) Scene->ZoomCamera(Zm); }
+		else if (DevScreen == TEXT("globe")) { double GA = 1500000.0; FParse::Value(FCommandLine::Get(), TEXT("ISGlobeAlt="), GA); OpenGlobe(GA); }
 		else if (DevScreen == TEXT("missions")) Go(EScreen::Missions);
 		else if (DevScreen == TEXT("help")) Go(EScreen::Help);
 	}
@@ -192,7 +193,7 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 	if (AISPlayerController* P = IPC())
 	{
 		const EISMode M = P->GetMode();
-		if (M == EISMode::Walk && Screen != EScreen::Play) { Screen = EScreen::Play; bDirty = true; }
+		if ((M == EISMode::Walk || M == EISMode::Overview) && Screen != EScreen::Play) { Screen = EScreen::Play; bDirty = true; }
 		if (M == EISMode::Bench && Screen != EScreen::Bench) { Screen = EScreen::Bench; bDirty = true; }
 	}
 	if (AISHomeWorld* W = HW())
@@ -217,6 +218,25 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 		{
 			bOpsInCosmos = false;
 			Go(EScreen::Ops);
+		}
+		// globe <-> solar system, and globe -> back down to the ground at the site
+		else if (Z < 0 && Screen == EScreen::Globe)
+		{
+			bGlobeInCosmos = true;
+			Go(EScreen::Cosmos);
+			const int32 Earth = Scene->CosmosFind(TEXT("Earth"));
+			if (Earth >= 0) Scene->FocusCosmos(Earth);
+		}
+		else if (Z > 0 && Screen == EScreen::Cosmos && bGlobeInCosmos && Scene->CosmosName(Scene->CosmosFocusIdx()) == TEXT("Earth"))
+		{
+			bGlobeInCosmos = false;
+			GlobeAlt = 5000000.0;
+			Go(EScreen::Globe);
+		}
+		if (Screen == EScreen::Globe && Scene->TakeLand() && IPC())
+		{
+			IPC()->EnterWorld();
+			IPC()->EnterOverview(140000.0);
 		}
 	}
 	if ((Screen == EScreen::Ops || (Screen == EScreen::Cosmos && bOpsInCosmos)) && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
@@ -324,6 +344,8 @@ AISPlayerController* SISGameUI::IPC() const { return Cast<AISPlayerController>(P
 AISHomeWorld* SISGameUI::HW() const { AISPlayerController* P = IPC(); return P ? P->World : nullptr; }
 bool SISGameUI::InWorld() const { AISPlayerController* P = IPC(); return P && P->GetMode() != EISMode::Menu; }
 void SISGameUI::ShowOrders() { Screen = EScreen::Missions; bDirty = true; }
+void SISGameUI::OpenGlobe(double AltM) { GlobeAlt = AltM; bGlobeInCosmos = false; Go(EScreen::Globe); }
+
 void SISGameUI::OpenBuilding(FName A)
 {
 	if (A == "sc_track") { bOpsInCosmos = false; Go(EScreen::Cosmos); }
@@ -354,6 +376,7 @@ void SISGameUI::UpdateScene()
 	case EScreen::Debrief: Scene->ShowCompare(Design, Mission().RealMesh, Mission().RealName); break;
 	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: case EScreen::Pause: break;
 	case EScreen::Cosmos: Scene->ShowCosmos(Design); Scene->SetBitMood(1); break;
+	case EScreen::Globe: Scene->ShowGlobe((float)GlobeAlt); break;
 	case EScreen::Pedia:
 		Scene->ShowModelOnly(MeshOf(Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Mesh), Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Name);
 		break;
@@ -460,6 +483,7 @@ void SISGameUI::Rebuild()
 	case EScreen::Debrief: W = BuildDebrief(); break;
 	case EScreen::Pedia: W = BuildPedia(); break;
 	case EScreen::Cosmos: W = BuildCosmos(); break;
+	case EScreen::Globe: W = BuildGlobe(); break;
 	case EScreen::Help: W = BuildHelp(); break;
 	case EScreen::Play: W = BuildPlay(); break;
 	case EScreen::Bench: W = BuildBench(); break;
@@ -1621,7 +1645,7 @@ TSharedRef<SWidget> SISGameUI::BuildPlay()
 			// controls fade out after the first half minute
 			SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity_Lambda([this]() { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(1.f - (float)(UITime - 30.0) / 5.f, 0.f, 0.75f))); })
 			.ShadowOffset(FVector2D(1, 1)).Justification(ETextJustify::Right)
-			.Text(FText::FromString(TEXT("WASD move   SHIFT faster   SPACE hover   E use   Q scan for parts   F chase camera   , / . time   ESC menu")))
+			.Text_Lambda([this]() { AISPlayerController* P = IPC(); if (P && P->GetMode() == EISMode::Overview) return FText::FromString(FString::Printf(TEXT("ALTITUDE %s   -   wheel out: higher (on up to orbit)   wheel in: back down   mouse: turn   ESC: land"), *(P->OverviewAltM() >= 1000.0 ? FString::Printf(TEXT("%.1f km"), P->OverviewAltM() / 1000.0) : FString::Printf(TEXT("%.0f m"), P->OverviewAltM())))); return FText::FromString(TEXT("WASD move   SHIFT faster   SPACE hover   E use   Q scan for parts   F chase camera   , / . time   WHEEL rise above the site   ESC menu")); })
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(22, 18)
 		[
@@ -2365,7 +2389,8 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	TSharedRef<SVerticalBox> Tools = SNew(SVerticalBox);
 	if (bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to your satellite"), [this]() { bOpsInCosmos = false; Go(EScreen::Ops); }, 1, 12)];
 	Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels on") : TEXT("Labels off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 11)];
-	if (!bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Walk out"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 12)];
+	if (bGlobeInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to Earth"), [this]() { bGlobeInCosmos = false; GlobeAlt = 5000000.0; Go(EScreen::Globe); }, 1, 12)];
+	else if (!bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Walk out"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 12)];
 	Tools->AddSlot().AutoHeight()[Btn(TEXT("Menu"), [this]() { bOpsInCosmos = false; Go(EScreen::Title); }, 0, 11)];
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(SISCosmosOverlay, Scene, PC, [this](int32 i) { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; })]
@@ -2400,5 +2425,33 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SSpacer)]   // no planet strip: click a world (or its label) in space to fly there
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18, 0, 0, 0)[SNew(SBox).WidthOverride(190)[Tools]]
 			]
+		];
+}
+
+// The real Earth, reached by zooming out from the ground: only a small caption and two ways on; the planet is the screen.
+TSharedRef<SWidget> SISGameUI::BuildGlobe()
+{
+	const FLinearColor Bar(0.02f, 0.025f, 0.03f, 0.82f);
+	return SNew(SOverlay)
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(20)
+		[
+			SNew(SBox).WidthOverride(400)
+			[
+				SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(14, 10))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(FLinearColor::White).Text(FText::FromString(TEXT("Earth")))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.75f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("The orange dot is your space centre on the Mahia Peninsula, New Zealand, 1.2 km from Rocket Lab's real Launch Complex 1. The blue and gold dots are real satellite families: Starlink, GPS, Galileo, the geostationary belt.")))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.45f)).AutoWrapText(true)
+						.Text(FText::FromString(TEXT("Wheel in: land back at the site.  Wheel out: the solar system.  Drag: turn the globe.")))]
+				]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(20)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Back to the ground"), [this]() { if (IPC()) { IPC()->EnterWorld(); IPC()->EnterOverview(140000.0); } }, 1, 12)]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Solar system"), [this]() { bGlobeInCosmos = true; Go(EScreen::Cosmos); if (Scene.IsValid()) { const int32 Ea = Scene->CosmosFind(TEXT("Earth")); if (Ea >= 0) Scene->FocusCosmos(Ea); } }, 0, 12)]
 		];
 }

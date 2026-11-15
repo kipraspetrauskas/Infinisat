@@ -163,3 +163,9 @@ void AISEarth::Survey()
 		UE_LOG(LogTemp, Log, TEXT("[EARTH] site survey written"));
 	}));
 }
+
+FVector AISEarth::SiteNorthEarthFrame() const
+{
+	const double La = FMath::DegreesToRadians(SiteLat), Lo = FMath::DegreesToRadians(SiteLon);
+	return EcefToEarthFrame(FVector(-FMath::Sin(La) * FMath::Cos(Lo), -FMath::Sin(La) * FMath::Sin(Lo), FMath::Cos(La))).GetSafeNormal();
+}

@@ -2,6 +2,7 @@
 // The rocket is built from the launcher's real stage dimensions; spent stages, boosters and the fairing drop away;
 // the plume grows wider as the air thins (under-expanded exhaust in vacuum).
 #include "ISScene.h"
+#include "ISEarth.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -33,7 +34,7 @@ bool AISSpaceScene::StartFlight(FName VehicleId, double PayloadKg, double Target
 		FlightLines->RegisterComponent();
 	}
 	// launch plane = the spacecraft's orbital plane; the pad sits ~25 deg "behind" the spacecraft so the ascent ends near it
-	const FQuat Q = FQuat(FVector::UpVector, FMath::DegreesToRadians(20.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(OrbitInc));
+	const FQuat Q = OrbitQuat();
 	const FVector N = Q.RotateVector(FVector::UpVector);
 	FVector SatDir = SatRoot->GetRelativeLocation().GetSafeNormal();
 	if (SatDir.IsNearlyZero()) SatDir = Q.RotateVector(FVector::ForwardVector);
@@ -43,6 +44,16 @@ bool AISSpaceScene::StartFlight(FName VehicleId, double PayloadKg, double Target
 	if (FlightU.IsNearlyZero()) FlightU = FQuat(N, -0.45f).RotateVector(SatDir).GetSafeNormal();
 	FlightU = FQuat(N, -0.35f).RotateVector(FlightU).GetSafeNormal();   // morning side: the rocket flies toward the sun
 	FlightDn = FVector::CrossProduct(N, FlightU).GetSafeNormal();
+	FlightBase = FVector::ZeroVector;
+	if (bRealEarth && Earth)
+	{
+		// the real pad: Rocket Lab Launch Complex 1 on the Mahia Peninsula, heading down the real launch azimuth
+		const FVector Pad = Earth->SiteToEarth(AISEarth::LC1Site());
+		FlightU = Pad.GetSafeNormal();
+		FlightDn = Q.RotateVector(FVector::RightVector);
+		FlightDn = (FlightDn - FlightU * FVector::DotProduct(FlightDn, FlightU)).GetSafeNormal();
+		FlightBase = Pad - FlightU * (float)(FISRocketSim::Re * 100.0);   // the sim starts at radius Re; the real ground is here
+	}
 	RetryFlight();
 	return true;
 }
@@ -63,7 +74,7 @@ void AISSpaceScene::RetryFlight()
 	for (UStaticMeshComponent* C : PadVis) if (IsValid(C)) C->DestroyComponent();
 	PadVis.Reset();
 	{
-		const FVector Site = FlightU * (float)(FISRocketSim::Re * 100.0);
+		const FVector Site = FlightU * (float)(FISRocketSim::Re * 100.0) + FlightBase;
 		const FRotator Rot = FRotationMatrix::MakeFromZX(FlightU, FlightDn).Rotator();
 		auto Pad = [&](UStaticMesh* M, const FVector& LocalM, const FVector& SizeM, const FLinearColor& C)
 		{
@@ -84,7 +95,7 @@ void AISSpaceScene::RetryFlight()
 			M->SetVectorParameterValue(TEXT("Tint"), Tint);
 			P->SetMaterial(0, M);
 		};
-		Pad(MCyl, FVector(0, 0, -6.0f), FVector(8000.f, 8000.f, 12.f), FLinearColor(0.2f, 0.3f, 0.13f));              // ground (4 km)
+		if (!bRealEarth) Pad(MCyl, FVector(0, 0, -6.0f), FVector(8000.f, 8000.f, 12.f), FLinearColor(0.2f, 0.3f, 0.13f));   // ground (4 km); the real terrain on the real Earth
 		// (world-aligned textures break at true planet scale: 6,371 km from the origin is beyond their precision -> plain colours)
 		Pad(MCyl, FVector(0, 0, -0.45f), FVector(160.f, 160.f, 1.f), FLinearColor(0.42f, 0.41f, 0.38f));                 // gravel apron
 		Pad(MCyl, FVector(0, 0, -0.4f), FVector(90.f, 90.f, 1.f), FLinearColor(0.55f, 0.55f, 0.53f));                  // concrete pad
@@ -295,7 +306,7 @@ void AISSpaceScene::TickFlight(float Dt)
 		FollowPitch = FMath::FInterpTo(FollowPitch, -10.f, Dt, 0.35f);
 	}
 	// pose (metres in the launch plane -> world cm)
-	const FVector P = (FlightU * (float)Sim.R.Y + FlightDn * (float)Sim.R.X) * 100.f;
+	const FVector P = (FlightU * (float)Sim.R.Y + FlightDn * (float)Sim.R.X) * 100.f + FlightBase;
 	const FVector2D Nd = Sim.NoseDir();
 	const FVector Dir = (FlightU * (float)Nd.Y + FlightDn * (float)Nd.X).GetSafeNormal();
 	RocketRoot->SetRelativeLocation(P);
@@ -315,7 +326,7 @@ void AISSpaceScene::TickFlight(float Dt)
 	{
 		FlightLines->Flush();
 		const FTransform& Xf = SceneRoot->GetComponentTransform();
-		auto W = [&](const FVector2D& Q) { return Xf.TransformPosition((FlightU * (float)Q.Y + FlightDn * (float)Q.X) * 100.f); };
+		auto W = [&](const FVector2D& Q) { return Xf.TransformPosition((FlightU * (float)Q.Y + FlightDn * (float)Q.X) * 100.f + FlightBase); };
 		if (Sim.AltM > 2000.0)
 		{
 			const TArray<FVector2D>& H = Sim.History;

@@ -761,7 +761,7 @@ void AISHomeWorld::BuildGround2()
 		// on the real Earth: only the site itself is our ground, a levelled plate on the real coast at Mahia (a deep
 		// block, so wherever the real ground dips at its edge there is an embankment, not a hole); beyond it the
 		// real terrain and imagery take over
-		Paint(FVector(7500, 750, -2000), FVector(35000, 13500, 4000), FLinearColor(0.2f, 0.33f, 0.12f), 0.95f);   // the colour of the real pasture around it
+		Paint(FVector(7500, 750, -2000), FVector(35000, 13500, 4000), FLinearColor(0.11f, 0.19f, 0.065f), 0.95f);   // the colour of the real pasture around it
 		Paint(FVector(700, 300, 0.4f), FVector(4200, 6600, 0.6f), FLinearColor(0.42f, 0.7f, 0.28f), 0.95f, false);
 		return;
 	}

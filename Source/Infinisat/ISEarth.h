@@ -36,6 +36,9 @@ public:
 	// Earth-centred (Unreal, cm) direction of the site's local up, for launches from the real pad
 	FVector SiteUpEarthFrame() const;
 	FVector SiteEastEarthFrame() const;
+	FVector SiteNorthEarthFrame() const;
+	// Rocket Lab Launch Complex 1 in site coordinates (1.2 km south, 200 m west, 19 m lower than the site floor)
+	static FVector LC1Site() { return FVector(-20000.f, 119900.f, -1900.f); }
 	// convert a site-frame point (walking origin) to the Earth-centred frame and back
 	FVector SiteToEarth(const FVector& P) const;
 	FVector EarthToSite(const FVector& P) const;

@@ -12,7 +12,7 @@ class AISHomeWorld;
 class AISBitCharacter;
 class SISGameUI;
 
-enum class EISMode : uint8 { Menu, Walk, Bench, Panel };
+enum class EISMode : uint8 { Menu, Walk, Bench, Panel, Overview };   // Overview: the camera rising above the site (wheel), up to the globe
 
 UCLASS()
 class AISGameMode : public AGameModeBase
@@ -42,6 +42,8 @@ public:
 	EISMode GetMode() const { return Mode; }
 	const FString& Prompt() const { return CurrentPrompt; }
 	void OpenPause();
+	void EnterOverview(double AltM = 80.0);   // lift the camera above the site
+	double OverviewAltM() const { return OverAlt; }
 	void SaveSettings();
 	void ApplySettings();
 
@@ -66,6 +68,13 @@ private:
 	int32 CanTestStep = -1;
 	float CanTestT = 0.f;
 	void TickBench(float Dt);
+	// one zoom from your feet to orbit: the wheel lifts the camera above the site through the real terrain;
+	// at ~150 km the globe view (same real Earth) takes over, and coming back down lands you where you were
+	void TickOverview(float Dt);
+	UPROPERTY() class ACameraActor* OverCam = nullptr;
+	double OverAlt = 0.0, OverAltGoal = 0.0;   // metres above the site
+	float OverYaw = 0.f;
+	FVector OverAnchor = FVector::ZeroVector;
 	TSharedPtr<class SWidget> UIContainer;
 	FVector2D LastMouse = FVector2D::ZeroVector;
 	bool bDragging = false;

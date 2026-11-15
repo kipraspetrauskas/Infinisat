@@ -3,6 +3,7 @@
 // explorer costs no downloads and no licences. Distances are compressed so everything fits in one flyable scene;
 // periods, tilts and spin directions are real for solar-system bodies.
 #include "ISScene.h"
+#include "ISEarth.h"
 #include "Engine/Engine.h"
 #include "ISSim.h"
 #include "Components/StaticMeshComponent.h"

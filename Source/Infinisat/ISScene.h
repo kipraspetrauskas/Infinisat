@@ -73,6 +73,10 @@ public:
 	int32 CosmosFind(const FString& Name) const { for (int32 i = 0; i < CosmosBodies.Num(); ++i) if (CosmosBodies[i].Name == Name) return i; return -1; }
 	// the player pushed the wheel past the zoom limit (-1 out, +1 in): the UI moves between the mission view and the solar system
 	int32 TakeZoomPast() { const int32 Z = ZoomPast; ZoomPast = 0; return Z; }
+	// the globe view: the real Earth with your space centre, reached by zooming out from the ground
+	void ShowGlobe(float AltM);
+	bool bGlobe = false, bLand = false;
+	bool TakeLand() { const bool B = bLand; bLand = false; return B; }
 	int32 ZoomPast = 0, ZoomPastCount = 0;
 	FVector CosmosPos(int32 I) const;
 	int32 CosmosParent(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Parent : -1; }
@@ -149,6 +153,9 @@ private:
 	EISView View = EISView::Title;
 	bool bFollow = true;
 	bool bTrueScale = false;            // Earth/Moon views: real sizes and distances (cm)
+	bool bRealEarth = false;            // the true-scale Earth is the real Cesium globe (Earth-centred origin)
+	FQuat OrbitQuat() const;            // the orbital plane: through the real launch site at the real launch heading
+	FVector FlightBase = FVector::ZeroVector;   // shifts the flight (which starts at radius Re) onto the real pad
 	float RealSatCm = 200.f;
 	double PeriodS = 5600.0;
 	UPROPERTY() ULineBatchComponent* Lines = nullptr;

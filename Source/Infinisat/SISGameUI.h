@@ -25,6 +25,8 @@ public:
 	void Construct(const FArguments& InArgs);
 	void ShowOrders();
 	void OpenBuilding(FName Action);   // a console in the space centre: assembly hall / lab / tracking station
+	void OpenGlobe(double AltM);       // zoomed out from the ground: the real Earth with your space centre
+	double GlobeAlt = 150000.0;
 	bool bHaveDesign = false;          // an orbital mission is in progress (the assembly hall continues it)
 	void ShowTitle();
 	void ShowCanSatDebrief();
@@ -34,7 +36,7 @@ public:
 	virtual FReply OnMouseButtonUp(const FGeometry& G, const FPointerEvent& E) override;
 
 private:
-	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos };
+	enum class EScreen : uint8 { Title, Missions, Design, Launch, Ops, Debrief, Pedia, Help, Play, Bench, CanDebrief, Pause, Cosmos, Globe };
 
 	// navigation / state changes (deferred rebuild)
 	void Go(EScreen S);
@@ -56,6 +58,8 @@ private:
 	TSharedRef<SWidget> BuildDebrief();
 	TSharedRef<SWidget> BuildPedia();
 	TSharedRef<SWidget> BuildCosmos();
+	TSharedRef<SWidget> BuildGlobe();
+	bool bGlobeInCosmos = false;   // the solar system was reached by zooming out from the globe
 	TSharedPtr<SScrollBox> CosmosBox;
 	float CosmosScroll = 0.f;
 	TSharedRef<SWidget> BuildHelp();

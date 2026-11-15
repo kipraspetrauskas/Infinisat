@@ -40,6 +40,7 @@ private:
 	void Recompute(bool bPoke = false);
 	void StartMission(int32 Index);
 	void StartOps();
+	float LaunchInc() const;
 	void StarterDesign(const FISMission& M);
 	const FISMission& Mission() const;
 	bool IsUnlocked(const FISPart& P) const;
@@ -92,6 +93,7 @@ private:
 	FString InfoLine;
 	FISOps Ops;
 	float Warp = 1.f;
+	int32 LastVoyPhase = 0;   // deep space: last voyage phase seen (the view switches when it changes)
 	int32 RunSeed = 1;
 	TArray<int32> QuizAnswers;
 	// team play + scoring

@@ -247,6 +247,24 @@ namespace ISSim
 		}
 	}
 
+	bool IsDeepSpace(EISDest D) { return D == EISDest::Moon || D == EISDest::Jupiter || D == EISDest::Interstellar; }
+	double DepartDay(EISDest D) { return IsDeepSpace(D) ? 0.1 : 0.0; }   // ~1.5 parking orbits after launch, like Apollo's TLI
+	double CruiseDays(EISDest D)
+	{
+		switch (D)
+		{
+		case EISDest::Moon: return 4.5;
+		case EISDest::GEO: return 10.0;
+		case EISDest::Jupiter:
+		{
+			// direct Hohmann transfer Earth -> Jupiter: half an ellipse touching both orbits (~2.7 years)
+			const double MuSun = 1.32712440018e11, R1 = 149.598e6, R2 = 778.57e6, A = 0.5 * (R1 + R2);
+			return DepartDay(D) + PI * FMath::Sqrt(A * A * A / MuSun) / 86400.0;
+		}
+		default: return 0.0;
+		}
+	}
+
 	EISDest EffectiveDest(const FISDesign& D, const FISMission& M) { return M.Id == "sandbox" ? D.Dest : M.Dest; }
 	float EffectiveAlt(const FISDesign& D, const FISMission& M) { return M.Id == "sandbox" ? DefaultAlt(D.Dest) : M.AltKm; }
 
@@ -746,10 +764,7 @@ void FISOps::Start(const FISDesign& D, const FISMission& M, const FISEval& E, in
 	const FString Site = LV ? LV->Site : TEXT("?");
 	const FString Veh = LV ? LV->Name : TEXT("?");
 	const bool bBackyard = E.Dest == EISDest::Backyard;
-	double Cruise = 0.0;
-	if (E.Dest == EISDest::Moon) Cruise = 4.5;
-	if (E.Dest == EISDest::Jupiter) Cruise = 5.0 * 365.25;
-	if (E.Dest == EISDest::GEO) Cruise = 10.0;
+	const double Cruise = ISSim::CruiseDays(E.Dest);
 	const double LifeDays = E.LifeYears * 365.25;
 	EndDay = Cruise + LifeDays;
 	if (E.Dest == EISDest::Interstellar) EndDay = FMath::Min((double)E.YearsTo120AU, 60.0) * 365.25;
@@ -795,17 +810,24 @@ void FISOps::Start(const FISDesign& D, const FISMission& M, const FISEval& E, in
 	}
 
 	// ---------------------------------------------------------------- orbital / deep-space flow
-	Schedule(0.01, EISEvt::Good, TEXT("Separation from the rocket. Hello, space!"));
+	// deep space: the upper stage stays attached in the parking orbit and fires once more to leave Earth, then lets go
+	const double Dep = ISSim::DepartDay(E.Dest);
+	if (Dep > 0.0)
+		Schedule(Dep, EISEvt::Info,
+			E.Dest == EISDest::Moon ? TEXT("Departure burn: translunar injection, about +3.1 km/s. Next stop: the Moon.") : TEXT("Departure burn: the upper stage pushes the spacecraft out of Earth's gravity."),
+			NAME_None, E.Dest == EISDest::Moon ? TEXT("Apollo did the same: one or two orbits to check everything, then a ~6 minute burn of the S-IVB stage.")
+				: TEXT("To escape Earth you need ~11.2 km/s from the ground; a parking orbit already gives 7.8, the upper stage adds the rest."));
+	Schedule(Dep + 0.01, EISEvt::Good, TEXT("Separation from the rocket. Hello, space!"));
 	if (E.SolarEolW > 0 || Eval.AvgGenW > 0)
-		Schedule(0.03, EISEvt::Good, FString::Printf(TEXT("Power on: generating %s W."), *ISSim::Fmt(E.AvgGenW, 0)));
-	Schedule(0.06, E.PointingDeg > 0 ? EISEvt::Good : EISEvt::Warn,
+		Schedule(Dep + 0.03, EISEvt::Good, FString::Printf(TEXT("Power on: generating %s W."), *ISSim::Fmt(E.AvgGenW, 0)));
+	Schedule(Dep + 0.06, E.PointingDeg > 0 ? EISEvt::Good : EISEvt::Warn,
 		E.PointingDeg > 0 ? FString::Printf(TEXT("Detumbling complete. Pointing accuracy %s deg."), *ISSim::Fmt(E.PointingDeg, 2)) : FString(TEXT("No attitude control: the satellite is tumbling.")),
 		NAME_None, TEXT("After separation every satellite spins a little. Detumbling removes that spin."));
 	const FISPart* G = ISData::FindPart(D.GetSingle(EISCat::Ground));
 	if (E.ContactMin > 0 && E.LinkKbps > 0)
-		Schedule(0.12, EISEvt::Good, FString::Printf(TEXT("First contact through %s!"), G ? *G->Name : TEXT("ground")));
+		Schedule(Dep + 0.12, EISEvt::Good, FString::Printf(TEXT("First contact through %s!"), G ? *G->Name : TEXT("ground")));
 	else
-		Schedule(0.12, EISEvt::Fatal, TEXT("No signal. Nobody on Earth can hear the satellite."), NAME_None,
+		Schedule(Dep + 0.12, EISEvt::Fatal, TEXT("No signal. Nobody on Earth can hear the satellite."), NAME_None,
 			TEXT("Without a working radio link (range, data rate, ground stations), a perfect satellite is useless."));
 
 	if (E.Dest == EISDest::GEO)
@@ -818,7 +840,8 @@ void FISOps::Start(const FISDesign& D, const FISMission& M, const FISEval& E, in
 			NAME_None, TEXT("The Moon's gravity is weak: if you don't brake ~0.9 km/s you simply fly past it."));
 	if (E.Dest == EISDest::Jupiter)
 	{
-		Schedule(2.0 * 365.25, EISEvt::Info, TEXT("Earth flyby gravity assist: +3.9 km/s for free!"), NAME_None, TEXT("Juno flew past Earth in 2013 to steal some of Earth's orbital momentum."));
+		Schedule(200.0, EISEvt::Info, TEXT("Mid-course correction burn: a few m/s to aim at Jupiter precisely."), NAME_None,
+			TEXT("This probe flies the direct route (half an ellipse, 2.7 years). Galileo and Juno took 5-6 years: their rockets were too small for the direct route, so they swung past Venus or Earth to steal orbital momentum (gravity assists)."));
 		Schedule(Cruise, E.DvAvail >= 650 ? EISEvt::Good : EISEvt::Fatal,
 			E.DvAvail >= 650 ? TEXT("Jupiter orbit insertion! Signal took 48 minutes to reach Earth.") : TEXT("Not enough propellant for orbit insertion: the probe flew past Jupiter."),
 			NAME_None, TEXT("With ~45 min light-time, the burn was fully automatic: engineers could only watch."));
@@ -973,6 +996,16 @@ bool FISOps::Advance(double DeltaDays)
 	else if (Eval.Dest == EISDest::Backyard) Battery = FMath::Clamp(1.0 - (Day * 24.0) / FMath::Max(0.01f, Eval.RuntimeH), 0.0, 1.0);
 	else Battery = 1.0;
 	return bNew;
+}
+
+void FISOps::Retime(const FString& Prefix, double NewDay)
+{
+	for (int32 i = Next; i < Queue.Num(); ++i)
+		if (Queue[i].Text.StartsWith(Prefix)) { Queue[i].Day = FMath::Max(NewDay, Day); break; }
+	// keep the not-yet-reached part ordered (the already-logged part stays as it is)
+	TArray<FISEvent> Rest(Queue.GetData() + Next, Queue.Num() - Next);
+	Rest.StableSort([](const FISEvent& A, const FISEvent& B) { return A.Day < B.Day; });
+	for (int32 i = 0; i < Rest.Num(); ++i) Queue[Next + i] = Rest[i];
 }
 
 void FISOps::Choose(int32 Index)

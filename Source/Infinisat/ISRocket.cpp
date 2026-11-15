@@ -125,7 +125,8 @@ void FISRocketSim::Setup(const FISLauncher& InL, double InPayloadKg, double InTa
 	T = -10.0;
 	Events.Reset();
 	FailReason.Reset();
-	MaxQSeen = 0; bMaxQAnnounced = bMaxQPassed = bCircBurn = bCircActive = false;
+	MaxQSeen = 0; bMaxQAnnounced = bMaxQPassed = bCircBurn = bCircActive = bIgnition = false;
+	Spool = 0.0;
 	Throttle = 1.0; PitchDeg = 0;
 	// launch azimuth for the target inclination: sin(az) = cos(i) / cos(lat)
 	const double Lat = FMath::DegreesToRadians(L->SiteLatDeg), Inc = FMath::DegreesToRadians(IncDeg);
@@ -433,9 +434,11 @@ void FISRocketSim::Guidance(double Dt)
 			const double Geff = Mu / (Rn * Rn) - Vh * Vh / Rn;
 			const double VzWant = FMath::Clamp((Target * 1000.0 - AltM) / 60.0, -60.0, 200.0);
 			const double Need = Geff + (VzWant - Vz) / 8.0;
-			PitchDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Need / Acc, -0.35, 1.0)));
+			PitchDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Need / Acc, -0.17, 1.0)));   // at most ~10 deg below the horizon
 		}
-		else PitchDeg = FMath::Clamp(90.0 + Vz * 0.3 + (ApoKm - Target) * 0.1, 60.0, 120.0);   // climbing or apoapsis too high: nose slightly down
+		else if (!bCircActive)
+			PitchDeg = FMath::RadiansToDegrees(FMath::Atan2(Vh, Vz));   // coasting: nose along the flight path (prograde), like a real upper stage
+		else PitchDeg = FMath::Clamp(90.0 + Vz * 0.3 + (ApoKm - Target) * 0.1, 75.0, 105.0);   // burning: within 15 deg of horizontal (was 60-120: 30 deg nose-down coasts)
 		if (PeriKm >= FMath::Min(Target - 10.0, Target * 0.95) || (PeriKm > 150.0 && ApoKm > Target + 150.0)) Throttle = 0.0;
 	}
 	if (StageProp <= 0.0 && StageIdx + 1 < L->Stages.Num() && (bCircBurn ? Throttle > 0.0 : true) && !bBoostersOn) Stage();
@@ -479,12 +482,30 @@ void FISRocketSim::Step(double Dt)
 	T += Dt;
 	if (Phase == EISFlightPhase::Countdown)
 	{
-		if (T < 0) return;
+		// liquid engines light on the pad and run up to full thrust while hold-down clamps keep the vehicle down (Falcon 9:
+		// T-3 s); the computers release it only when every engine is healthy. Solid motors cannot be shut down: they light at T-0.
+		const FISEngineStage& S0 = L->Stages[0];
+		const double IgnT = S0.bSolid ? 0.0 : -3.0;
+		if (T < IgnT) return;
+		if (!bIgnition)
+		{
+			bIgnition = true;
+			if (IgnT < 0.0) Event(FString::Printf(TEXT("T-%.0f s: main engine ignition. Held down by the clamps while the engines reach full thrust."), -IgnT));
+		}
+		if (T < 0.0)
+		{
+			Spool = FMath::Clamp((T - IgnT) / 2.5, 0.0, 1.0);
+			ThrustN = Spool * S0.ThrustSLN;
+			// ponytail: the ~1 s of propellant burnt on the pad is not deducted (marginal launchers like Electron were tuned without it)
+			UpdateDerived();
+			return;
+		}
+		Spool = 1.0;
 		Phase = EISFlightPhase::Ascent;
-		Event(FString::Printf(TEXT("Ignition: %s. Lift-off mass %.1f t, thrust %.0f kN."), *L->Name, StackMass() / 1000.0,
-			(L->Stages[0].ThrustSLN + L->Stages[0].Boosters * L->Stages[0].BoosterThrustSLN) / 1000.0));
+		Event(FString::Printf(TEXT("%s: %s. Lift-off mass %.1f t, thrust %.0f kN."), IgnT < 0.0 ? TEXT("Hold-down release") : TEXT("Ignition"), *L->Name, StackMass() / 1000.0,
+			(S0.ThrustSLN + S0.Boosters * S0.BoosterThrustSLN) / 1000.0));
 	}
-	if (bAutopilot && Phase != EISFlightPhase::Orbit) Guidance(Dt);
+	if (bAutopilot && IsFlying()) Guidance(Dt);
 
 	const FISEngineStage& St = L->Stages[StageIdx];
 	const double Pr = PressureRatio(AltM);
@@ -594,14 +615,19 @@ void ISRocketSelfTest()
 		if (!L) continue;
 		FISRocketSim S;
 		S.Setup(*L, C.Kg, C.Alt, C.Inc);
-		S.StartCountdown(1.0);
+		S.StartCountdown(5.0);
 		double WorstQA = 0, WAlt = 0, WQ = 0, WA = 0, WCmd = 0, WAtt = 0, WT = 0;
+		double NoseDown = 0, NoseDownT = 0, IgnT = 1e9, LiftT = 1e9;   // nose below the local horizon (deg); engine start vs leaving the pad
 		for (int32 i = 0; i < 200000 && (S.Phase == EISFlightPhase::Countdown || S.IsFlying()); ++i)
 		{
 			S.Step(0.02);
 			if (S.QPa * S.AoADeg > WorstQA) { WorstQA = S.QPa * S.AoADeg; WAlt = S.AltM; WQ = S.QPa; WA = S.AoADeg; WCmd = S.PitchDeg; WAtt = S.AttDeg; WT = S.T; }
+			if (S.AltM > 1000.0 && S.AttDeg - 90.0 > NoseDown) { NoseDown = S.AttDeg - 90.0; NoseDownT = S.T; }
+			if (S.ThrustN > 0.0 && IgnT > 1e8) IgnT = S.T;
+			if (S.AltM > 0.5 && LiftT > 1e8) LiftT = S.T;
 		}
 		UE_LOG(LogTemp, Warning, TEXT("[ROCKET]   worst q*AoA %.0f kPa*deg at t=%.0f s, %.1f km, q %.1f kPa, AoA %.1f (cmd %.1f, actual %.1f)"), WorstQA / 1000.0, WT, WAlt / 1000.0, WQ / 1000.0, WA, WCmd, WAtt);
+		UE_LOG(LogTemp, Warning, TEXT("[ROCKET]   nose below horizon max %.1f deg at t=%.0f s | engines on at t=%.2f s, leaves pad at t=%.2f s"), NoseDown, NoseDownT, IgnT, LiftT);
 		UE_LOG(LogTemp, Warning, TEXT("[ROCKET] %-14s %6.0f kg -> %s  t=%.0fs apo %.0f peri %.0f km  maxQ %.1f kPa  maxAoA %.1f  maxGimbal %.1f  dv left %.0f  %s"),
 			ANSI_TO_TCHAR(C.Id), C.Kg, S.Phase == EISFlightPhase::Orbit ? TEXT("ORBIT ") : TEXT("FAILED"), S.T, S.ApoKm, S.PeriKm, S.MaxQSeen / 1000.0, S.MaxAoASeen, S.MaxGimbalSeen, S.DeltaVLeft(), *S.FailReason);
 	}

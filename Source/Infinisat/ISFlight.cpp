@@ -57,6 +57,10 @@ void AISSpaceScene::RetryFlight()
 	bFlight = true;
 	FlightWarp = 1.f;
 	FlightEndT = 0.f;
+	RevealT = -1.f;
+	SepT = -1.f;
+	Voy = FISTrajectory(); bVoySepDone = false; VoySepStartT = -1.0;   // a new launch: the old flight plan is gone
+	if (SepRoot) SepRoot->SetVisibility(false, true);
 	BuildFlightRocket();
 	RocketRoot->SetVisibility(true, true);
 	// launch site: concrete pad, flame trench, tower and a patch of ground at the true radius (the Earth mesh is faceted at this scale)
@@ -114,6 +118,26 @@ void AISSpaceScene::RetryFlight()
 		}
 		Pad(MCube, FVector(-D * 1.6f, 0, Len * 0.8f), FVector(D * 1.8f, 1.5f, 1.2f), FLinearColor(0.4f, 0.4f, 0.42f));   // crew/umbilical arm
 		for (int32 k = 0; k < 4; ++k) Pad(MCyl, FVector((k < 2 ? -1.f : 1.f) * 30.f, (k % 2 ? -1.f : 1.f) * 30.f, 25.f), FVector(1.2f, 1.2f, 50.f), FLinearColor(0.6f, 0.6f, 0.62f)); // lightning masts
+		// the flame trench throws the exhaust out sideways (both ends) into the steam of the sound-suppression deluge;
+		// sized per frame in TickFlight. Jets 0/1, steam 2/3.
+		PadSite = Site;
+		PadAxis = Rot.RotateVector(FVector(0, 1, 0));
+		TrenchFx.Reset();
+		UTexture2D* WhiteTx = CosmosTex(TEXT("white"), 4, 4, [](float, float) { return FLinearColor::White; });
+		for (int32 k = 0; k < 4; ++k)
+		{
+			UStaticMeshComponent* Fx = AddMesh(SceneRoot, k < 2 ? MCone : MSphere, FTransform::Identity, FLinearColor(0, 0, 0, 0), true, 0.f, nullptr);
+			if (!Fx) continue;
+			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(MatGlow, Fx);
+			M->SetTextureParameterValue(TEXT("Tex"), WhiteTx);
+			M->SetVectorParameterValue(TEXT("Color"), k < 2 ? FLinearColor(1.f, 0.55f, 0.18f) : FLinearColor(0.85f, 0.85f, 0.85f));
+			M->SetScalarParameterValue(TEXT("Intensity"), k < 2 ? 1.6f : 0.35f);
+			Fx->SetMaterial(0, M);
+			Fx->CastShadow = false;
+			Fx->SetVisibility(false);
+			TrenchFx.Add(Fx);
+			PadVis.Add(Fx);
+		}
 	}
 	SatRoot->SetVisibility(false, true);
 	LaunchT = 0.5f;           // "launching": the follow camera tracks RocketRoot, mission time waits
@@ -229,9 +253,15 @@ void AISSpaceScene::TickFlight(float Dt)
 		FollowYaw = FMath::FInterpTo(FollowYaw, 65.f, Dt, 0.35f);   // side-behind: rocket and plume both in view
 		FollowPitch = FMath::FInterpTo(FollowPitch, -10.f, Dt, 0.35f);
 	}
+	// The physics is inertial, but the pad and the Earth mesh do not spin: draw everything in the Earth-fixed frame by undoing
+	// the Earth's rotation (in the launch plane) since T-0. Without this the vehicle slid off its pad at ~400 m/s at lift-off.
+	const double SpinA = FISRocketSim::OmegaE * FMath::Cos(FMath::DegreesToRadians(Sim.L->SiteLatDeg)) * FMath::Sin(FMath::DegreesToRadians(Sim.LaunchAzDeg)) * FMath::Max(0.0, Sim.T);
+	const double SpC = FMath::Cos(SpinA), SpS = FMath::Sin(SpinA);
+	auto Fixed = [SpC, SpS](const FVector2D& Q) { return FVector2D(Q.X * SpC - Q.Y * SpS, Q.Y * SpC + Q.X * SpS); };
 	// pose (metres in the launch plane -> world cm)
-	const FVector P = (FlightU * (float)Sim.R.Y + FlightDn * (float)Sim.R.X) * 100.f;
-	const FVector2D Nd = Sim.NoseDir();
+	const FVector2D Rf = Fixed(Sim.R);
+	const FVector P = (FlightU * (float)Rf.Y + FlightDn * (float)Rf.X) * 100.f;
+	const FVector2D Nd = Fixed(Sim.NoseDir());
 	const FVector Dir = (FlightU * (float)Nd.Y + FlightDn * (float)Nd.X).GetSafeNormal();
 	RocketRoot->SetRelativeLocation(P);
 	RocketRoot->SetRelativeRotation(FRotationMatrix::MakeFromZX(Dir, FlightDn).Rotator());
@@ -241,7 +271,7 @@ void AISSpaceScene::TickFlight(float Dt)
 	{
 		FlightLines->Flush();
 		const FTransform& Xf = SceneRoot->GetComponentTransform();
-		auto W = [&](const FVector2D& Q) { return Xf.TransformPosition((FlightU * (float)Q.Y + FlightDn * (float)Q.X) * 100.f); };
+		auto W = [&](const FVector2D& Q0) { const FVector2D Q = Fixed(Q0); return Xf.TransformPosition((FlightU * (float)Q.Y + FlightDn * (float)Q.X) * 100.f); };
 		if (Sim.AltM > 2000.0)
 		{
 			const TArray<FVector2D>& H = Sim.History;
@@ -263,7 +293,7 @@ void AISSpaceScene::TickFlight(float Dt)
 	// plumes: length with throttle, width with altitude (the exhaust balloons out in vacuum)
 	const FISEngineStage& St = Sim.L->Stages[FMath::Clamp(Sim.StageIdx, 0, Sim.L->Stages.Num() - 1)];
 	const double Pr = FISRocketSim::PressureRatio(Sim.AltM);
-	const bool bCoreOn = Sim.IsFlying() && Sim.StageProp > 0.0 && (St.bSolid || Sim.Throttle > 0.0) && Sim.ThrustN > 0.0;
+	const bool bCoreOn = (Sim.IsFlying() || Sim.IsIgniting()) && Sim.StageProp > 0.0 && (St.bSolid || Sim.Throttle > 0.0) && Sim.ThrustN > 0.0;
 	const float Flick = 0.93f + 0.14f * FMath::FRand();
 	const float BaseZ = StageBaseZ.IsValidIndex(Sim.StageIdx) ? StageBaseZ[Sim.StageIdx] : 0.f;
 	for (int32 k = 0; k < PlumeCore.Num(); ++k)
@@ -272,7 +302,7 @@ void AISSpaceScene::TickFlight(float Dt)
 		if (!IsValid(C)) continue;
 		C->SetVisibility(bCoreOn);
 		if (!bCoreOn) continue;
-		const float Thr = St.bSolid ? 1.f : (float)FMath::Clamp(Sim.Throttle, St.MinThrottle, 1.0);
+		const float Thr = (St.bSolid ? 1.f : (float)FMath::Clamp(Sim.Throttle, St.MinThrottle, 1.0)) * (float)FMath::Max(0.15, Sim.Spool);   // engine start: the flame grows on the pad
 		const float Len = (float)St.DiameterM * (k == 0 ? 5.f : 2.f) * (0.55f + 0.45f * Thr) * (1.f + 0.35f * (float)(1.0 - Pr)) * Flick;
 		const float Wid = (float)St.DiameterM * (k == 0 ? 0.9f : 0.45f) * (1.f + 0.9f * (float)(1.0 - Pr));   // a vacuum plume spreads, but must not swallow the rocket
 		C->SetRelativeLocation(FVector(0, 0, (BaseZ - (float)St.DiameterM * 0.25f - Len * 0.5f) * 100.f));
@@ -293,6 +323,32 @@ void AISSpaceScene::TickFlight(float Dt)
 		C->SetRelativeScale3D(FVector(Wid, Wid, Len));
 	}
 
+	// pad exhaust: while the engines run against the clamps and for the first ~80 m of climb, the trench throws the flame sideways
+	{
+		const float D0 = (float)Sim.L->Stages[0].DiameterM;
+		const float PadFx = (Sim.IsIgniting() || Sim.IsFlying()) ? (float)(Sim.Spool * FMath::Clamp(1.0 - Sim.AltM / 80.0, 0.0, 1.0)) : 0.f;
+		for (int32 k = 0; k < TrenchFx.Num(); ++k)
+		{
+			UStaticMeshComponent* Fx = TrenchFx[k];
+			if (!IsValid(Fx)) continue;
+			Fx->SetVisibility(PadFx > 0.02f);
+			if (PadFx <= 0.02f) continue;
+			const FVector Out = PadAxis * ((k % 2) ? -1.f : 1.f);
+			if (k < 2)
+			{
+				const float Len = D0 * 7.f * PadFx * Flick, Wd = D0 * 1.4f * PadFx;
+				Fx->SetRelativeLocationAndRotation(PadSite + FlightU * 50.f + Out * (D0 * 100.f + Len * 50.f), FRotationMatrix::MakeFromZ(Out).Rotator());
+				Fx->SetRelativeScale3D(FVector(Wd, Wd, Len));
+			}
+			else
+			{
+				const float Sz = D0 * (2.5f + 4.f * PadFx);
+				Fx->SetRelativeLocation(PadSite + FlightU * (Sz * 35.f) + Out * (D0 * 100.f * 5.f));
+				Fx->SetRelativeScale3D(FVector(Sz));
+			}
+		}
+	}
+
 	// stars only above the blue sky
 	if (Sky) { const bool bStars = Sim.AltM > 50000.0; if (Sky->IsVisible() != bStars) Sky->SetVisibility(bStars); }
 	// the air: a real atmosphere (Rayleigh/Mie) around the true-scale Earth, visible near the ground
@@ -300,8 +356,17 @@ void AISSpaceScene::TickFlight(float Dt)
 
 	if (Sim.Phase == EISFlightPhase::Orbit)
 	{
+		// engine cut-off, then the payload separates and unfolds (8 s), then the camera pulls back to the whole planet
 		FlightEndT += Dt;
-		if (FlightEndT > 5.f) EndFlight();
+		if (bVoyage)
+		{
+			// deep space: nothing separates in the parking orbit - the stage relights later to leave Earth (ISVoyage)
+			if (FlightEndT > 1.5f && RevealT < 0.f) RevealT = 0.f;
+			return;
+		}
+		if (FlightEndT > 1.f && SepT < 0.f && RevealT < 0.f) StartSeparation();
+		if (SepT >= 0.f) TickSeparation(Dt);
+		if (SepT >= 8.f && RevealT < 0.f) RevealT = 0.f;
 	}
 }
 
@@ -311,17 +376,108 @@ void AISSpaceScene::EndFlight()
 	UE_LOG(LogTemp, Log, TEXT("[FLIGHT] end phase %d  %.0f x %.0f km  %s"), (int32)Sim.Phase, Sim.ApoKm, Sim.PeriKm, *Sim.FailReason);
 	bFlight = false;
 	LaunchT = -1.f;
+	RevealT = -1.f;
+	SepT = -1.f;
+	if (SepRoot) SepRoot->SetVisibility(false, true);   // the real satellite (SatRoot) takes over
 	if (FlightLines) FlightLines->Flush();
-	if (RocketRoot) RocketRoot->SetVisibility(false, true);
-	SatRoot->SetVisibility(true, true);
 	Sky->SetVisibility(true);
 	for (UStaticMeshComponent* C : PadVis) if (IsValid(C)) C->SetVisibility(false);
 	CamMin = LastSatSize * 1.2f;
 	CamDistGoal = LastSatSize * 5.f;
+	if (bVoyage && Sim.Phase == EISFlightPhase::Orbit)
+	{
+		// deep space: the stowed satellite stays on the upper stage for the departure burn; ISVoyage takes over from here
+		for (UStaticMeshComponent* C : PlumeCore) if (IsValid(C)) C->SetVisibility(false);
+		PlanVoyage();
+		StartSeparation();                 // the copy on the adapter; TickVoyage holds it there until after the burn
+		SatRoot->SetVisibility(false, true);
+		return;
+	}
+	if (RocketRoot) RocketRoot->SetVisibility(false, true);
+	SatRoot->SetVisibility(true, true);
+}
+
+// Payload separation, the way it is filmed from real upper stages: the satellite sits on its adapter ring on top of the
+// stage, springs push it off at ~1 m/s with a little tip-off spin, then each solar wing unfolds from its stowed zig-zag
+// (accordion) against the bus side. The animated satellite is a copy of SatRoot's parts; SatRoot itself stays in its orbit slot.
+void AISSpaceScene::StartSeparation()
+{
+	if (!SepRoot)
+	{
+		SepRoot = NewObject<USceneComponent>(this);
+		SepRoot->SetupAttachment(SceneRoot);
+		SepRoot->RegisterComponent();
+	}
+	for (UStaticMeshComponent* C : SepParts) if (IsValid(C)) C->DestroyComponent();
+	SepParts.Reset();
+	SepFinal.Reset();
+	SepRoot->SetRelativeScale3D(SatRoot->GetRelativeScale3D());
+	for (UStaticMeshComponent* S : SatParts)
+	{
+		UStaticMeshComponent* C = nullptr;
+		if (IsValid(S))
+		{
+			C = NewObject<UStaticMeshComponent>(this);
+			C->SetStaticMesh(S->GetStaticMesh());
+			C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			C->CastShadow = S->CastShadow;
+			C->SetupAttachment(SepRoot);
+			C->SetRelativeTransform(S->GetRelativeTransform());
+			C->RegisterComponent();
+			for (int32 m = 0; m < S->GetNumMaterials(); ++m) C->SetMaterial(m, S->GetMaterial(m));
+		}
+		SepParts.Add(C);   // keep indices aligned with SatParts / SatWings
+		SepFinal.Add(IsValid(S) ? S->GetRelativeTransform() : FTransform::Identity);
+	}
+	SepRoot->SetVisibility(true, true);
+	SepT = 0.f;
+	UE_LOG(LogTemp, Log, TEXT("[FLIGHT] payload separation at T+%.0f s (%d solar panels to unfold)"), Sim.T, SatWings.Num());
+	FlightWarp = 1.f;
+	// close in on the payload (the follow camera glides from the rocket to it)
+	CamMin = LastSatSize * 1.2f;
+	CamDistGoal = LastSatSize * 6.f;
+	TickSeparation(0.f);
+}
+
+void AISSpaceScene::TickSeparation(float Dt)
+{
+	if (!SepRoot || !RocketRoot || !Sim.L) return;
+	SepT += Dt;
+	// rides on the adapter on top of the last stage until the springs fire at 1 s, then drifts off at 1 m/s, spinning slowly
+	const float TopCm = StageBaseZ.Num() ? (StageBaseZ.Last() + (float)Sim.L->Stages.Last().LengthM) * 100.f : RocketLenCm * 0.85f;
+	const float Sc = SepRoot->GetRelativeScale3D().Z;
+	const float Free = FMath::Max(0.f, SepT - 1.f);
+	const FTransform& RT = RocketRoot->GetComponentTransform();
+	SepRoot->SetWorldLocation(RT.TransformPosition(FVector(0, 0, TopCm + (SatHalfH + 13.f) * Sc + Free * 100.f)));
+	SepRoot->SetWorldRotation(RT.GetRotation() * FQuat(FVector::UpVector, FMath::DegreesToRadians(Free * 3.f)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(Free * 0.8f)));
+
+	// solar wings: zig-zag accordion. Panel i leaves the previous fold line at +-Beta from the deployed direction;
+	// Beta = 90 deg is the stowed stack against the bus side, 0 is the flat deployed wing. Wings start 0.4 s apart.
+	for (const FISWingPanel& Wg : SatWings)
+	{
+		const float A = FMath::SmoothStep(0.f, 1.f, (SepT - 2.5f - Wg.Wing * 0.4f) / 4.f);
+		const float Beta = HALF_PI * (1.f - A);
+		const FVector Side = FVector::CrossProduct(FVector::UpVector, Wg.Out).GetSafeNormal();   // fold direction, along the bus face
+		auto Dir = [&](int32 i) { return Wg.Out * FMath::Cos(Beta) + Side * ((i % 2) ? -1.f : 1.f) * FMath::Sin(Beta); };
+		FVector P = Wg.Hinge;
+		for (int32 i = 0; i < Wg.K; ++i) P += Dir(i) * Wg.Pitch;
+		const FVector Dk = Dir(Wg.K);
+		const FVector Built = Wg.Hinge + Wg.Out * (Wg.K * Wg.Pitch + Wg.Half);            // panel centre as built (deployed)
+		const FVector Now = P + Dk * Wg.Half + Wg.Out * (Wg.K * 2.5f * (1.f - A));          // stacked panels sit 2.5 units apart
+		const FQuat Q = FQuat::FindBetweenNormals(Wg.Out, Dk);
+		for (int32 j = Wg.First; j < Wg.First + Wg.Num; ++j)
+		{
+			if (!SepParts.IsValidIndex(j) || !IsValid(SepParts[j])) continue;
+			const FTransform& F = SepFinal[j];
+			SepParts[j]->SetRelativeLocationAndRotation(Now + Q.RotateVector(F.GetLocation() - Built), Q * F.GetRotation());
+		}
+	}
 }
 
 void AISSpaceScene::SkipLaunch()
 {
+	if (RevealT >= 0.f) { RevealT = 9.f; return; }   // skip the reveal: hand over to the satellite next frame
+	if (SepT >= 0.f) { SepT = 8.f; TickSeparation(0.f); return; }   // skip the separation: wings out, start the reveal
 	if (bFlight)
 	{
 		for (int32 i = 0; i < 400000 && (Sim.Phase == EISFlightPhase::Countdown || Sim.Phase == EISFlightPhase::OnPad || Sim.IsFlying()); ++i)

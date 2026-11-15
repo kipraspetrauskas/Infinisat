@@ -173,7 +173,23 @@ void SISGameUI::Construct(const FArguments& InArgs)
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISScreen="), DevScreen))
 	{
 		if (DevScreen == TEXT("launch")) Go(EScreen::Launch);
-		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); }
+		else if (DevScreen == TEXT("ops"))
+		{
+			StartOps();
+			if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch();
+			if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap();
+			// dev: jump the mission clock to a day (screenshots of cruise / arrival); choices take the first option
+			double OpsDay = 0.0;
+			if (FParse::Value(FCommandLine::Get(), TEXT("ISOpsDay="), OpsDay))
+			{
+				if (Scene.IsValid()) Scene->SkipLaunch();
+				while (Ops.Day < OpsDay - 1e-9 && !Ops.IsFinished())
+				{
+					if (Ops.AwaitingChoice()) Ops.Choose(0);
+					else Ops.Advance(FMath::Min(OpsDay - Ops.Day, 0.25));
+				}
+			}
+		}
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
 		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosZoom="), Zm)) Scene->ZoomCamera(Zm); }
@@ -219,14 +235,38 @@ void SISGameUI::Tick(const FGeometry& G, const double Now, const float Dt)
 			Go(EScreen::Ops);
 		}
 	}
+	if (Scene.IsValid())
+	{
+		// deep space: the flight plan exists once the rocket is in its parking orbit; the log's departure follows the real burn
+		double DepDay = 0.0;
+		if (Scene->TakeVoyagePlanned(DepDay))
+		{
+			Ops.Retime(TEXT("Departure burn"), DepDay);
+			Ops.Retime(TEXT("Separation from the rocket"), DepDay + 0.01);
+		}
+	}
 	if ((Screen == EScreen::Ops || (Screen == EScreen::Cosmos && bOpsInCosmos)) && !Ops.IsPaused() && Warp > 0 && !(Scene.IsValid() && Scene->IsLaunching()))
 	{
-		// real time: 1x = one second per second; Warp multiplies
-		if (Ops.Advance(Warp * Dt / 86400.0)) bDirty = true;
+		// real time: 1x = one second per second; Warp multiplies. Burns and separations slow the clock down (like KSP's
+		// automatic warp-down) so a 5-minute burn is not skipped in one frame at 1,000,000x.
+		const float Cap = Scene.IsValid() ? Scene->WarpCap() : 0.f;
+		const float W = Cap > 0.f ? FMath::Min(Warp, Cap) : Warp;
+		if (Ops.Advance(W * Dt / 86400.0)) bDirty = true;
 		if (Ops.IsFinished() && Scene.IsValid()) Scene->SetBitMood(Ops.Stars >= 2 ? 1 : 2);
 	}
-	if (Screen == EScreen::Ops && Scene.IsValid())
+	if ((Screen == EScreen::Ops || (Screen == EScreen::Cosmos && bOpsInCosmos)) && Scene.IsValid())
+	{
 		Scene->SetMissionTime(Ops.Day, Ops.EndDay, Eval.PeriodMin, !Ops.bMissionLost);
+		// deep space: the view follows the voyage - out to the solar system for the cruise, in to the destination for the
+		// arrival. Only when the phase changes, so the player can still switch by hand in between.
+		const int32 Ph = Scene->VoyagePhase();
+		if (Ph != LastVoyPhase)
+		{
+			LastVoyPhase = Ph;
+			if (Ph == 1 && Screen == EScreen::Ops) { bOpsInCosmos = true; Go(EScreen::Cosmos); }
+			else if (Ph == 2) { bOpsInCosmos = false; Go(EScreen::Ops); }
+		}
+	}
 	if (bDirty) Rebuild();
 
 	// Dev: automatic screenshot then quit (used to review screens without a human)
@@ -342,12 +382,12 @@ void SISGameUI::UpdateScene()
 	case EScreen::Title: case EScreen::Missions: case EScreen::Help: Scene->ShowTitle(); Scene->SetBitMood(0); break;
 	case EScreen::Design: case EScreen::Launch: Scene->ShowWorkshop(Design); Scene->SetBitMood(Eval.bCanLaunch ? 1 : 2); break;
 	case EScreen::Ops:
-		Scene->ShowOrbit(Eval.Dest, Eval.AltKm, Mission().Id == "sandbox" ? 51.6f : Mission().IncDeg, Design, Mission().Id == "m4" ? Design.Fleet : 1);
+		Scene->ShowOrbit(Eval.Dest, Eval.AltKm, LaunchInc(), Design, Mission().Id == "m4" ? Design.Fleet : 1);
 		Scene->SetBitMood(0);
 		break;
 	case EScreen::Debrief: Scene->ShowCompare(Design, Mission().RealMesh, Mission().RealName); break;
 	case EScreen::Play: case EScreen::Bench: case EScreen::CanDebrief: case EScreen::Pause: break;
-	case EScreen::Cosmos: Scene->ShowCosmos(Design); Scene->SetBitMood(1); break;
+	case EScreen::Cosmos: Scene->ShowCosmos(Design); Scene->SetCosmosMission(bOpsInCosmos); Scene->SetBitMood(1); break;
 	case EScreen::Pedia:
 		Scene->ShowModelOnly(MeshOf(Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Mesh), Pedia[FMath::Clamp(PediaSel, 0, PediaCount - 1)].Name);
 		break;
@@ -404,10 +444,21 @@ void SISGameUI::StartMission(int32 Index)
 	Go(EScreen::Design);
 }
 
+// Inclination the rocket flies to. Earth orbits: the mission's. Deep space: due east from the launch site (the parking orbit
+// is only a stepping stone; the 90 deg of a polar lunar orbit is reached at the Moon, a polar launch would waste ~1 km/s).
+float SISGameUI::LaunchInc() const
+{
+	if (Mission().Id == "sandbox") return 51.6f;
+	if (ISSim::IsDeepSpace(Eval.Dest))
+		if (const FISLauncher* L = FISLauncher::Find(Design.Vehicle)) return (float)L->SiteLatDeg;
+	return Mission().IncDeg;
+}
+
 void SISGameUI::StartOps()
 {
 	Eval = ISSim::Evaluate(Design, Mission());
 	Ops.Start(Design, Mission(), Eval, RunSeed++);
+	LastVoyPhase = 0;
 	bAckFinish = false; bRecorded = false; LastReportPath.Reset();
 	Warp = 100.f;
 	Warp = 1.f;
@@ -415,11 +466,13 @@ void SISGameUI::StartOps()
 	Go(EScreen::Ops);
 	if (Scene.IsValid())
 	{
+		Scene->SetMissionTime(0.0, Ops.EndDay, Eval.PeriodMin, true);   // the voyage planner needs the mission's end day
 		// orbital launchers fly for real (ISRocket physics); the hobby rocket and balloon keep the short scripted launch
-		const float Inc = Mission().Id == "sandbox" ? 51.6f : Mission().IncDeg;
-		const bool bFlying = Scene->StartFlight(Design.Vehicle, Eval.TotalKg, Eval.AltKm, Inc);
+		const bool bFlying = Scene->StartFlight(Design.Vehicle, Eval.TotalKg, Eval.AltKm, LaunchInc());
 		float AutoT = -1.f;
 		if (bFlying && FParse::Value(FCommandLine::Get(), TEXT("ISAutoLaunch="), AutoT) && Scene->Flight()) Scene->Flight()->StartCountdown(AutoT);   // dev: screenshots mid-flight
+		float DevWarp = 1.f;
+		if (bFlying && FParse::Value(FCommandLine::Get(), TEXT("ISFlightWarp="), DevWarp)) Scene->SetFlightWarp(DevWarp);   // dev: reach orbit quickly (clamped 10x powered, 100x coasting)
 		if (!bFlying)
 		{
 			const FISVehicle* V = ISData::FindVehicle(Design.Vehicle);
@@ -1019,6 +1072,13 @@ TSharedRef<SWidget> SISGameUI::BuildOps()
 			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->LaunchCaption() : FString()); })]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[Btn(TEXT("Skip launch"), [this]() { if (Scene.IsValid()) Scene->SkipLaunch(); }, 0, 12)]
 		]
+	];
+	// deep-space voyage: what the spacecraft is doing now (parking orbit, departure burn, cruise, insertion...)
+	O->AddSlot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 90, 0, 0)
+	[
+		SNew(SBorder).BorderImage(&PanelBrush).BorderBackgroundColor(CPanel2).Padding(FMargin(14, 8))
+		.Visibility_Lambda([this]() { return Scene.IsValid() && !Scene->IsLaunching() && !Scene->VoyageCaption().IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+		[SNew(STextBlock).Font(ISFont("Bold", 16)).ColorAndOpacity(CGold).Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->VoyageCaption() : FString()); })]
 	];
 	// FLIGHT HUD: you fly the real launch (ISRocket physics). Keys: SPACE launch/stage, T autopilot, SHIFT/CTRL throttle,
 	// A/D pitch, X cut engines, comma/period time warp (slow motion down to 0.05x)
@@ -2324,7 +2384,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	TSharedRef<SHorizontalBox> Strip = SNew(SHorizontalBox);
 	for (const int32 i : Order)
 	{
-		if (Scene->CosmosDepth(i) > 2) continue;   // planets, moons and spacecraft; deeper levels stay in the 3D view
+		if (Scene->CosmosDepth(i) > 2 || !Scene->CosmosAlive(i)) continue;   // planets, moons and spacecraft; deeper levels stay in the 3D view
 		const bool bSel = i == Sel;
 		Strip->AddSlot().AutoWidth().Padding(5, 0)
 		[
@@ -2357,6 +2417,36 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	if (bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to your satellite"), [this]() { bOpsInCosmos = false; Go(EScreen::Ops); }, 1, 12)];
 	Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels on") : TEXT("Labels off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 11)];
 	Tools->AddSlot().AutoHeight()[Btn(TEXT("Menu"), [this]() { bOpsInCosmos = false; Go(EScreen::Title); }, 0, 11)];
+	// sandbox: the Solar System runs on real gravity (ISNBody), so the player can break it
+	TSharedRef<SVerticalBox> Sandbox = SNew(SVerticalBox);
+	if (Scene.IsValid() && Scene->CosmosIsSim(Sel))
+	{
+		struct FAct { const TCHAR* Label; TFunction<void()> Do; };
+		auto Row = [this](const TCHAR* Caption, std::initializer_list<FAct> Items)
+		{
+			TSharedRef<SHorizontalBox> H = SNew(SHorizontalBox);
+			H->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 6, 0)[SNew(SBox).WidthOverride(44)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f)).Text(FText::FromString(Caption))]];
+			for (const FAct& It : Items)
+			{
+				TFunction<void()> F = It.Do;
+				H->AddSlot().AutoWidth().Padding(0, 0, 4, 0)[Btn(It.Label, [this, F]() { if (Scene.IsValid()) F(); bDirty = true; }, 0, 10)];
+			}
+			return H;
+		};
+		TWeakObjectPtr<AISSpaceScene> W = Scene;
+		Sandbox->AddSlot().AutoHeight().Padding(0, 8, 0, 4)[SNew(STextBlock).Font(ISFont("Regular", 11)).ColorAndOpacity(FLinearColor(0.6f, 0.85f, 1.f)).AutoWrapText(true)
+			.Text_Lambda([W, Sel]() { return FText::FromString(W.IsValid() ? W->CosmosSimInfo(Sel) : FString()); })];
+		Sandbox->AddSlot().AutoHeight().Padding(0, 2)[Row(TEXT("Mass"), {
+			{ TEXT("x0.1"), [W, Sel]() { W->CosmosScaleMass(Sel, 0.1); } }, { TEXT("x0.5"), [W, Sel]() { W->CosmosScaleMass(Sel, 0.5); } },
+			{ TEXT("x2"), [W, Sel]() { W->CosmosScaleMass(Sel, 2.0); } }, { TEXT("x10"), [W, Sel]() { W->CosmosScaleMass(Sel, 10.0); } } })];
+		Sandbox->AddSlot().AutoHeight().Padding(0, 2)[Row(TEXT("Push"), {
+			{ TEXT("Slower"), [W, Sel]() { W->CosmosNudge(Sel, 0.9); } }, { TEXT("Faster"), [W, Sel]() { W->CosmosNudge(Sel, 1.1); } } })];
+		Sandbox->AddSlot().AutoHeight().Padding(0, 2)[Row(TEXT("Add"), {
+			{ TEXT("Moon"), [W]() { W->CosmosAddBody(0); } }, { TEXT("Rogue planet"), [W]() { W->CosmosAddBody(1); } }, { TEXT("Impactor"), [W]() { W->CosmosAddBody(2); } } })];
+		Sandbox->AddSlot().AutoHeight().Padding(0, 2)[Row(TEXT(""), { { TEXT("Reset Solar System"), [W]() { W->CosmosResetSim(); } } })];
+	}
+	Sandbox->AddSlot().AutoHeight().Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Bold", 11)).ColorAndOpacity(FLinearColor(1.f, 0.62f, 0.2f)).AutoWrapText(true)
+		.Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? Scene->CosmosEvent() : FString()); })];
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(SISCosmosOverlay, Scene, PC, [this](int32 i) { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; })]
 		// selection card, top left (small)
@@ -2369,6 +2459,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(ISFont("Bold", 20)).ColorAndOpacity(FLinearColor(1, 1, 1)).Text(FText::FromString(Name))]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 12)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.75f)).AutoWrapText(true).Text(FText::FromString(Facts))]
+						+ SVerticalBox::Slot().AutoHeight()[Sandbox]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[SNew(STextBlock).Font(ISFont("Regular", 10)).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f)).AutoWrapText(true)
 						.Text(FText::FromString(bOpsInCosmos ? TEXT("Wheel: zoom. Zoom all the way into Earth to return to your satellite.") : TEXT("Wheel: zoom.  Drag: look around.  Click a world to fly there.")))]
 				]

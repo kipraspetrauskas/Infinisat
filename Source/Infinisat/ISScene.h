@@ -5,6 +5,8 @@
 #include "GameFramework/Actor.h"
 #include "ISData.h"
 #include "ISRocket.h"
+#include "ISNBody.h"
+#include "ISTrajectory.h"
 #include "ISScene.generated.h"
 
 struct FISDesign;
@@ -76,12 +78,30 @@ public:
 	FVector CosmosPos(int32 I) const;
 	int32 CosmosParent(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Parent : -1; }
 	float CosmosRadius(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Radius : 0.f; }
-	FString CosmosLabelText(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].Label : FString(); }
+	FString CosmosLabelText(int32 I) const { return CosmosBodies.IsValidIndex(I) && CosmosAlive(I) ? CosmosBodies[I].Label : FString(); }
 	FColor CosmosLabelColor(int32 I) const { return CosmosBodies.IsValidIndex(I) ? CosmosBodies[I].LabelColor : FColor::White; }
 	FVector GetCameraLocation() const;
+	// sandbox (solar system runs on real mutual gravity, ISNBody.h); i = cosmos body index
+	bool CosmosIsSim(int32 I) const { return CosmosBodies.IsValidIndex(I) && CosmosBodies[I].Sim >= 0; }
+	bool CosmosAlive(int32 I) const { return !CosmosIsSim(I) || NBody.B[CosmosBodies[I].Sim].bAlive; }
+	void CosmosScaleMass(int32 I, double F);
+	void CosmosNudge(int32 I, double F);     // multiply the speed relative to what it orbits
+	void CosmosAddBody(int32 Kind);          // 0 moon around the selection, 1 rogue Jupiter, 2 impactor aimed at the selection
+	void CosmosResetSim();
+	FString CosmosSimInfo(int32 I) const;    // live mass / orbit line for the selection card
+	FString CosmosEvent() const
+	{
+		if (CosmosEventT > 0.f) return CosmosEventText;
+		if (bCosmosMission) return VoyageCaption();   // the mission's own news: cruise, burns, distance from the Sun
+		return NBody.bLimited ? FString(TEXT("Simulation slowed: too many close encounters for this speed.")) : FString();
+	}
 
 	// Operations: place the player's spacecraft along its path (0..1 of mission, orbit phase in days)
 	void SetMissionTime(double Day, double EndDay, double PeriodMin, bool bAlive);
+	// deep-space voyage (ISVoyage.cpp): the flight plan made from the parking orbit the rocket reached
+	float WarpCap() const;                                   // 0 = no limit; otherwise the mission clock must not run faster
+	FString VoyageCaption() const;                           // "Slowing down for the burn" etc. (empty = nothing to say)
+	bool TakeVoyagePlanned(double& OutDepartDay) { const bool b = bVoyPlannedNew; bVoyPlannedNew = false; OutDepartDay = Voy.DepartT / 86400.0; return b; }
 	void SetBitMood(int32 Mood); // 0 neutral, 1 happy, 2 worried
 	void PokeBit();
 
@@ -158,6 +178,49 @@ private:
 	void TickTrueScale(float Dt);
 	void BuildCleanRoom();
 	float LaunchT = -1.f;
+	float RevealT = -1.f;   // orbit reached: seconds into the pull-back to the whole-planet shot (-1 = off)
+	// payload separation: a copy of the satellite rides on the upper stage, springs off and unfolds its solar wings
+	struct FISWingPanel { int32 First = 0, Num = 0, K = 0, Wing = 0; FVector Out = FVector::ZeroVector, Hinge = FVector::ZeroVector; float Pitch = 0.f, Half = 0.f; };
+	TArray<FISWingPanel> SatWings;      // filled by BuildSatellite for SatParts: which parts form each deployable panel
+	float SatHalfH = 50.f;              // half the bus height in model units (adapter ring sits below it)
+	UPROPERTY() USceneComponent* SepRoot = nullptr;
+	UPROPERTY() TArray<UStaticMeshComponent*> SepParts;   // index-aligned with SatParts
+	TArray<FTransform> SepFinal;        // deployed (as built) relative transforms
+	float SepT = -1.f;
+	TArray<UStaticMeshComponent*> TrenchFx;   // flame-trench jets + deluge steam (also in PadVis for clean-up)
+	// ---- voyage (ISVoyage.cpp)
+	bool bVoyage = false;               // deep-space mission view: the satellite follows Voy, not a fixed orbit
+	FISTrajectory Voy;
+	float VoyAltKm = 0.f;
+	double VoyEndDay = 1.0, VoyBurnDur = 300.0, VoyInsDur = 1200.0;
+	bool bVoyPlannedNew = false, bVoySepDone = false;
+	FVector VoyCamOff = FVector::ZeroVector;   // stack shot: from the satellite to the middle of stage + satellite
+	double VoySepStartT = -1.0;
+	FQuat VoyAtt = FQuat::Identity;     // the free satellite's attitude after separation
+	int32 VoyCamMode = 0;               // 0 follow (stack / satellite), 1 map (Earth + Moon + path)
+	FVector VoyFocus = FVector::ZeroVector, BodyC = FVector::ZeroVector, FollowN = FVector::ZeroVector;
+	UPROPERTY() UStaticMeshComponent* SatThruster = nullptr;
+	UPROPERTY() UTextRenderComponent* MoonLabel = nullptr;
+	UPROPERTY() TArray<UStaticMeshComponent*> VoyMoons;   // Jupiter scene: Io, Europa, Ganymede, Callisto
+	bool bJupiterScene = false;         // the mission view is centred on Jupiter (arrival + science orbit), not on Earth
+	bool bCosmosMission = false;        // the solar-system view shows the mission (clock locked, probe drawn)
+	int32 CosmosProbe = -1;
+	double CosmosMissionT = 0.0;        // mission second the Cosmos N-body sim stands at
+	void PlanVoyage();
+	void TickVoyage(float Dt);
+	void EnsureThruster();
+	void BuildJupiterScene();
+	void TickCosmosMission(TArray<FVector>& SimPos, TArray<uint8>& SimDone);
+	UTexture2D* MoonTexture(const FString& Name);
+	int32 VoyCentre() const;            // ISOrbit body the mission view is centred on
+public:
+	// 0 near Earth (launch / departure), 1 cruise between planets, 2 arrival at the target (Jupiter)
+	int32 VoyagePhase() const;
+	void SetCosmosMission(bool bOn);
+private:
+	FVector PadSite = FVector::ZeroVector, PadAxis = FVector::RightVector;
+	void StartSeparation();
+	void TickSeparation(float Dt);
 	float LastSatSize = 400.f, MapDist = 30000.f, PlanetRUU = 6371.f;
 	FVector LaunchSite = FVector::ZeroVector, RocketPrev = FVector::ZeroVector;
 	UPROPERTY() USceneComponent* RocketRoot = nullptr;
@@ -189,6 +252,8 @@ private:
 		UMaterialInstanceDynamic* SunDirMID = nullptr; // Earth day/night material needs the sun direction
 		int32 Star = -1;                    // which star lights it
 		UTexture2D* Thumb = nullptr;        // surface texture, used as the picture in the body strip
+		int32 Sim = -1;                     // index in NBody (-1: still on rails)
+		double RealR0 = 1.0;                // real radius (km) when built, to scale the mesh after merges / mass edits
 	};
 	TArray<FCosmosBody> CosmosBodies;
 	UPROPERTY() TArray<USceneComponent*> CosmosComps;
@@ -221,6 +286,19 @@ private:
 	void BuildExoSystem(int32 Seed, const FString& StarName, const FVector& Center, const FLinearColor& StarC, float StarR, const FString& StarFacts);
 	void BuildBlackHole(const FVector& Center);
 	void BuildCosmosBackdrop();
+	// sandbox: real physics in km, drawn on the compressed layout (CompressKm maps a real distance to scene units per parent)
+	FISNBodySim NBody;
+	TArray<int32> SimToCosmos;
+	TMap<int32, TArray<FVector2D>> CosmosScale;   // per sim parent: sorted (log real km, log scene units) of its original children
+	int32 CosmosBodyBase = 0, CosmosCompBase = 0;  // everything after these was added by the player (removed on reset)
+	FString CosmosEventText;
+	float CosmosEventT = 0.f;
+	int32 CosmosAdded = 0;
+	void SeedCosmosSim(double T0 = 0.0);   // ISOrbit time the planets start at
+	float CosmosDispR(int32 Cosmos) const;
+	float CompressKm(int32 SimParent, double Km, float Touch) const;
+	FVector CosmosSimPos(int32 Sim, TArray<FVector>& Memo, TArray<uint8>& Done) const;
+	void CosmosNotice(const FString& S) { CosmosEventText = S; CosmosEventT = 5.f; }
 
 	// ---- rocket flight
 	FISRocketSim Sim;

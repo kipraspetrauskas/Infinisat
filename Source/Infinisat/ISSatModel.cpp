@@ -60,6 +60,8 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 
 	const FBusShape S = ShapeFor(D);
 	const float HW = S.W * 0.5f, HD = S.D * 0.5f, HH = S.H * 0.5f;
+	const bool bMain = &Track == &SatParts;   // the player's satellite: remember its deployable panels for the separation animation
+	if (bMain) { SatWings.Reset(); SatHalfH = HH; }
 	const FLinearColor Frame = S.bCube ? Anod : Alu;
 	const bool bMLI = HasTag(ISTag::Heaters) || S.H >= 150.f;
 
@@ -207,8 +209,10 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 				for (int32 k = 0; k < Panels; ++k)
 				{
 					const FVector C = Out * (HD + 24.f + PanelHgt * 0.5f + k * (PanelHgt + 3.f));
+					const int32 First = Track.Num();
 					Panel(C, PanelLen, PanelHgt, FVector(-1, 0, 0), FVector(0, 0, 1));   // cells face the Sun (zenith side), panel spans bus length x outward
 					Box(C - Out * (PanelHgt * 0.5f + 1.5f), FVector(3.f, PanelLen * 0.2f, 3.f), Alu, 1.f, 0.3f, FRotator(0, Yaw + 90.f, 0));
+					if (bMain) SatWings.Add({ First, Track.Num() - First, k, w, Out, Out * (HD + 24.f), PanelHgt + 3.f, PanelHgt * 0.5f });
 				}
 			}
 			break;

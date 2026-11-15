@@ -71,6 +71,8 @@ public:
 	double TargetAltKm = 400, IncDeg = 51.6, PayloadKg = 100, LaunchAzDeg = 90, EarthBoostMs = 0, LiftoffDv = 0;
 	const FISLauncher* L = nullptr;
 	bool IsFlying() const { return Phase == EISFlightPhase::Ascent || Phase == EISFlightPhase::Coast; }
+	bool IsIgniting() const { return Phase == EISFlightPhase::Countdown && ThrustN > 0.0; }   // engines running, still clamped to the pad
+	double Spool = 0.0;             // 0..1 engine start-up on the pad (1 once released)
 	FVector2D ThrustDir() const;    // unit vector of the current thrust (nose direction tilted by the engine gimbal)
 	FVector2D NoseDir() const;      // where the vehicle actually points
 
@@ -112,5 +114,5 @@ public:
 	double TimeToApoapsis() const;
 private:
 	double CountdownT = 0;
-	bool bMaxQAnnounced = false, bMaxQPassed = false, bCircBurn = false, bCircActive = false;
+	bool bMaxQAnnounced = false, bMaxQPassed = false, bCircBurn = false, bCircActive = false, bIgnition = false;
 };

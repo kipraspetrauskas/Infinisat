@@ -93,7 +93,15 @@ namespace ISOrbit
 		const double Alpha = 2.0 / r0 - v0 * v0 / Mu;
 		double X = SqMu * FMath::Abs(Alpha) * Dt;
 		if (FMath::Abs(Alpha) < 1e-10) X = SqMu * Dt / r0;
-		for (int32 It = 0; It < 60; ++It)
+		else if (Alpha < 0.0)
+		{
+			// hyperbola: Vallado's starting guess (the elliptic one is far too large for long times and Newton crawls back)
+			const double A = 1.0 / Alpha, Sg = Dt > 0.0 ? 1.0 : -1.0;
+			const double Den = FVector3d::DotProduct(R0, V0) + Sg * FMath::Sqrt(-Mu * A) * (1.0 - r0 * Alpha);
+			const double Arg = -2.0 * Mu * Alpha * Dt / Den;
+			if (Arg > 0.0) X = Sg * FMath::Sqrt(-A) * FMath::Loge(Arg);
+		}
+		for (int32 It = 0; It < 200; ++It)
 		{
 			const double Z = Alpha * X * X;
 			const double C = StumpC(Z), S = StumpS(Z);
@@ -113,6 +121,55 @@ namespace ISOrbit
 		const double gd = 1.0 - X * X / r * C;
 		V0 = R0 * fd + V0 * gd;
 		R0 = R;
+	}
+
+	// Universal-variable Lambert solver (Curtis, alg. 5.2): Newton on z = alpha * x^2 for the time-of-flight equation
+	bool Lambert(double Mu, const FVector3d& R1, const FVector3d& R2, double Tof, const FVector3d& Normal, FVector3d& V1, FVector3d& V2)
+	{
+		const double r1 = R1.Length(), r2 = R2.Length();
+		if (r1 <= 0.0 || r2 <= 0.0 || Tof <= 0.0) return false;
+		double Th = FMath::Acos(FMath::Clamp(FVector3d::DotProduct(R1, R2) / (r1 * r2), -1.0, 1.0));
+		if (FVector3d::DotProduct(FVector3d::CrossProduct(R1, R2), Normal) < 0.0) Th = 2.0 * PI - Th;   // long way round
+		const double A = FMath::Sin(Th) * FMath::Sqrt(r1 * r2 / (1.0 - FMath::Cos(Th)));
+		if (FMath::Abs(A) < 1e-9) return false;
+		const double SqMu = FMath::Sqrt(Mu);
+		auto Y = [&](double Z) { return r1 + r2 + A * (Z * StumpS(Z) - 1.0) / FMath::Sqrt(StumpC(Z)); };
+		auto F = [&](double Z) { const double y = Y(Z); return FMath::Pow(y / StumpC(Z), 1.5) * StumpS(Z) + A * FMath::Sqrt(y) - SqMu * Tof; };
+		// bracket: walk z up from a strongly hyperbolic guess until the time of flight is long enough
+		double Z = -100.0;
+		int32 Guard = 0;
+		while ((Y(Z) < 0.0 || F(Z) < 0.0) && Guard++ < 4000) Z += 0.1;
+		if (Guard >= 4000) return false;
+		for (int32 It = 0; It < 100; ++It)
+		{
+			const double y = Y(Z), C = StumpC(Z), S = StumpS(Z);
+			double dF;
+			if (FMath::Abs(Z) < 1e-6)
+			{
+				const double y0 = Y(0.0);
+				dF = FMath::Sqrt(2.0) / 40.0 * FMath::Pow(y0, 1.5) + A / 8.0 * (FMath::Sqrt(y0) + A * FMath::Sqrt(1.0 / (2.0 * y0)));
+			}
+			else
+				dF = FMath::Pow(y / C, 1.5) * (1.0 / (2.0 * Z) * (C - 1.5 * S / C) + 0.75 * S * S / C) + A / 8.0 * (3.0 * S / C * FMath::Sqrt(y) + A * FMath::Sqrt(C / y));
+			const double Step = F(Z) / dF;
+			Z -= Step;
+			while (Y(Z) < 0.0) Z += 0.1;   // keep y positive
+			if (FMath::Abs(Step) < 1e-10) break;
+		}
+		const double y = Y(Z);
+		const double f = 1.0 - y / r1, g = A * FMath::Sqrt(y / Mu), gd = 1.0 - y / r2;
+		if (FMath::Abs(g) < 1e-12) return false;
+		V1 = (R2 - R1 * f) / g;
+		V2 = (R2 * gd - R1) / g;
+		return !V1.ContainsNaN() && !V2.ContainsNaN();
+	}
+
+	double HyperbolicTime(double Mu, double Rp, double Vinf, double R)
+	{
+		const double A = Mu / (Vinf * Vinf);              // |semi-major axis|
+		const double E = 1.0 + Rp * Vinf * Vinf / Mu;
+		const double Fh = FMath::Loge((R / A + 1.0) / E + FMath::Sqrt(FMath::Square((R / A + 1.0) / E) - 1.0));   // acosh
+		return (E * FMath::Sinh(Fh) - Fh) / FMath::Sqrt(Mu / (A * A * A));
 	}
 
 	FISElements Elements(double Mu, double BodyR, const FVector3d& R, const FVector3d& V)

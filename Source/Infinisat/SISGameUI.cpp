@@ -173,7 +173,7 @@ void SISGameUI::Construct(const FArguments& InArgs)
 	if (FParse::Value(FCommandLine::Get(), TEXT("ISScreen="), DevScreen))
 	{
 		if (DevScreen == TEXT("launch")) Go(EScreen::Launch);
-		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); }
+		else if (DevScreen == TEXT("ops")) { StartOps(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISNoLaunch"))) Scene->SkipLaunch(); if (Scene.IsValid() && FParse::Param(FCommandLine::Get(), TEXT("ISMap"))) Scene->ToggleMap(); float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISZoom="), Zm)) for (int32 z = 0; z < FMath::Abs((int32)Zm); ++z) Scene->ZoomCamera(Zm > 0 ? 1.f : -1.f); }
 		else if (DevScreen == TEXT("debrief")) { StartOps(); while (!Ops.IsFinished()) { if (Ops.AwaitingChoice()) Ops.Choose(0); else Ops.Advance(Ops.EndDay / 50.0); } Go(EScreen::Debrief); }
 		else if (DevScreen == TEXT("pedia")) Go(EScreen::Pedia);
 		else if (DevScreen == TEXT("cosmos")) { Go(EScreen::Cosmos); int32 F = -1; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosFocus="), F)) { Scene->FocusCosmos(F); } float Zm = 0.f; if (Scene.IsValid() && FParse::Value(FCommandLine::Get(), TEXT("ISCosmosZoom="), Zm)) Scene->ZoomCamera(Zm); }
@@ -2377,7 +2377,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 		// bottom bar: time | bodies | tools
 		+ SOverlay::Slot().VAlign(VAlign_Bottom)
 		[
-			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 10))
+			SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(Bar).Padding(FMargin(16, 8))
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 18, 0)
@@ -2387,7 +2387,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 						.Text_Lambda([this]() { return FText::FromString(Scene.IsValid() ? FString::Printf(TEXT("Day %.1f"), Scene->GetCosmosDays()) : FString()); })]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[Speeds]
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SScrollBox).Orientation(Orient_Horizontal).ScrollBarVisibility(EVisibility::Collapsed) + SScrollBox::Slot()[Strip]]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(SSpacer)]   // no planet strip: click a world (or its label) in space to fly there
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18, 0, 0, 0)[SNew(SBox).WidthOverride(190)[Tools]]
 			]
 		];

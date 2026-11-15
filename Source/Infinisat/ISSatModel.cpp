@@ -98,9 +98,31 @@ void AISSpaceScene::BuildSatellite(USceneComponent* Root, const FISDesign& D, TA
 				Box(FVector(0, s * (HD - 2.f), Z), FVector(S.W, 4.f, 5.f), Frame, S.bCube ? 0.4f : 1.f, 0.4f);
 			}
 		}
-		// side panels: two open faces show the inside; the others get skin
-		if (!S.bCube)
+		// closed body: a real satellite has no open sides
+		if (S.bCube)
 		{
+			// CubeSat: body-mounted solar panels on the four long sides (PCB with cell strings), end plates top and bottom
+			const FLinearColor SolarCell(0.05f, 0.08f, 0.2f), Pcb(0.1f, 0.3f, 0.15f);
+			for (int32 s : { -1, 1 })
+			{
+				Box(FVector(s * (HW - 1.5f), 0, 0), FVector(1.6f, S.D - T * 2.f, S.H - 6.f), Pcb, 0.f, 0.6f);
+				Box(FVector(0, s * (HD - 1.5f), 0), FVector(S.W - T * 2.f, 1.6f, S.H - 6.f), Pcb, 0.f, 0.6f);
+				for (int32 u = 0; u < S.Units; ++u)
+				{
+					const float Zc = -HH + (u + 0.5f) * S.H / FMath::Max(1, S.Units);
+					const float Ch = S.H / FMath::Max(1, S.Units) * 0.8f;
+					Box(FVector(s * (HW - 0.4f), 0, Zc), FVector(0.6f, S.D * 0.7f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+					Box(FVector(s * (HW - 0.4f), 0, Zc - Ch * 0.48f + Ch * 0.21f), FVector(0.6f, S.D * 0.7f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+					Box(FVector(0, s * (HD - 0.4f), Zc), FVector(S.W * 0.7f, 0.6f, Ch * 0.42f), SolarCell, 0.3f, 0.15f);
+				}
+			}
+			for (int32 s : { -1, 1 }) Box(FVector(0, 0, s * (HH - 1.f)), FVector(S.W - T, S.D - T, 2.f), Alu, 1.f, 0.35f);
+		}
+		else
+		{
+			// +X (nadir) skin and end plates, so the bus is closed on every side
+			Box(FVector(HW - 1.f, 0, 0), FVector(1.5f, S.D - 10.f, S.H - 10.f), FLinearColor(0.62f, 0.63f, 0.65f), 1.f, 0.45f);
+			for (int32 s : { -1, 1 }) Box(FVector(0, 0, s * (HH - 1.5f)), FVector(S.W - 6.f, S.D - 6.f, 2.f), FLinearColor(0.6f, 0.61f, 0.63f), 1.f, 0.4f);
 			// -X (zenith): white radiator with stripes; +Y/-Y: honeycomb or gold MLI
 			Box(FVector(-HW + 1.f, 0, 0), FVector(1.5f, S.D - 10.f, S.H - 10.f), Radiator, 0.f, 0.25f);
 			for (int32 k = 0; k < 6; ++k) Box(FVector(-HW + 0.f, 0, -HH + 12.f + k * (S.H - 24.f) / 5.f), FVector(1.f, S.D - 14.f, 1.2f), FLinearColor(0.7f, 0.7f, 0.72f), 0.5f, 0.4f);

@@ -196,6 +196,12 @@ private:
 	UPROPERTY() TArray<USceneComponent*> CosmosBillboards;
 	UPROPERTY() TMap<FString, UTexture2D*> CosmosTexCache;
 	UPROPERTY() USceneComponent* CosmosBackdrop = nullptr;
+	UPROPERTY() USceneComponent* StarField = nullptr;   // 3D star field used by every space view (replaces the flat sky picture)
+	void BuildStarField();
+	void TickStarField(const FVector& CamLoc);
+	void BuildCosmosBackdropOld();
+	UPROPERTY() USceneComponent* SkyPlanets = nullptr;
+	UPROPERTY() TArray<UTextRenderComponent*> SkyPlanetLabels;
 	UPROPERTY() ULineBatchComponent* CosmosLines = nullptr;
 	UPROPERTY() ULineBatchComponent* FlightLines = nullptr;   // flown path (orange) + predicted path (cyan)
 	TArray<FVector2D> FlightPred;

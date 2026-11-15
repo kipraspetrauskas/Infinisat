@@ -392,6 +392,7 @@ void AISSpaceScene::EndFlight()
 	for (UStaticMeshComponent* C : PadVis) if (IsValid(C)) C->SetVisibility(false);
 	CamMin = LastSatSize * 1.2f;
 	CamDistGoal = LastSatSize * 5.f;
+	FollowPitch = -28.f; FollowYaw = 25.f; bFlightCamUser = false;   // after separation: spacecraft in front, Earth filling the lower part of the view
 }
 
 void AISSpaceScene::SkipLaunch()

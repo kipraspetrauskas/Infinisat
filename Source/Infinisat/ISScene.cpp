@@ -310,6 +310,30 @@ void AISSpaceScene::OrbitCamera(float DYaw, float DPitch)
 void AISSpaceScene::ZoomCamera(float Steps)
 {
 	const float Old = CamDistGoal;
+	// one continuous zoom: spacecraft close-up -> whole Earth with the orbit -> (at the far limit) the solar system
+	if (View == EISView::Orbit && bTrueScale && !bFlight)
+	{
+		const float Alt = FMath::Max(1.f, OrbitRadiusUU - PlanetRUU);
+		if (bFollow && Steps < 0 && CamDistGoal * FMath::Pow(0.75f, Steps) > FMath::Max(Alt * 0.3f, 5.0e6f))
+		{
+			bFollow = false;
+			CamMin = PlanetRUU * 0.2f;
+			CamPitch = -20.f;
+			CamYaw = (SatRoot->GetComponentLocation().Rotation().Yaw) + 180.f;   // look at Earth from the satellite's side
+			CamDistGoal = OrbitRadiusUU * 1.6f;
+			ZoomPastCount = 0;
+			return;
+		}
+		if (!bFollow && Steps > 0 && CamDistGoal * FMath::Pow(0.75f, Steps) < OrbitRadiusUU * 1.12f)
+		{
+			bFollow = true;
+			CamMin = LastSatSize * 1.2f;
+			CamDistGoal = LastSatSize * 40.f;
+			FollowPitch = -28.f;
+			ZoomPastCount = 0;
+			return;
+		}
+	}
 	// cosmos zooms in bigger steps so the whole Solar System is a few wheel notches away (Universe Sandbox feel)
 	const float Rate = bTrueScale ? 0.75f : (View == EISView::Cosmos ? 0.7f : 0.88f);
 	if (View == EISView::Cosmos && CosmosBodies.IsValidIndex(CosmosSel))
@@ -749,7 +773,7 @@ void AISSpaceScene::ShowOrbit(EISDest Dest, float AltKm, float IncDeg, const FIS
 	if (!bTrueScale) PlanetRUU = Dest == EISDest::Moon ? 1737.4f : 6371.f;
 	const bool bNear = Dest != EISDest::Backyard && Dest != EISDest::Interstellar && Dest != EISDest::Jupiter;
 	bFollow = bNear;
-	if (bFollow) { CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
+	if (bFollow) { FollowPitch = -28.f; FollowYaw = 25.f; CamMin = SatSize * 1.2f; CamDistGoal = SatSize * 5.f; CamDist = CamDistGoal; CamPitch = -12.f; CamFocus = CamFocusGoal = SatRoot->GetComponentLocation(); }
 }
 
 void AISSpaceScene::ToggleMap()
@@ -906,7 +930,7 @@ void AISSpaceScene::Tick(float Dt)
 			LaunchT = -1.f;
 			RocketRoot->SetVisibility(false, true);
 			SatRoot->SetVisibility(true, true);
-			CamDistGoal = LastSatSize * 5.f;
+			CamDistGoal = LastSatSize * 5.f; FollowPitch = -28.f; FollowYaw = 25.f;
 		}
 	}
 	else if (View == EISView::Orbit && bFollow && ViewDest != EISDest::Backyard && ViewDest != EISDest::Interstellar && ViewDest != EISDest::Jupiter)
@@ -937,6 +961,7 @@ void AISSpaceScene::Tick(float Dt)
 		CR.Pitch += K * 0.6f * (FMath::Sin(T * 31.f) * 0.6f + FMath::Sin(T * 17.f) * 0.4f);
 		CR.Yaw += K * 0.6f * (FMath::Sin(T * 27.f + 2.f) * 0.6f + FMath::Sin(T * 13.f) * 0.4f);
 	}
+	TickStarField(CamLoc);
 	if (Camera) Camera->SetActorLocationAndRotation(CamLoc, CR);
 
 	if (SkyAtmo)
@@ -1029,13 +1054,15 @@ void AISSpaceScene::TickTrueScale(float Dt)
 	}
 	// everyone else: points that keep a constant size on screen
 	const bool bMap = !bFollow;
+	const bool bDaySky = bFlight && Sim.AltM < 60000.0;   // other satellites are invisible against a blue daytime sky
 	for (const FTruePt& P : TruePts)
 	{
 		const double A = P.Phase + P.Rate * T;
 		const FQuat Qp = FQuat(FVector::UpVector, FMath::DegreesToRadians((float)P.Raan)) * FQuat(FVector::ForwardVector, FMath::DegreesToRadians((float)P.Inc));
 		const FVector Pos = Qp.RotateVector(FVector(FMath::Cos(A), FMath::Sin(A), 0) * P.R);
-		Lines->DrawPoint(Pos, FLinearColor(P.C), bMap ? P.Size : P.Size * 0.6f, SDPG_World, 0.f);
+		if (!bDaySky) Lines->DrawPoint(Pos, FLinearColor(P.C), bMap ? P.Size : P.Size * 0.6f, SDPG_World, 0.f);
 	}
 	// your spacecraft marker in the map
-	if (bMap) Lines->DrawPoint(SatRoot->GetComponentLocation(), FLinearColor(1.f, 0.55f, 0.15f), 10.f, SDPG_Foreground, 0.f);
+	// your spacecraft marker whenever it is too small to see (map, or zoomed far out)
+	if ((bMap || CamDist > LastSatSize * 30.f) && !bFlight && LaunchT < 0.f) Lines->DrawPoint(SatRoot->GetComponentLocation(), FLinearColor(1.f, 0.55f, 0.15f), 8.f, SDPG_Foreground, 0.f);
 }

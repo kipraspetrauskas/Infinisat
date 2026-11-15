@@ -247,15 +247,34 @@ void AISSpaceScene::TickVoyage(float Dt)
 	int32 Mode = bVoySepDone ? 0 : 2;   // 2: the stack (stage + stowed satellite) seen from the side
 	if (bJupiterScene) Mode = T < Voy.ArriveT - 2.0 * DaySec ? 1 : 0;
 	else if (bVoySepDone && T > SepAt + 1800.0 && (!bIns || !bMoonTrip || T < Voy.ArriveT - 6.0 * 3600.0)) Mode = 1;
+	// Moon trip map frame: Earth, the Moon now and the Moon on arrival day (the route ends there, wherever the launch site
+	// put the transfer plane)
+	FBox MoonRoute(ForceInit);
+	FVector MoonArr = FVector::ZeroVector;
+	if (bMoonTrip)
+	{
+		MoonArr = Cm(ISOrbit::BodyPos(MoonB, Voy.Epoch + Voy.ArriveT, true));
+		MoonRoute += FVector::ZeroVector; MoonRoute += MoonPos; MoonRoute += MoonArr;
+	}
 	if (Mode != VoyCamMode)
 	{
 		VoyCamMode = Mode;
 		if (Mode == 1)
 		{
 			bFollow = false;
-			MapDist = (float)FMath::Min(bMoonTrip ? MoonPos.Size() * 1.9 : FMath::Max(P.Size() * 2.4, 2.0e6 * KmCm), 5.0e7 * KmCm);
+			MapDist = (float)FMath::Min(bMoonTrip ? MoonRoute.GetSize().GetMax() * 2.6 : FMath::Max(P.Size() * 2.4, 2.0e6 * KmCm), 5.0e7 * KmCm);
 			CamMin = (float)(2000.0 * KmCm); CamMax = (float)(5.0e7 * KmCm);
 			CamDistGoal = MapDist; CamPitch = -60.f;   // from above the orbit plane: the whole route in view
+			FVector Nm = FVector::CrossProduct(MoonPos, MoonArr).GetSafeNormal();
+			if (bMoonTrip && !Nm.IsNearlyZero())
+			{
+				// look down on the Moon's orbit plane (20 deg off its axis), not down the world's Z: launched from the real
+				// site, that plane can be tilted far from the world's horizontal
+				if (Nm.Z < 0.f) Nm = -Nm;
+				const FVector L = (-Nm * 0.94f + MoonRoute.GetCenter().GetSafeNormal() * 0.34f).GetSafeNormal();
+				CamPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(L.Z, -1.f, 1.f)));
+				CamYaw = FMath::RadiansToDegrees(FMath::Atan2(L.Y, L.X));
+			}
 		}
 		else
 		{
@@ -285,7 +304,7 @@ void AISSpaceScene::TickVoyage(float Dt)
 		const double Limb = -90.0 + FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(69911.0 * KmCm / FMath::Max(P.Size(), 1.0), 0.0, 1.0)));
 		FollowPitch = FMath::FInterpTo(FollowPitch, (float)FMath::Max(Limb - 12.0, -78.0), Dt, 1.2f);
 	}
-	VoyFocus = bMoonTrip ? MoonPos * 0.5f : (bFar ? FVector::ZeroVector : P * 0.5f);
+	VoyFocus = bMoonTrip ? MoonRoute.GetCenter() * 0.8f : (bFar ? FVector::ZeroVector : P * 0.5f);
 
 	// the path in this scene's frame (flown orange, ahead cyan) + the science orbit around the destination
 	if (FlightLines)

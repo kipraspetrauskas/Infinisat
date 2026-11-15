@@ -24,6 +24,8 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	void ShowOrders();
+	void OpenBuilding(FName Action);   // a console in the space centre: assembly hall / lab / tracking station
+	bool bHaveDesign = false;          // an orbital mission is in progress (the assembly hall continues it)
 	void ShowTitle();
 	void ShowCanSatDebrief();
 	void ShowPause();

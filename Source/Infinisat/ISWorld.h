@@ -160,6 +160,7 @@ private:
 	void BuildHome();
 	void BuildNeighbourhood();
 	void BuildBackyard();
+	void BuildSpaceCentre();
 	void SpawnHunt();
 	void Wall(const FVector2D& A, const FVector2D& B, const TArray<FISOpening>& Ops, const TCHAR* InTex, const FLinearColor& InTint,
 		const TCHAR* OutTex = nullptr, const FLinearColor& OutTint = FLinearColor::White, float OutSide = 0.f, bool bBaseboard = true);

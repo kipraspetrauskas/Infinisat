@@ -361,6 +361,15 @@ void AISHomeWorld::BuildNature()
 			// keep the house, path and launch field clear
 			if (FVector::Dist2D(P, FVector(0, 600, 0)) < 1500.f) continue;
 			if (FVector::Dist2D(P, PadLocation) < 4500.f) continue;
+			// nothing grows on the street, inside the space centre's grounds or in the neighbours' houses
+			if (P.Y > -2450.f && P.Y < -1150.f) continue;
+			if (P.X > 12200.f && P.X < 23900.f && P.Y > -1300.f && P.Y < 4400.f) continue;
+			{
+				static const FVector2D Nb[] = { { -2700, 500 }, { 3600, 500 }, { 6900, 500 }, { -1600, -3700 }, { 1800, -3700 }, { 5200, -3700 }, { -5200, -3700 } };
+				bool bIn = false;
+				for (const FVector2D& N : Nb) if (FMath::Abs(P.X - N.X) < 700.f && FMath::Abs(P.Y - N.Y) < 600.f) { bIn = true; break; }
+				if (bIn) continue;
+			}
 			const FVector Seg = PadLocation - FVector(450, 0, 0);
 			const float T = FMath::Clamp(FVector::DotProduct(P - FVector(450, 0, 0), Seg) / Seg.SizeSquared(), 0.f, 1.f);
 			if (FVector::Dist2D(P, FVector(450, 0, 0) + Seg * T) < 500.f) continue;
@@ -391,6 +400,7 @@ void AISHomeWorld::BeginPlay()
 	BuildNeighbourhood();
 	BuildField();
 	BuildBackyard();
+	BuildSpaceCentre();
 	SpawnHunt();
 	LoadProgress();
 
@@ -541,7 +551,10 @@ FName AISHomeWorld::ActionFor(UPrimitiveComponent* C) const
 
 FString AISHomeWorld::PromptFor(FName A) const
 {
-	if (A == "laptop") return TEXT("E  Open order board");
+	if (A == "laptop" || A == "sc_orders") return TEXT("E  Open the order board (customers waiting)");
+	if (A == "sc_design") return TEXT("E  Design a satellite (assembly hall)");
+	if (A == "sc_lab") return TEXT("E  Part library: how every part works");
+	if (A == "sc_track") return TEXT("E  Map of space (tracking station)");
 	const FString AS = A.ToString();
 	if (AS.StartsWith(TEXT("door:")))
 	{

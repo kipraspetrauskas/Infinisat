@@ -216,7 +216,12 @@ void AISHomeWorld::RebuildCan()
 // ------------------------------------------------------------------------------------------------ aim highlight
 void AISHomeWorld::SetHighlight(FName Action, UPrimitiveComponent* Hit)
 {
-	if (Action == HighlightAction) return;
+	// steady outline: a one-frame miss of the view trace must not switch it off and on (that read as flashing)
+	static double LastSeen = 0.0;
+	const double Now = FPlatformTime::Seconds();
+	if (Action == HighlightAction) { LastSeen = Now; return; }
+	if (Action.IsNone() && !HighlightAction.IsNone() && Now - LastSeen < 0.25) return;
+	LastSeen = Now;
 	for (const TWeakObjectPtr<UPrimitiveComponent>& C : Highlighted) if (C.IsValid()) C->SetRenderCustomDepth(false);
 	Highlighted.Reset();
 	HighlightAction = Action;

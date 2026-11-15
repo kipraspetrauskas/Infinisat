@@ -339,7 +339,8 @@ void AISPlayerController::TickWalk(float Dt)
 	if (WasInputKeyJustPressed(EKeys::Q)) World->Scan();
 	if (WasInputKeyJustPressed(EKeys::E) && !LookAction.IsNone())
 	{
-		if (LookAction == "laptop") { OpenPanel(); if (UI) UI->ShowOrders(); }
+		if (LookAction == "laptop" || LookAction == "sc_orders") { OpenPanel(); if (UI) UI->ShowOrders(); }
+		else if (LookAction == "sc_design" || LookAction == "sc_lab" || LookAction == "sc_track") { Bit->Reach(); EnterMenu(); if (UI) UI->OpenBuilding(LookAction); }
 		else if (LookAction == "bench" && World->Stage == EISStage::Build) { Bit->Reach(); EnterBench(); }
 		else World->Interact(LookAction, Bit);
 	}

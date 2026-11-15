@@ -324,6 +324,12 @@ AISPlayerController* SISGameUI::IPC() const { return Cast<AISPlayerController>(P
 AISHomeWorld* SISGameUI::HW() const { AISPlayerController* P = IPC(); return P ? P->World : nullptr; }
 bool SISGameUI::InWorld() const { AISPlayerController* P = IPC(); return P && P->GetMode() != EISMode::Menu; }
 void SISGameUI::ShowOrders() { Screen = EScreen::Missions; bDirty = true; }
+void SISGameUI::OpenBuilding(FName A)
+{
+	if (A == "sc_track") { bOpsInCosmos = false; Go(EScreen::Cosmos); }
+	else if (A == "sc_lab") Go(EScreen::Pedia);
+	else if (A == "sc_design") { if (bHaveDesign) Go(EScreen::Design); else Go(EScreen::Missions); }
+}
 void SISGameUI::ShowPause() { Screen = EScreen::Pause; bDirty = true; }
 void SISGameUI::ShowTitle() { Go(EScreen::Title); }
 void SISGameUI::ShowCanSatDebrief()
@@ -393,7 +399,10 @@ void SISGameUI::StarterDesign(const FISMission& M)
 void SISGameUI::StartMission(int32 Index)
 {
 	MissionIdx = Index;
+	bHaveDesign = true;
 	StarterDesign(Mission());
+	// start from an empty bus bay: the brief says what the customer needs, the player builds it from nothing
+	if (Mission().Id != "sandbox") Design.Parts.Reset();
 	Cat = EISCat::Bus;
 	InfoPart = NAME_None;
 	InfoLine.Reset();
@@ -472,7 +481,7 @@ TSharedRef<SWidget> SISGameUI::BuildTopBar(const FString& Title)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Sat-o-pedia"), [this]() { Go(EScreen::Pedia); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("How to play"), [this]() { Go(EScreen::Help); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? Btn(TEXT("Back to the world"), [this]() { if (IPC()) IPC()->ClosePanel(); }, 1) : SNullWidget::NullWidget]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? SNullWidget::NullWidget : Btn(TEXT("Home"), [this]() { bOpsInCosmos = false; if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight(); if (IPC()) IPC()->EnterWorld(); })]
+		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[InWorld() ? SNullWidget::NullWidget : Btn(TEXT("Walk out"), [this]() { bOpsInCosmos = false; if (Scene.IsValid() && Scene->IsFlightActive()) Scene->EndFlight(); if (IPC()) IPC()->EnterWorld(); })]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[Btn(TEXT("Menu"), [this]() { if (IPC() && InWorld()) IPC()->EnterMenu(); Go(EScreen::Title); })],
 		10.f);
 }
@@ -2356,6 +2365,7 @@ TSharedRef<SWidget> SISGameUI::BuildCosmos()
 	TSharedRef<SVerticalBox> Tools = SNew(SVerticalBox);
 	if (bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Back to your satellite"), [this]() { bOpsInCosmos = false; Go(EScreen::Ops); }, 1, 12)];
 	Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(Scene.IsValid() && Scene->CosmosLabelsOn() ? TEXT("Labels on") : TEXT("Labels off"), [this]() { if (Scene.IsValid()) Scene->ToggleCosmosLabels(); bDirty = true; }, 0, 11)];
+	if (!bOpsInCosmos) Tools->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[Btn(TEXT("Walk out"), [this]() { if (IPC()) IPC()->EnterWorld(); }, 1, 12)];
 	Tools->AddSlot().AutoHeight()[Btn(TEXT("Menu"), [this]() { bOpsInCosmos = false; Go(EScreen::Title); }, 0, 11)];
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(SISCosmosOverlay, Scene, PC, [this](int32 i) { if (Scene.IsValid()) Scene->FocusCosmos(i); bDirty = true; })]
